@@ -1,0 +1,12 @@
+cmake-build-debug
+cmake-build-release
+build.*
+
+.DS_Store
+
+*.autosave
+*.pyc
+*.user
+
+.idea
+.vscode

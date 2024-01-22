@@ -1,0 +1,4 @@
+#ifndef MINFER_UTILS_H
+#define MINFER_UTILS_H
+
+#endif //MINFER_UTILS_H

@@ -1,0 +1,4 @@
+#ifndef MINFER_TENSOR_H
+#define MINFER_TENSOR_H
+
+#endif //MINFER_TENSOR_H
