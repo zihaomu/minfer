@@ -6,7 +6,8 @@
 #define MINFER_MEMORY_UTILS_H
 
 #include <stdio.h>
-#include "../../../include/muinfer.h"
+#include "minfer/minfer.h"
+#include "minfer/define.h"
 #include "define.impl.h"
 
 #ifdef __cplusplus
@@ -22,7 +23,7 @@ extern "C" {
  * @warning use `MNNMemoryFreeAlign` to free returned pointer.
  * @sa MNNMemoryFreeAlign
  */
-MU_PUBLIC void* MMemoryAllocAlign(size_t size, size_t align);
+M_PUBLIC void* MMemoryAllocAlign(size_t size, size_t align);
 
 /**
  * @brief alloc memory with given size & alignment, and fill memory space with 0.
@@ -32,7 +33,7 @@ MU_PUBLIC void* MMemoryAllocAlign(size_t size, size_t align);
  * @warning use `MNNMemoryFreeAlign` to free returned pointer.
  * @sa MNNMemoryFreeAlign
  */
-MU_PUBLIC void* MMemoryCallocAlign(size_t size, size_t align);
+M_PUBLIC void* MMemoryCallocAlign(size_t size, size_t align);
 
 /**
  * @brief free aligned memory pointer.
@@ -41,7 +42,7 @@ MU_PUBLIC void* MMemoryCallocAlign(size_t size, size_t align);
  * @sa MNNMemoryAllocAlign
  * @sa MNNMemoryCallocAlign
  */
-MU_PUBLIC void MMemoryFreeAlign(void* mem);
+M_PUBLIC void MMemoryFreeAlign(void* mem);
 
 
 #ifdef __cplusplus

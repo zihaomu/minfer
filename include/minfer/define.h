@@ -29,7 +29,6 @@
 #define M_ERROR(format, ...) printf(format, ##__VA_ARGS__)
 #endif
 
-//#ifdef DEBUG
 #define M_ASSERT(x)                                            \
     {                                                            \
         int res = (x);                                           \
@@ -38,9 +37,20 @@
             assert(res);                                         \
         }                                                        \
     }
-//#else
-//#define M_ASSERT(x)
-//#endif
+
+
+#ifdef DEBUG
+#define M_DbgASSERT(x)                                            \
+    {                                                            \
+        int res = (x);                                           \
+        if (!res) {                                              \
+            M_ERROR("Error for %s, %d\n", __FILE__, __LINE__); \
+            assert(res);                                         \
+        }                                                        \
+    }
+#else
+#define M_DbgASSERT(x)
+#endif
 
 #define FUNC_PRINT(x) MU_PRINT(#x "=%d in %s, %d \n", x, __func__, __LINE__);
 #define FUNC_PRINT_ALL(x, type) MU_PRINT(#x "=" #type " %" #type " in %s, %d \n", x, __func__, __LINE__);

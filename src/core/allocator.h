@@ -6,13 +6,13 @@
 #define MINFER_ALLOC_H
 
 #include "non_copyable.h"
-#include "muinfer.h"
+#include "minfer.h"
 #include "memory_utils.h"
 #include <vector>
 #include <map>
 #include <memory>
 
-namespace mu
+namespace minfer
 {
 
 // 内存分配器，
@@ -21,7 +21,7 @@ namespace mu
 
 // 存在的问题，不能去释放不同后端的内存，这个要怎么解决？
 // 复用Allocator？还是复用Tensor？
-class MU_PUBLIC Allocator : NonCopyable
+class M_PUBLIC Allocator : NonCopyable
 {
 public:
     class AllocatorImpl { // Virtual class
@@ -33,7 +33,7 @@ public:
         static std::shared_ptr<AllocatorImpl> createDefault();
     };
 
-    Allocator(std::shared_ptr<AllocatorImpl> impl, size_t align = MU_MEMORY_ALIGN_DEFAULT) : allocImpl(impl), mAlign(align)
+    Allocator(std::shared_ptr<AllocatorImpl> impl, size_t align = M_MEMORY_ALIGN_DEFAULT) : allocImpl(impl), mAlign(align)
     {
         // nothing
     }

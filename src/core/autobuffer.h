@@ -23,7 +23,7 @@ public:
 
     AutoBuffer(int size)
     {
-        mData = (T*) MUMemoryAllocAlign(sizeof(T) * size, MU_MEMORY_ALIGN_DEFAULT);
+        mData = (T*) MMemoryAllocAlign(sizeof(T) * size, M_MEMORY_ALIGN_DEFAULT);
         mSize = size;
     }
 
@@ -31,7 +31,7 @@ public:
     {
         if (mData != nullptr)
         {
-            MUMemoryFreeAlign(mData);
+            MMemoryFreeAlign(mData);
         }
     }
 
@@ -44,7 +44,7 @@ public:
     {
         if (mData != nullptr && mData != data)
         {
-            MUMemoryFreeAlign(mData);
+            MMemoryFreeAlign(mData);
         }
 
         mData = data;

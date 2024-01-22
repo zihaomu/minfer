@@ -25,13 +25,13 @@ public:
     virtual std::pair<void*, size_t> alloc(size_t size, size_t align)
     {
         size_t newSize = UP_DIV(size, align) * align; // 返回对齐之后的内存。
-        return std::make_pair(MUMemoryAllocAlign(size, align), newSize);
+        return std::make_pair(MMemoryAllocAlign(size, align), newSize);
     }
 
     virtual void release(std::pair<void*, size_t> ptr)
     {
-        MU_ASSERT(ptr.second == 0);
-        MUMemoryFreeAlign(ptr.first);
+        M_ASSERT(ptr.second == 0);
+        MMemoryFreeAlign(ptr.first);
     }
 };
 
@@ -57,7 +57,7 @@ void Allocator::release(bool allRelease)
     {
         if (f.second == nullptr)
         {
-            MU_ASSERT(mTotalSize >= f.first);
+            M_ASSERT(mTotalSize >= f.first);
             mTotalSize -= f.first;
         }
     }
@@ -87,7 +87,7 @@ std::pair<void *, size_t> Allocator::alloc(size_t size, size_t align)
     mTotalSize += size;
 
     usedList.insert(std::make_pair(pointer.second, pointer.first));
-    MU_ASSERT(pointer.second % align == 0);
+    M_ASSERT(pointer.second % align == 0);
     return pointer;
 }
 
