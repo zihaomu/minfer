@@ -6,14 +6,14 @@
 namespace minfer
 {
 
-// Op 层抽象
+// Net抽象
 class Net {
 public:
     Net();
     ~Net();
 
-    // 将l添加到某一层的后面
-    void addLayerTo(Layer& l, int layerId);
+    // create new layer, and return layerId
+    int createLayer(std::shared_ptr<LayerParams> param);
 
 private:
     class NetImpl;

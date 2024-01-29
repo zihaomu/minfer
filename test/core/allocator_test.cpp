@@ -34,5 +34,5 @@ TEST(Allocator, memory_test)
     // allocate memory 4, it should resue the memory 1.
     auto p4 = allocator->alloc(1100);
 
-    MU_ASSERT(p2.first == p4.first);
+    M_ASSERT(p2.first == p4.first);
 }

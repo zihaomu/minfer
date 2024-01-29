@@ -67,10 +67,10 @@ public:
     struct TensorExtraInfo;
 private:
     // remove all assignment operator， TODO check if this good?
-    Tensor(const Tensor& tensor) = delete;
-    Tensor(const Tensor&& tensor) = delete;
-    Tensor& operator=(const Tensor&) = delete;
-    Tensor& operator=(const Tensor&&) = delete;
+//    Tensor(const Tensor& tensor) = delete;
+//    Tensor(const Tensor&& tensor) = delete;
+//    Tensor& operator=(const Tensor&) = delete;
+//    Tensor& operator=(const Tensor&&) = delete;
 
     void* data; // 指向数据的指针。
     std::vector<int> shape; // 数据的shape。
@@ -80,10 +80,10 @@ private:
     std::shared_ptr<TensorExtraInfo> extraInfo; // 用于保存gpu，量化信息。
 };
 
-Tensor add(Tensor& tensor0, Tensor& tensor1);
-Tensor subtract(Tensor& tensor0, Tensor& tensor1);
-Tensor multiply(Tensor& tensor0, Tensor& tensor1);
-Tensor divide(Tensor& tensor0, Tensor& tensor1);
+Tensor add(const Tensor& tensor0, const Tensor& tensor1);
+Tensor subtract(const Tensor& tensor0, const Tensor& tensor1);
+Tensor multiply(const Tensor& tensor0, const Tensor& tensor1);
+Tensor divide(const Tensor& tensor0, const Tensor& tensor1);
 
 }
 

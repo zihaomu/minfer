@@ -27,9 +27,11 @@ include_directories(
         ${CMAKE_CURRENT_LIST_DIR}/3rdparty/
 )
 
-FILE(GLOB MCore_SRC ${CMAKE_CURRENT_LIST_DIR}/src/core/*)
-add_library(MCore OBJECT ${MCore_SRC})
-list(APPEND M_OBJECTS_TO_LINK $<TARGET_OBJECTS:MCore>)
-list(APPEND M_TARGETS MCore)
+FILE(GLOB M_Core_SRC ${CMAKE_CURRENT_LIST_DIR}/src/core/*)
+add_library(M_Core OBJECT ${M_Core_SRC})
+list(APPEND M_OBJECTS_TO_LINK $<TARGET_OBJECTS:M_Core>)
+list(APPEND M_TARGETS M_Core)
+
+include(src/backend/cpu/CMakeLists.txt)
 
 include(test/CMakeLists.txt)

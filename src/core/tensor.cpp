@@ -58,7 +58,7 @@ void Tensor::print()
     float* fp = (float *)data;
     for (int i = 0; i < totalSize; i++)
     {
-        printf(", %d", fp[i]);
+        printf(", %f", fp[i]);
     }
     printf("\n");
 }

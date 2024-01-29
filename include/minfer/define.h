@@ -79,7 +79,15 @@ MU_ERROR("Check failed: %s ==> %s\n", #success, #log); \
 #define M_VERSION STR(MU_VERSION_MAJOR) "." STR(MU_VERSION_MINOR) "." STR(MU_VERSION_PATCH)
 
 // ERROR CODE
+#ifndef M_PI
 #define M_PI   3.1415926535897932384626433832795
+#endif
+
+#ifndef M_2PI
 #define M_2PI  6.283185307179586476925286766559
+#endif
+
+#ifndef M_LOG2
 #define M_LOG2 0.69314718055994530941723212145818
+#endif
 #endif //MINFER_DEFINE_H

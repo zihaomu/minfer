@@ -7,13 +7,34 @@
 
 #include "core/backend.h"
 
-class BackendCPU : Backend
+namespace minfer {
+
+
+class BackendCPU : public Backend
 {
 public:
+    class LayerFactoryCPU : public LayerFactory
+    {
+    public:
+        LayerFactoryCPU() = default;
+        void registerAllLayer() override;
+
+    private:
+
+    };
+
+    BackendCPU();
+    ~BackendCPU();
+
+    std::shared_ptr<Layer> createLayer(std::shared_ptr<LayerParams> param) override;
+    // alloc specific memory for tensor. It will use some reuse strategy.
+    int allocTensorMemory(Tensor* tensor, std::vector<int> shape, Tensor::DataType type) override;
 
 private:
 
 };
+
+}
 
 
 #endif //MINFER_BACKEND_CPU_H
