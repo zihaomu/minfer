@@ -43,9 +43,10 @@ public:
     // 创建Tensor，如果data是nullptr，则重新分配内存。
     Tensor(const std::vector<int> &shape, DataType type, void* data = nullptr);
 
-    Tensor(Tensor& tensor);
-
+    Tensor(const Tensor& tensor);
     ~Tensor();
+
+    Tensor& operator = (const Tensor& t);
 
     size_t total(int start = -1, int end = -1);
 

@@ -4,7 +4,6 @@
 
 #include "minfer/tensor.h"
 #include "memory_utils.h"
-//#include <iostream>
 
 namespace minfer
 {
@@ -48,6 +47,16 @@ Tensor::Tensor(const std::vector<int> &_shape, minfer::Tensor::DataType type, vo
         data = MMemoryAllocAlign(memSize, M_MEMORY_ALIGN_DEFAULT);
     }
     extraInfo = std::shared_ptr<TensorExtraInfo>();
+}
+
+Tensor::Tensor(const Tensor &tensor)
+{
+
+}
+
+Tensor &Tensor::operator=(const minfer::Tensor &t)
+{
+
 }
 
 void Tensor::print()
