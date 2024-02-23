@@ -125,7 +125,10 @@ void MatAllocator::unmap(MatData* u) const
 inline
 MatSize::MatSize(int *_p):p0(_p)
 {
-    p = _p + 1;
+    if (p0)
+        p = _p + 1;
+    else
+        p = nullptr;
 }
 
 inline
@@ -173,7 +176,7 @@ bool MatSize::operator==(const opencv_lab::MatSize &sz) const
 // Setting the dim for mat.
 void setSize(Mat& m, int _dim, const int* _sz)
 {
-    assert(_dim <= CV_MAX_DIM && _dim > 0);
+    assert(_dim <= CV_MAX_DIM && _dim >= 0);
 
     if (_dim != m.dims)
     {
@@ -243,19 +246,19 @@ Mat::Mat(const std::vector<int>& _sizes, int _type)
     create(_sizes, _type);
 }
 
-//Mat::Mat(const Mat& m)
-//:flags(m.flags), dims(m.dims), data(m.data), allocator(m.allocator), u(m.u), size(0), matType(m.matType)
-//{
-//
-//    if (u)
-//    {
-//        //    std::atomic_fetch_add((_Atomic(int)*)(&u->refcount), 1);
-//        CV_XADD(&u->refcount, 1);
-//    }
-//
-//    dims = 0; // reset dims
-//    copySize(m);
-//}
+Mat::Mat(const Mat& m)
+:flags(m.flags), dims(m.dims), data(m.data), allocator(m.allocator), u(m.u), size(0), matType(m.matType)
+{
+
+    if (u)
+    {
+        //    std::atomic_fetch_add((_Atomic(int)*)(&u->refcount), 1);
+        CV_XADD(&u->refcount, 1);
+    }
+
+    dims = 0; // reset dims
+    copySize(m);
+}
 
 Mat::Mat(int _dims, const int* _sizes, int _type, void* _data)
 :flags(MAGIC_VAL), dims(0), data(0), allocator(0), u(0), size(&dims), matType(MatType(_type))
@@ -278,23 +281,75 @@ Mat::~Mat()
 }
 
 // Not copy mat data, only add reference counter.
-//Mat& Mat::operator=(const Mat& m)
-//{
-//    if (this != &m) // check if there are same Mat.
-//    {
-//        if (m.u)
-//            CV_XADD(&m.u->refcount, 1);
-//
-//        release(); // release this resource first.
-//        copySize(m);
-//
-//        data = m.data;
-//        allocator = m.allocator;
-//        u = m.u;
-//    }
-//
-//    return *this;
-//}
+Mat& Mat::operator=(const Mat& m)
+{
+    if (this != &m) // check if there are same Mat.
+    {
+        if (m.u)
+            CV_XADD(&m.u->refcount, 1);
+
+        release(); // release this resource first.
+        copySize(m);
+
+        data = m.data;
+        allocator = m.allocator;
+        u = m.u;
+    }
+
+    return *this;
+}
+
+Mat& Mat::operator=(const float v)
+{
+    if (this->empty())
+        return *this;
+
+    size_t total_v = total();
+
+    if (type() == MatType::FloatType)
+    {
+        float* p = (float*)data;
+        for (int i = 0; i < total_v; i++)
+        {
+            p[i] = (float)v;
+        }
+    }
+    else
+    {
+        int* p = (int*)data;
+        for (int i = 0; i < total_v; i++)
+        {
+            p[i] = (int)v;
+        }
+    }
+}
+
+Mat& Mat::operator=(const int v)
+{
+    if (this->empty())
+        return *this;
+
+    size_t total_v = total();
+
+    if (type() == MatType::FloatType)
+    {
+        float* p = (float*)data;
+        for (int i = 0; i < total_v; i++)
+        {
+            p[i] = (float)v;
+        }
+    }
+    else
+    {
+        int* p = (int*)data;
+        for (int i = 0; i < total_v; i++)
+        {
+            p[i] = (int)v;
+        }
+    }
+
+    return *this;
+}
 
 // copy a full Mat, it will re-allocate memory.
 void Mat::copyTo(Mat &dst) const
@@ -387,6 +442,9 @@ void Mat::create(int _dims, const int* _sizes, int _type)
     }
 
     addref();
+
+    if (u)
+        data = u->data;
 }
 
 void Mat::create(const std::vector<int>& _sizes, int _type)
@@ -406,7 +464,7 @@ void Mat::release()
 
     for (int i = 0; i < dims; ++i)
     {
-     size.p[i] = 0;
+        size.p[i] = 0;
     }
 }
 
@@ -447,6 +505,46 @@ size_t Mat::total(int startDim, int endDim) const
         p *= size.p[i];
     }
     return p;
+}
+
+void Mat::print(int len) const
+{
+    if (empty())
+    {
+        std::cout<<"mat is empty"<<std::endl;
+        return;
+    }
+
+    // print shape
+    std::cout<<"shape = ["<<size.p[0];
+    for (int i = 1; i < dims; i++)
+    {
+        std::cout<<size.p[i]<<"x";
+    }
+    std::cout<<"]"<<std::endl;
+
+    // print value
+    size_t printLen = len == -1 ? total() : len;
+
+    std::cout<<"value = ";
+    if (type() == MatType::FloatType)
+    {
+        const float* p = (const float*)data;
+        for (int i = 0; i < printLen; i++)
+        {
+            std::cout<<p[i]<<",";
+        }
+        std::cout<<std::endl;
+    }
+    else
+    {
+        const int* p = (const int*)data;
+        for (int i = 0; i < printLen; i++)
+        {
+            std::cout<<p[i]<<",";
+        }
+        std::cout<<std::endl;
+    }
 }
 
 bool Mat::empty() const

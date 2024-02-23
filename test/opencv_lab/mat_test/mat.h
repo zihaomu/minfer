@@ -18,6 +18,8 @@ typedef unsigned char uchar;
 class MatAllocator;
 struct MatData;
 class Mat;
+class MatOp;
+class MatExpr;
 
 enum MatType
 {
@@ -45,7 +47,6 @@ public:
     virtual void map(MatData* data) const;
     virtual void unmap(MatData* data) const;
 };
-
 
 // Some basic information
 struct MatData
@@ -92,7 +93,7 @@ public:
 
     Mat(const std::vector<int>& sizes, int type);
 
-//    Mat(const Mat& m);
+    Mat(const Mat& m);
 
     Mat(int dims, const int* sizes, int type, void* data);
 
@@ -101,7 +102,15 @@ public:
     ~Mat();
 
     // No data copy, just add reference counter.
-//    Mat& operator=(const Mat& m);
+    Mat& operator=(const Mat& m);
+
+    Mat& operator=(const MatExpr& e);
+
+    // set all mat value to given value, it will not change the mat type, just assign value according the data type.
+    Mat& operator=(const float v);
+
+    // set all mat value to given value
+    Mat& operator=(const int v);
 
     // Create a full copy of the array and the underlying data.
     Mat clone() const;
@@ -124,6 +133,9 @@ public:
 
     size_t total(int startDim, int endDim=INT_MAX) const;
 
+    // print the mat value and shape.
+    void print(int len = -1) const;
+
     bool empty() const;
 
     void copySize(const Mat& m);
@@ -135,7 +147,6 @@ public:
     enum { MAGIC_VAL  = 0x42FF0000, AUTO_STEP = 0};
     // This a atomic operation. The method increments the reference counter associated with the matrix data.
     void addref();
-
 
     static MatAllocator* getStdAllocator();
     static MatAllocator* getDefaultAllocator();
@@ -151,6 +162,76 @@ public:
     MatType matType;
 };
 
+///////////////////////////////// Matrix Expressions //////////////
+
+// virtual class for computation operator
+class MatOp
+{
+public:
+    MatOp();
+    virtual ~MatOp();
+
+    virtual bool elementWise(const MatExpr& expr) const;
+    virtual void assign(const MatExpr& expr, Mat& m, int type = -1) const = 0;
+
+    // augment assign? for compound assignment, +=, -=, *= ...
+    virtual void augAssginAdd(const MatExpr& expr, Mat& m) const;
+    virtual void augAssginSubtract(const MatExpr& expr, Mat& m) const;
+    virtual void augAssginMultiply(const MatExpr& expr, Mat& m) const;
+    virtual void augAssginDivide(const MatExpr& expr, Mat& m) const;
+
+    virtual void add(const MatExpr& expr1, const MatExpr& expr2, MatExpr& res) const;
+    virtual void subtract(const MatExpr& expr1, const MatExpr& expr2, MatExpr& res) const;
+    virtual void multiply(const MatExpr& expr1, const MatExpr& expr2, MatExpr& res) const;
+    virtual void divide(const MatExpr& expr1, const MatExpr& expr2, MatExpr& res) const;
+
+    virtual int type(const MatExpr& expr) const;
+};
+
+class MatExpr
+{
+public:
+    MatExpr();
+    explicit MatExpr(const Mat& m);
+
+    MatExpr(const MatOp* _op, int _flags, const Mat& _a = Mat(), const Mat& _b = Mat(),
+            const Mat& _c = Mat(), double _alpha = 1, double _beta = 1);
+
+    operator Mat() const;
+
+    int type() const;
+
+    const MatOp* op;
+    int flags;
+
+    Mat a, b, c;
+    double alpha, beta;
+};
+
+MatExpr operator + (const Mat& a, const Mat& b);
+MatExpr operator + (const Mat& a, const MatExpr& e);
+MatExpr operator + (const MatExpr& e, const Mat& b);
+MatExpr operator + (const MatExpr& e1, const MatExpr& e2);
+
+MatExpr operator - (const Mat& a);
+MatExpr operator - (const MatExpr& e);
+MatExpr operator - (const Mat& a, const Mat& b);
+MatExpr operator - (const Mat& a, const MatExpr& e);
+MatExpr operator - (const MatExpr& e, const Mat& b);
+MatExpr operator - (const MatExpr& e1, const MatExpr& e2);
+
+MatExpr operator * (const Mat& a, const Mat& b);
+MatExpr operator * (const Mat& a, const MatExpr& e);
+MatExpr operator * (const MatExpr& e, const Mat& b);
+MatExpr operator * (const MatExpr& e1, const MatExpr& e2);
+
+MatExpr operator / (const Mat& a, const Mat& b);
+MatExpr operator / (const Mat& a, const MatExpr& e);
+MatExpr operator / (const MatExpr& e, const Mat& b);
+MatExpr operator / (const MatExpr& e1, const MatExpr& e2);
+
 }
+
+#include "./mat.inl.h"
 
 #endif //MINFER_MAT_H
