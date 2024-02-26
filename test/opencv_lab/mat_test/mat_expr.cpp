@@ -364,11 +364,9 @@ MatExpr operator - (const Mat& a)
 
 MatExpr operator - (const MatExpr& e)
 {
-    MatExpr en = e;
-    en.alpha = -e.alpha;
+    MatExpr en;
+    e.op->subtract(MatExpr(Mat()), e, en);
     return en;
-//    e.op->subtract(empty, e, en);
-//    return en;
 }
 
 MatExpr operator - (const Mat& a, const Mat& b)
@@ -376,6 +374,7 @@ MatExpr operator - (const Mat& a, const Mat& b)
     checkOperandsExist(a, b);
     MatExpr e;
     MatOp_AddEx::makeExpr(e, a, b, 1, -1);
+    return e;
 }
 
 MatExpr operator - (const Mat& a, const MatExpr& e)

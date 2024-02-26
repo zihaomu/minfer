@@ -16,11 +16,11 @@ void add(const Mat& a, const Mat& b, Mat& c);
 // a * alpha + b * beta = c
 void addWeighted(const Mat& a, double alpha, const Mat& b, double beta, Mat& c);
 
-// a - b = c
-void subtract(const Mat& a, const Mat& b, Mat& c);
-
 // -a = c
 void subtract(const Mat& a, Mat& c);
+
+// a - b = c
+void subtract(const Mat& a, const Mat& b, Mat& c);
 
 // a * b = c
 void multiply(const Mat& a, const Mat& b, Mat& c);

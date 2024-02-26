@@ -36,11 +36,14 @@ TEST(OpenCVMat, MatExprTest)
     m1.print(10);
     m2.print(10);
 
-    Mat m3 = m1 + m2;
-    Mat m4 = m2 * m1 * m2;
+    Mat m3 = -(m1 + m1);// + m2;
+//    Mat m4 = m2 * m1 * m2;
+//
+//    Mat m5 = -(m2 + ( m2 - m1 ) * m3);
 
     m3.print(10);
-    m4.print(10);
+//    m4.print(10);
+//    m5.print(10);
 
     std::cout<<"Finish test of MatExprTest"<<std::endl;
 }

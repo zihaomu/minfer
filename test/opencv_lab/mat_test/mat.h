@@ -93,6 +93,7 @@ public:
 
     Mat(const std::vector<int>& sizes, int type);
 
+    // when use reference mat, we need to create new memory for the mat size.
     Mat(const Mat& m);
 
     Mat(int dims, const int* sizes, int type, void* data);

@@ -1,11 +1,4 @@
-//
-// Created by mzh on 2024/2/22.
-//
-
-#ifndef MINFER_OPERATIONS_H
-#define MINFER_OPERATIONS_H
-
-#include "mat.h"
+#include "operations.h"
 
 namespace opencv_lab
 {
@@ -40,8 +33,7 @@ void preProcessAndCheck(const Mat& a, Mat& c)
 {
     if (c.empty())
     {
-        checkIsSameType(a, c);
-
+        assert(!a.empty() && "The input mat can not be empty!");
         c = Mat(a.dims, a.size.p, a.type());
     }
     else
@@ -112,6 +104,12 @@ void addWeighted(const Mat& a, double alpha, const Mat& b, double beta, Mat& c)
 
 void subtract(const Mat& a, const Mat& b, Mat& c)
 {
+    if (a.empty() && !b.empty())
+    {
+        subtract(b, c);
+        return;
+    }
+
     preProcessAndCheck(a, b, c);
 
     int type = a.type();
@@ -233,5 +231,3 @@ void divide(const Mat& a, const Mat& b, Mat& c)
 }
 
 }
-
-#endif //MINFER_OPERATIONS_H
