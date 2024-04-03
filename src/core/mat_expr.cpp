@@ -2,13 +2,11 @@
 // Created by mzh on 2024/2/22.
 //
 
-#ifndef MINFER_MAT_TEST_EXPR_H
-#define MINFER_MAT_TEST_EXPR_H
+#include "minfer/mat.h"
+#include "minfer/basic_op.h"
+#include "minfer/define.h"
 
-#include "mat.h"
-#include "operations.h"
-
-namespace opencv_lab {
+namespace minfer {
 
 // This and its overload below are used in various MatExpr operator overloads
 // implemented to check that Matrix operands exists.
@@ -71,6 +69,22 @@ public:
 
 static MatOp_Bin g_MatOp_Bin;
 
+
+class MatOp_Cmp : public MatOp
+{
+public:
+    MatOp_Cmp() {}
+    virtual ~MatOp_Cmp() {};
+
+    bool elementWise(const MatExpr& ) const override {return true;}
+
+    void assign(const MatExpr& expr, Mat& m, int type = -1) const override;
+
+    static void makeExpr(MatExpr& res, int cmpop, const Mat& a, const Mat& b);
+};
+
+static MatOp_Cmp g_MatOp_Cmp;
+
 ///////////// MatOp Implementation //////////////
 
 void MatOp_Identity::assign(const MatExpr &e, Mat &m, int _type) const
@@ -94,11 +108,11 @@ void MatOp_AddEx::assign(const MatExpr &e, Mat &m, int _type) const
     {
         if (e.beta == 1)
         {
-            opencv_lab::add(e.a, e.b, dst);
+            minfer::add(e.a, e.b, dst);
         }
         else if (e.beta == -1)
         {
-            opencv_lab::subtract(e.a, e.b, dst);
+            minfer::subtract(e.a, e.b, dst);
         }
         else
             addWeighted(e.a, e.alpha, e.b, e.beta, dst);
@@ -109,7 +123,7 @@ void MatOp_AddEx::assign(const MatExpr &e, Mat &m, int _type) const
     }
     else if (e.alpha == -1)
     {
-        opencv_lab::subtract(e.a, dst);
+        minfer::subtract(e.a, dst);
     }
     else
         assert(0 && "Unsupported type in MatOp_AddEx::assign!");
@@ -126,11 +140,11 @@ void MatOp_Bin::assign(const MatExpr &e, Mat &m, int _type) const
 
     if (e.flags == '*')
     {
-        opencv_lab::multiply(e.a, e.b, dst);
+        minfer::multiply(e.a, e.b, dst);
     }
     else if (e.flags == '/' && e.b.data)
     {
-        opencv_lab::divide(e.a, e.b, dst);
+        minfer::divide(e.a, e.b, dst);
     }
     else
         assert(0 && "Unsupported value!");
@@ -139,6 +153,17 @@ void MatOp_Bin::assign(const MatExpr &e, Mat &m, int _type) const
 void MatOp_Bin::makeExpr(MatExpr& res, char op, const Mat& a, const Mat& b)
 {
     res = MatExpr(&g_MatOp_Bin, op, a, b, Mat());
+}
+
+void MatOp_Cmp::assign(const MatExpr &expr, Mat &m, int _type) const
+{
+    Mat temp, &dst = _type == -1 || _type == DT_8U ? m : temp;
+
+}
+
+void MatOp_Cmp::makeExpr(minfer::MatExpr &res, int cmpop, const minfer::Mat &a, const minfer::Mat &b)
+{
+    res = MatExpr(&g_MatOp_Cmp, cmpop, a, b, Mat());
 }
 
 ////////////// Implementation ////////////
@@ -311,7 +336,7 @@ void MatOp::divide(const MatExpr &e1, const MatExpr &e2, MatExpr &res) const
 //////////// MatExpr implementation /////////////
 
 MatExpr::MatExpr(const Mat &m)
-: op(&g_MatOp_Identity), flags(0), a(m), b(Mat()), c(Mat()), alpha(1), beta(0)
+        : op(&g_MatOp_Identity), flags(0), a(m), b(Mat()), c(Mat()), alpha(1), beta(0)
 {
 
 }
@@ -462,11 +487,12 @@ MatExpr operator / (const MatExpr& e1, const MatExpr& e2)
     return en;
 }
 
-
-
-
-
-
+MatExpr operator == (const Mat& a, const Mat& b)
+{
+    checkOperandsExist(a, b);
+    MatExpr e;
+    MatOp_Cmp::makeExpr(e, M_CMP_EQ, a, b);
+    return e;
 }
 
-#endif //MINFER_MAT_TEST_EXPR_H
+}

@@ -6,6 +6,7 @@
 #define MINFER_BACKEND_CPU_H
 
 #include "core/backend.h"
+#include "core/allocator.h"
 
 namespace minfer {
 
@@ -16,7 +17,7 @@ public:
     class LayerFactoryCPU : public LayerFactory
     {
     public:
-        LayerFactoryCPU() = default;
+        LayerFactoryCPU();
         void registerAllLayer() override;
 
     private:
@@ -27,10 +28,15 @@ public:
     ~BackendCPU();
 
     std::shared_ptr<Layer> createLayer(std::shared_ptr<LayerParams> param) override;
+
     // alloc specific memory for tensor. It will use some reuse strategy.
-    int allocTensorMemory(Tensor* tensor, std::vector<int> shape, Tensor::DataType type) override;
+    int allocMat(Mat* m) override;
+
+    int deallocMat(Mat* m) override;
 
 private:
+    std::shared_ptr<Allocator::AllocatorImpl> memoryAllocatorCPUImpl;
+    std::shared_ptr<Allocator> memoryAllocatorCPU;
 
 };
 

@@ -26,14 +26,14 @@ Layer::~Layer()
 
 }
 
-void Layer::init(const std::vector<Tensor> &, std::vector<Tensor> &)
+void Layer::init(const std::vector<Mat*> &, std::vector<Mat*> &)
 {
-
+    M_ERROR(NULL, "Not implementation at Layer::init!");
 }
 
-void Layer::forward(const std::vector<Tensor> &, std::vector<Tensor> &)
+void Layer::forward(const std::vector<Mat*> &, std::vector<Mat*> &)
 {
-
+    M_ERROR(NULL, "Not implementation at Layer::forward!");
 }
 
 int Layer::getId()
@@ -54,6 +54,13 @@ LayerType Layer::getType()
 void Layer::setId(int id)
 {
     layerId = id;
+}
+
+void Layer::getBasicInfo(const std::shared_ptr<LayerParams> param)
+{
+    layerId = param->layerId;
+    layerType = param->type;
+    layerName = param->name;
 }
 
 }

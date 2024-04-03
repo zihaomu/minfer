@@ -1,31 +1,25 @@
 //
-// Created by mzh on 2024/1/30.
+// Created by mzh on 2024/3/27.
 //
 
 #ifndef MINFER_MAT_H
 #define MINFER_MAT_H
 
 #include <iostream>
-#include "assert.h"
-// Task: implement a basic Mat class. It should include some basic function like, create, assignment, some basic computation like sub, add.
-// And Mat should support at least two type: float and int.
+#include <assert.h>
 
-namespace opencv_lab
+#include "define.h"
+
+namespace minfer
 {
 
 typedef unsigned char uchar;
-#define CV_MAX_DIM 8
+#define MAT_MAX_DIM 8
 class MatAllocator;
 struct MatData;
 class Mat;
 class MatOp;
 class MatExpr;
-
-enum MatType
-{
-    FloatType = 0,
-    IntType = 1,
-};
 
 enum MatDataUsageFlags
 {
@@ -35,6 +29,7 @@ enum MatDataUsageFlags
 };
 
 // API for mat memory allocator
+// 支持不同后端，需要支持不同的Mat
 class MatAllocator
 {
 public:
@@ -83,7 +78,7 @@ struct MatSize
     int* p;  // p is p0+1
 };
 
-// Mat class
+// Mat class, 从OpenCV处抄过来
 class Mat
 {
 public:
@@ -91,14 +86,21 @@ public:
 
     Mat(int dims, const int* sizes, int type);
 
-    Mat(const std::vector<int>& sizes, int type);
+    Mat(const std::vector<int> sizes, int type);
+
+    // create specific dimension Mat with given default value.
+    // Note the value is int type, if you wanna set the default value as other type
+    // please reinterpret_cast it to int value first.
+    Mat(int dims, const int* sizes, int type, int v);
+
+    Mat(const std::vector<int> sizes, int type, int v);
 
     // when use reference mat, we need to create new memory for the mat size.
     Mat(const Mat& m);
 
     Mat(int dims, const int* sizes, int type, void* data);
 
-    Mat(const std::vector<int>& sizes, int type, void* data);
+    Mat(const std::vector<int> sizes, int type, void* data);
 
     ~Mat();
 
@@ -120,15 +122,22 @@ public:
 
     void create(int ndims, const int* sizes, int type);
 
-    void create(const std::vector<int>& sizes, int type);
-
-    // Question: why have release and deallocate at the same time?
+    void create(const std::vector<int> sizes, int type);
 
     void release();
 
     void deallocate();
 
     int type() const;
+
+    // 只设置 Mat的shape而不分配内存
+    // ⚠️ 这个有可能打破Mat的安全性，double check
+    void setSize(std::vector<int> size);
+
+    void setSize(int dim, const int* size);
+
+    // 设置和输入Mat 一样的shape
+    void setSize(Mat& m);
 
     size_t total() const;
 
@@ -145,14 +154,12 @@ public:
 
     template<typename _Tp> _Tp& at(int i0 = 0);
 
-    enum { MAGIC_VAL  = 0x42FF0000, AUTO_STEP = 0};
     // This a atomic operation. The method increments the reference counter associated with the matrix data.
     void addref();
 
     static MatAllocator* getStdAllocator();
     static MatAllocator* getDefaultAllocator();
 
-    int flags;
     int dims;
     uchar* data;
 
@@ -160,7 +167,10 @@ public:
 
     MatData* u;
     MatSize size;
-    MatType matType;
+    int matType;
+
+    struct MatExtrInfo;
+    std::shared_ptr<MatExtrInfo> extrInfo; // 保存backend的信息
 };
 
 ///////////////////////////////// Matrix Expressions //////////////
@@ -231,8 +241,9 @@ MatExpr operator / (const Mat& a, const MatExpr& e);
 MatExpr operator / (const MatExpr& e, const Mat& b);
 MatExpr operator / (const MatExpr& e1, const MatExpr& e2);
 
+MatExpr operator == (const Mat& a, const Mat& b);
 }
 
-#include "./mat_test.inl.h"
+#include "./mat.inl.h"
 
 #endif //MINFER_MAT_H

@@ -1,6 +1,6 @@
 
-#ifndef MINFER_MAT_INL_H
-#define MINFER_MAT_INL_H
+#ifndef MINFER_MAT_TEST_INL_H
+#define MINFER_MAT_TEST_INL_H
 
 namespace opencv_lab
 {
@@ -89,4 +89,4 @@ const Mat& operator /= (const Mat& a, const MatExpr& b)
 
 }
 
-#endif //MINFER_MAT_INL_H
+#endif //MINFER_MAT_TEST_INL_H

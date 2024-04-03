@@ -3,8 +3,10 @@
 #define MINFER_RUNTIME_H
 
 #include <memory>
-#include "backend/cpu/backend_cpu.h"
 #include "minfer/layer.h"
+
+// Add all backend here
+#include "backend/cpu/backend_cpu.h"
 
 namespace minfer
 {
@@ -23,12 +25,17 @@ public:
     static void release();
 
     // Create layer, and return layerId.
-    int createLayer(std::shared_ptr<LayerParams> param);
+    std::shared_ptr<Layer> createLayer(std::shared_ptr<LayerParams> param);
+
+    //TODO：怎么加入GPU内存分配？以及GPU内存复用？
+    int allocMat(Mat* m);
+
+    int deallocMat(Mat* m);
 
 private:
     Runtime(); //Runtime 管理所有的Backend
-    std::shared_ptr<BackendCPU> backendCPU; // cpu backend
-//    std::shared_ptr<BackendGPU> backendGPU; // cpu backend
+    std::shared_ptr<BackendCPU> backendCPU = nullptr; // cpu backend
+//    std::shared_ptr<BackendGPU> backendGPU = nullptr; // cpu backend
 };
 
 static Runtime* runtime = nullptr;

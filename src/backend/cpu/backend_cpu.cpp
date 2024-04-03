@@ -3,19 +3,25 @@
 //
 
 #include "backend_cpu.h"
+
+// all supported layer
 #include "layer/add_layer.h"
+#include "layer/input_layer.h"
+#include "layer/output_layer.h"
 
 namespace minfer
 {
 
 BackendCPU::BackendCPU()
 {
-    layerFactory = std::shared_ptr<LayerFactoryCPU>();
+    layerFactory = std::shared_ptr<LayerFactoryCPU>(new LayerFactoryCPU());
+    memoryAllocatorCPUImpl = Allocator::AllocatorImpl::createDefault();
+    memoryAllocatorCPU = std::shared_ptr<Allocator>(new Allocator(memoryAllocatorCPUImpl));
 }
 
 BackendCPU::~BackendCPU()
 {
-
+    memoryAllocatorCPU->release();
 }
 
 namespace details {
@@ -28,6 +34,11 @@ std::shared_ptr<Layer> _layerDynamicRegister(std::shared_ptr<LayerParams> param)
 
 }
 
+BackendCPU::LayerFactoryCPU::LayerFactoryCPU()
+{
+    this->registerAllLayer();
+}
+
 #define M_CPU_REGISTER_LAYER(type, class) \
     LayerFactory::registerLayer(type, minfer::details::_layerDynamicRegister<class>)
 
@@ -35,19 +46,30 @@ void BackendCPU::LayerFactoryCPU::registerAllLayer()
 {
     // TODO Add more layer here.
     M_CPU_REGISTER_LAYER(LayerType::Add, AddLayer);
+    M_CPU_REGISTER_LAYER(LayerType::Input, InputLayer);
+    M_CPU_REGISTER_LAYER(LayerType::Output, OutputLayer);
 }
 
 std::shared_ptr<Layer> BackendCPU::createLayer(std::shared_ptr<LayerParams> param)
 {
-    M_ASSERT(checkLayerSupported(param->type, param))
+    M_ASSERT(checkLayerSupported(param))
 
     return layerFactory->createLayerInstance(param);
 }
 
-int BackendCPU::allocTensorMemory(minfer::Tensor *tensor, std::vector<int> shape, Tensor::DataType type)
+int BackendCPU::allocMat(Mat* m)
 {
+    size_t totalMem = m->total() * DT_ELEM_SIZE(m->type());
+    std::pair<void *, size_t> mPair = memoryAllocatorCPU->alloc(totalMem);
+    m->data = (uchar *)mPair.first;
     return 0;
 }
 
+int BackendCPU::deallocMat(Mat *m)
+{
+    size_t totalMem = m->total() * DT_ELEM_SIZE(m->type());
+    memoryAllocatorCPU->returnMemory(std::pair<void*, size_t>(m->data, totalMem));
+    return 0;
+}
 
 }

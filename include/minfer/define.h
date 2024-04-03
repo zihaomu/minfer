@@ -90,4 +90,53 @@ MU_ERROR("Check failed: %s ==> %s\n", #success, #log); \
 #ifndef M_LOG2
 #define M_LOG2 0.69314718055994530941723212145818
 #endif
+
+
+
+/****************************************************************************************\
+*                                  Matrix type (Mat)                                     *
+\****************************************************************************************/
+
+// all Mat type
+#define DT_8U   0
+#define DT_8S   1
+#define DT_16U  2
+#define DT_16S  3
+#define DT_32S  4
+#define DT_32F  5
+#define DT_64F  6
+#define DT_16F  7
+#define DT_16BF 8
+#define DT_Bool 9
+#define DT_64U  10
+#define DT_64S  11
+#define DT_32U  12
+
+/** Size of an array/scalar single value, 4 bits per type:
+#define DT_8U   - 1 byte
+#define DT_8S   - 1 byte
+#define DT_16U  - 2
+#define DT_16S  - 2
+#define DT_32S  - 4
+#define DT_32F  - 4
+#define DT_64F  - 8
+#define DT_16F  - 2
+#define DT_16BF - 2
+#define DT_Bool - 1
+#define DT_64U  - 8
+#define DT_64S  - 8
+#define DT_32U  - 4
+    ...
+*/
+#define DT_ELEM_SIZE(type) ((int)((0x4881228442211ULL >> (type * 4)) & 15))
+
+
+// Comparing flag
+#define M_CMP_EQ   0
+#define M_CMP_GT   1
+#define M_CMP_GE   2
+#define M_CMP_LT   3
+#define M_CMP_LE   4
+#define M_CMP_NE   5
+
 #endif //MINFER_DEFINE_H

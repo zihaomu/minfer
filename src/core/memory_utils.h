@@ -6,7 +6,6 @@
 #define MINFER_MEMORY_UTILS_H
 
 #include <stdio.h>
-#include "minfer/minfer.h"
 #include "minfer/define.h"
 #include "define.impl.h"
 
@@ -15,6 +14,7 @@ extern "C" {
 #endif
 
 #define M_MEMORY_ALIGN_DEFAULT 64 // 通用内存对齐到 64 字节
+
 /**
  * @brief alloc memory with given size & alignment.
  * @param size  given size. size should > 0.

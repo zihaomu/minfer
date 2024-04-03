@@ -6,13 +6,10 @@
 
 namespace minfer {
 
-AddLayer::AddLayer(std::shared_ptr<LayerParams> param)
+AddLayer::AddLayer(const std::shared_ptr<LayerParams> param)
 {
-    layerName = param->name;
-    layerId = param->layerId;
-
-    layerType = param->type;
-    M_ASSERT(layerType == LayerType::Add);
+    M_ASSERT(param->type == LayerType::Add);
+    getBasicInfo(param);
 }
 
 AddLayer::~AddLayer()
@@ -20,24 +17,31 @@ AddLayer::~AddLayer()
 
 }
 
-void AddLayer::init(const std::vector<Tensor> &input, std::vector<Tensor> &output)
+void AddLayer::init(const std::vector<Mat*> &input, std::vector<Mat*> &output)
 {
     // pre check
     inputNum = input.size();
 
     M_ASSERT(inputNum == 2);
     M_ASSERT(output.size() == 1);
+
+    // 设置同样的shape
+    output[0]->setSize(*input[0]);
 }
 
-void AddLayer::forward(const std::vector<Tensor> &input, std::vector<Tensor> &output)
+void AddLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &output)
 {
     // TODO finish the following code!
-    ; // do nothing
-//    output[0] = add(input[0],input[1]);
+
+    (*input[0]).print();
+    (*input[1]).print();
+    *output[0] = *input[0] + *input[1];
+    (*output[0]).print();
 }
 
-std::shared_ptr<AddLayer> AddLayer::create(std::shared_ptr<LayerParams> param)
+std::shared_ptr<AddLayer> AddLayer::create(const std::shared_ptr<LayerParams> param)
 {
     return std::shared_ptr<AddLayer>(new AddLayer(param));
 }
+
 }

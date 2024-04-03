@@ -11,6 +11,7 @@ namespace minfer
 class Tensor
 {
 public:
+    // TODO，添加Vulkan实现
     enum MemeoryType {
         HOST_MEMORY = 0,
         DEVICE_MEMORY = 1,
@@ -35,7 +36,6 @@ public:
         DT_BFLOAT16 = 14,
         DT_QINT16 = 15,
         DT_QUINT16 = 16,
-        DT_HALF = 17, // FP16 ?
     };
 
     Tensor();
@@ -81,6 +81,7 @@ private:
     std::shared_ptr<TensorExtraInfo> extraInfo; // 用于保存gpu，量化信息。
 };
 
+// TODO 添加类似Mat的基础计算模块？
 Tensor add(const Tensor& tensor0, const Tensor& tensor1);
 Tensor subtract(const Tensor& tensor0, const Tensor& tensor1);
 Tensor multiply(const Tensor& tensor0, const Tensor& tensor1);

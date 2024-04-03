@@ -17,7 +17,7 @@ public:
         // Do nothing
     }
 
-    virtual ~ DefaultAllocatorImpl()
+    virtual ~DefaultAllocatorImpl()
     {
         // Do nothing
     }
@@ -66,6 +66,7 @@ void Allocator::release(bool allRelease)
 
 std::pair<void *, size_t> Allocator::alloc(size_t size, size_t align)
 {
+    AutoLock lk(mutex);
     if (align == 0)
         align = mAlign;
 
@@ -93,6 +94,7 @@ std::pair<void *, size_t> Allocator::alloc(size_t size, size_t align)
 
 std::pair<void *, size_t> Allocator::getFromFreeList(size_t size, size_t align)
 {
+    AutoLock lk(mutex);
     size_t realSize = size;
     bool needExtraSize = mAlign % align != 0;
 
@@ -114,6 +116,7 @@ std::pair<void *, size_t> Allocator::getFromFreeList(size_t size, size_t align)
 
 bool Allocator::free(std::pair<void *, size_t> pointer)
 {
+    AutoLock lk(mutex);
     bool foundUsed = false;
     auto x = usedList.begin();
     for (auto i = usedList.begin(); i != usedList.end(); ++i)
@@ -140,6 +143,7 @@ bool Allocator::free(std::pair<void *, size_t> pointer)
 
 void Allocator::returnMemory(std::pair<void *, size_t> pointer)
 {
+    AutoLock lk(mutex);
     freeList.insert(std::make_pair(pointer.second, pointer.first));
 }
 

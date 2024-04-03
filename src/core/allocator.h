@@ -24,7 +24,9 @@ namespace minfer
 class M_PUBLIC Allocator : NonCopyable
 {
 public:
-    class AllocatorImpl { // Virtual class
+
+    // Virtual class
+    class AllocatorImpl {
     public:
         AllocatorImpl() = default;
         virtual ~ AllocatorImpl() = default;
@@ -43,7 +45,6 @@ public:
         release();
     }
 
-    // TODO 增加阻塞锁，让分配和释放都是一个线程去完成。
     /**
      * @brief free all allocated memories.
      * @sa allocSeparate
@@ -70,8 +71,9 @@ public:
 
     void returnMemory(std::pair<void*, size_t> pointer);
 
-    // TODO 加入多线程考虑
+    // TODO 加入多线程
 private:
+    Mutex mutex;
     std::shared_ptr<AllocatorImpl> allocImpl;
     size_t mAlign;
     size_t mTotalSize = 0;

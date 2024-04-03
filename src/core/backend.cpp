@@ -8,7 +8,6 @@ namespace minfer {
 
 Backend::LayerFactory::LayerFactory()
 {
-    registerAllLayer();
 }
 
 Backend::LayerFactory::~LayerFactory()
@@ -50,17 +49,17 @@ std::shared_ptr<Layer> Backend::LayerFactory::createLayerInstance(std::shared_pt
     return it->second(param);
 }
 
-bool Backend::LayerFactory::checkLayerSupported(LayerType type, std::shared_ptr<LayerParams> param)
+bool Backend::LayerFactory::checkLayerSupported(std::shared_ptr<LayerParams> param)
 {
-    auto it = layerMap.find(type);
+    auto it = layerMap.find(param->type);
     return !(it == layerMap.end());
 }
 
-bool Backend::checkLayerSupported(LayerType type, std::shared_ptr<LayerParams> param)
+bool Backend::checkLayerSupported(std::shared_ptr<LayerParams> param)
 {
-    M_ASSERT(layerFactory.get() != nullptr);
+    M_ASSERT(layerFactory != nullptr);
 
-    return layerFactory->checkLayerSupported(type, param);
+    return layerFactory->checkLayerSupported(param);
 }
 
 size_t Backend::getAllMemory()

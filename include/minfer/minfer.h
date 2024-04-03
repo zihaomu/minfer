@@ -1,4 +1,0 @@
-#ifndef MINFER_MINFER_H
-#define MINFER_MINFER_H
-
-#endif //MINFER_MINFER_H

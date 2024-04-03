@@ -3,7 +3,7 @@ set(gtest_SOURCE_DIR "${CMAKE_SOURCE_DIR}/3rdparty/googletest")
 add_subdirectory(${gtest_SOURCE_DIR})
 enable_testing()
 
-include_directories(${gtest_SOURCE_DIR} ${gtest_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/test/opencv_lab/mat_test)
+include_directories(${CMAKE_SOURCE_DIR}/include ${gtest_SOURCE_DIR} ${gtest_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/test/opencv_lab/mat_test)
 
 file(GLOB OPENCV_MAT_SRC
         ${CMAKE_SOURCE_DIR}/test/opencv_lab/mat_test/*.cpp

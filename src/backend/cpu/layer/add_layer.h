@@ -13,21 +13,19 @@ namespace minfer {
 class AddLayer : public Layer
 {
 public:
-    static std::shared_ptr<AddLayer> create(std::shared_ptr<LayerParams> param);
+    static std::shared_ptr<AddLayer> create(const std::shared_ptr<LayerParams> param);
 
     ~AddLayer();
 
-    void init(const std::vector<Tensor>& input, std::vector<Tensor>& output) override;
+    void init(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
     // and the forward can be run several times
-    void forward(const std::vector<Tensor>& input, std::vector<Tensor>& output) override;
+    void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
 private:
-    AddLayer(std::shared_ptr<LayerParams> param);
+    AddLayer(const std::shared_ptr<LayerParams> param);
     int inputNum = -1;
 };
-
-
 
 }
 

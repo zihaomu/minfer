@@ -6,7 +6,7 @@
 #define MINFER_BACKEND_H
 
 #include "non_copyable.h"
-#include "minfer/tensor.h"
+#include "minfer/mat.h"
 #include "minfer/layer.h"
 #include <map>
 #include "string"
@@ -14,12 +14,6 @@
 
 namespace minfer
 {
-
-// Todo check if we need use Config
-//struct Config
-//{
-//};
-
 
 // Backend 包含LayerFactory，用来创建不同的layer。
 class Backend : NonCopyable {
@@ -39,7 +33,7 @@ public:
         std::shared_ptr<Layer> createLayerInstance(std::shared_ptr<LayerParams> param);
         void registerLayer(LayerType type, Constructor constructor);
 
-        bool checkLayerSupported(LayerType type, std::shared_ptr<LayerParams> param);
+        bool checkLayerSupported(std::shared_ptr<LayerParams> param);
 
     protected:
         LayerFactoryMap layerMap;
@@ -51,11 +45,16 @@ public:
 
     size_t getAllMemory(); // return all alloc memory
     std::string getName();
-    bool checkLayerSupported(LayerType type, std::shared_ptr<LayerParams> param);
+    bool checkLayerSupported(std::shared_ptr<LayerParams> param);
 
     virtual std::shared_ptr<Layer> createLayer(std::shared_ptr<LayerParams> param) = 0;                // 创建层
+
     // alloc specific memory for tensor. It will use some reuse strategy.
-    virtual int allocTensorMemory(Tensor* tensor, std::vector<int> shape, Tensor::DataType type) = 0; // 直接创建GPU Tensor
+    // 由backend统一管理和创建内存
+    virtual int allocMat(Mat* m) = 0; // 按照固定顺序去alloc和dealloc内存，能够保证良好的内存复用
+
+    // 这里具体是否真的会释放内存，要根据具体后端而定，CPU实际是回收内存到FreeList中，只有在析构Runtime中的BackendCPU时才会真的释放。
+    virtual int deallocMat(Mat* m) = 0; // 直接创建GPU Tensor
 
 protected:
     std::string name;
