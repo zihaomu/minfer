@@ -27,7 +27,9 @@ include_directories(
         ${CMAKE_CURRENT_LIST_DIR}/3rdparty/
 )
 
-FILE(GLOB M_Core_SRC ${CMAKE_CURRENT_LIST_DIR}/src/core/*)
+FILE(GLOB_RECURSE M_Core_SRC
+        ${CMAKE_CURRENT_LIST_DIR}/src/core/*.cpp)
+
 add_library(M_Core OBJECT ${M_Core_SRC})
 list(APPEND M_OBJECTS_TO_LINK $<TARGET_OBJECTS:M_Core>)
 list(APPEND M_TARGETS M_Core)

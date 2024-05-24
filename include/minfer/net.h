@@ -3,11 +3,32 @@
 
 #include "layer.h"
 #include "mat.h"
+#include "map"
 
 namespace minfer
 {
 
-// Net抽象
+
+/// Net 类别
+/* 例子代码：
+ * Net net = readNet("llama.gguf");
+ * Mat input = toknizer_input("I have a pen for", 2048);
+ * net.setInput(input);
+ * net.init();
+ * Mat out;
+ * while(true)
+ * {
+ *  net.setInput(input);
+ *  out = net.forward();
+ *
+ *  bool ifStop = false;
+ *  std::string chat_out = tokizer_output(out, ifStop);
+ *  std::cout<<"say: "<<chat_out<<std::endl;
+ *  if (ifStop)
+ *      break;
+ *  input = out;
+ * }
+ * */
 class Net {
 public:
     Net();
@@ -16,7 +37,13 @@ public:
     // create new layer, and return layerId
     int createLayer(std::shared_ptr<LayerParams> param);
 
-    void readNet(const std::string path, const std::string modelType);
+    void createNet(const std::map<int, std::shared_ptr<LayerParams> >& netParams);
+
+    /// 从模型文件中创建Net
+    /// \param path
+    /// \param modelType
+    /// ⚠️目前只支持gguf一种模型格式
+    void readNet(const std::string path, const std::string modelType = "gguf");
 
 //    void setInput(const Mat input, const std::string name = {});
 

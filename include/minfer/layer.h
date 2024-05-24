@@ -30,6 +30,9 @@ enum LayerType {
 class LayerParams
 {
 public:
+    LayerParams()
+    :layerId(-1), name(), type(UnSupported), inputIndex({}), outputIndex({})
+    {}
     LayerParams(int _layerId, std::string _name, LayerType _type, std::vector<int> _inputIndex, std::vector<int> _outputIndex)
     :layerId(_layerId), name(_name), type(_type), inputIndex(_inputIndex), outputIndex(_outputIndex)
     {}

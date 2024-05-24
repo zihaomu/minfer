@@ -3,6 +3,7 @@
 //
 
 #include "net.impl.h"
+#include "gguf_model/gguf_loader.h"
 
 namespace minfer
 {
@@ -22,12 +23,13 @@ Net::NetImpl::~NetImpl()
 
 void Net::NetImpl::readNet(const std::string path, const std::string modelType)
 {
-    //TODO write multi layer create here.
+    // TODO Add model model type supported!
+    std::map<int, std::shared_ptr<LayerParams> > netParams;
+    M_ASSERT(modelType == "gguf" && "Only GGUF model has been supported!");
 
-    std::map<int, std::shared_ptr<LayerParams> > allLayerParams;
+    readGGUF(path, netParams);
 
-    // TODO，完成从文件中，建立一个个layerParams的过程
-    createNet(allLayerParams);
+    createNet(netParams);
 }
 
 void Net::NetImpl::setInput(const Mat input, const int _mIndx)
@@ -202,6 +204,8 @@ void Net::NetImpl::createLayerRecurve(int layerIdx, std::vector<int>& isLayerCre
     }
 }
 
+// 此函数保证在 allLayerParams乱序情况下，仍然能够让模型从input层一层层创建，从而让后面层的创建滞后于前面的层。
+// 此部分代码有待测试
 void Net::NetImpl::createNet(const std::map<int, std::shared_ptr<LayerParams> >& allLayerParams)
 {
     // find all net output node

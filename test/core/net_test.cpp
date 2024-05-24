@@ -65,3 +65,13 @@ TEST(Net_TEST, simple_net_test)
 
     outM.print();
 }
+
+
+TEST(Net_TEST, net_tiny_llama)
+{
+    std::cout<<"print test on net_tiny_llama"<<std::endl;
+    Net net;
+    net.readNet("tinyllamas-stories-260k-f32.gguf");
+
+    // TODO add the forward type.
+}
