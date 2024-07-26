@@ -405,12 +405,13 @@ void Mat::copyTo(Mat &dst) const
     }
 
     dst.create(dims, size.p, type());
-    if (data == dst.data)
+    if (data == dst.data) // the two mat are the same.
         return;
 
     // if the data ptr is not the same,
     if (total() != 0)
     {
+        // TODO handle the sub mat.
         int esz = DT_ELEM_SIZE(type());
         size_t total_size = total() * esz;
         memcpy(dst.data, data, total_size);
@@ -600,6 +601,17 @@ void Mat::print(int len) const
     }
     else
         M_ERROR(NULL, "Unsupported format at function \" Mat::print \" type = %d!", type());
+}
+
+MatShape Mat::shape() const
+{
+    if (this->empty())
+        return {};
+
+    MatShape shape(dims, 0);
+    memcpy(shape.data(), this->size.p, dims * sizeof (int));
+
+    return shape;
 }
 
 bool Mat::empty() const

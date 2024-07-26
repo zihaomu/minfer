@@ -11,6 +11,8 @@
 
 #include "ggml_quant.h"
 
-namespace minfer {
+namespace minfer
+{
 
-}
+} // namespace minfer
+

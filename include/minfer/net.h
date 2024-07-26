@@ -37,7 +37,7 @@ public:
     // create new layer, and return layerId
     int createLayer(std::shared_ptr<LayerParams> param);
 
-    void createNet(const std::map<int, std::shared_ptr<LayerParams> >& netParams);
+    void createNet(const std::vector<std::shared_ptr<LayerParams> >& netParams);
 
     /// 从模型文件中创建Net
     /// \param path

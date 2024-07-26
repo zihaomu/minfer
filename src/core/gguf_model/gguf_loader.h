@@ -13,6 +13,41 @@
 namespace minfer
 {
 
+// quantized type.
+enum GGML_TYPE {
+    GGML_TYPE_F32     = 0,
+    GGML_TYPE_F16     = 1,
+    GGML_TYPE_Q4_0    = 2,
+    GGML_TYPE_Q4_1    = 3,
+    // GGML_TYPE_Q4_2 = 4, support has been removed
+    // GGML_TYPE_Q4_3 = 5, support has been removed
+    GGML_TYPE_Q5_0    = 6,
+    GGML_TYPE_Q5_1    = 7,
+    GGML_TYPE_Q8_0    = 8,
+    GGML_TYPE_Q8_1    = 9,
+    GGML_TYPE_Q2_K    = 10,
+    GGML_TYPE_Q3_K    = 11,
+    GGML_TYPE_Q4_K    = 12,
+    GGML_TYPE_Q5_K    = 13,
+    GGML_TYPE_Q6_K    = 14,
+    GGML_TYPE_Q8_K    = 15,
+    GGML_TYPE_IQ2_XXS = 16,
+    GGML_TYPE_IQ2_XS  = 17,
+    GGML_TYPE_IQ3_XXS = 18,
+    GGML_TYPE_IQ1_S   = 19,
+    GGML_TYPE_IQ4_NL  = 20,
+    GGML_TYPE_IQ3_S   = 21,
+    GGML_TYPE_IQ2_S   = 22,
+    GGML_TYPE_IQ4_XS  = 23,
+    GGML_TYPE_I8      = 24,
+    GGML_TYPE_I16     = 25,
+    GGML_TYPE_I32     = 26,
+    GGML_TYPE_I64     = 27,
+    GGML_TYPE_F64     = 28,
+    GGML_TYPE_IQ1_M   = 29,
+    GGML_TYPE_COUNT,
+};
+
 enum GGUF_TYPE {
     GGUF_TYPE_UINT8   = 0,
     GGUF_TYPE_INT8    = 1,
@@ -201,6 +236,75 @@ enum LLM_KV {
     LLM_KV_TOKENIZER_RWKV,
 };
 
+static const std::map<LLM_KV, const char *> LLM_KV_NAMES = {
+        { LLM_KV_GENERAL_ARCHITECTURE,          "general.architecture"                  },
+        { LLM_KV_GENERAL_QUANTIZATION_VERSION,  "general.quantization_version"          },
+        { LLM_KV_GENERAL_ALIGNMENT,             "general.alignment"                     },
+        { LLM_KV_GENERAL_NAME,                  "general.name"                          },
+        { LLM_KV_GENERAL_AUTHOR,                "general.author"                        },
+        { LLM_KV_GENERAL_URL,                   "general.url"                           },
+        { LLM_KV_GENERAL_DESCRIPTION,           "general.description"                   },
+        { LLM_KV_GENERAL_LICENSE,               "general.license"                       },
+        { LLM_KV_GENERAL_SOURCE_URL,            "general.source.url"                    },
+        { LLM_KV_GENERAL_SOURCE_HF_REPO,        "general.source.huggingface.repository" },
+
+        { LLM_KV_VOCAB_SIZE,                    "%s.vocab_size"            },
+        { LLM_KV_CONTEXT_LENGTH,                "%s.context_length"        },
+        { LLM_KV_EMBEDDING_LENGTH,              "%s.embedding_length"      },
+        { LLM_KV_BLOCK_COUNT,                   "%s.block_count"           },
+        { LLM_KV_FEED_FORWARD_LENGTH,           "%s.feed_forward_length"   },
+        { LLM_KV_USE_PARALLEL_RESIDUAL,         "%s.use_parallel_residual" },
+        { LLM_KV_TENSOR_DATA_LAYOUT,            "%s.tensor_data_layout"    },
+        { LLM_KV_EXPERT_COUNT,                  "%s.expert_count"          },
+        { LLM_KV_EXPERT_USED_COUNT,             "%s.expert_used_count"     },
+        { LLM_KV_POOLING_TYPE ,                 "%s.pooling_type"          },
+        { LLM_KV_LOGIT_SCALE,                   "%s.logit_scale"           },
+
+        { LLM_KV_ATTENTION_HEAD_COUNT,          "%s.attention.head_count"             },
+        { LLM_KV_ATTENTION_HEAD_COUNT_KV,       "%s.attention.head_count_kv"          },
+        { LLM_KV_ATTENTION_MAX_ALIBI_BIAS,      "%s.attention.max_alibi_bias"         },
+        { LLM_KV_ATTENTION_CLAMP_KQV,           "%s.attention.clamp_kqv"              },
+        { LLM_KV_ATTENTION_KEY_LENGTH,          "%s.attention.key_length"             },
+        { LLM_KV_ATTENTION_VALUE_LENGTH,        "%s.attention.value_length"           },
+        { LLM_KV_ATTENTION_LAYERNORM_EPS,       "%s.attention.layer_norm_epsilon"     },
+        { LLM_KV_ATTENTION_LAYERNORM_RMS_EPS,   "%s.attention.layer_norm_rms_epsilon" },
+        { LLM_KV_ATTENTION_CAUSAL,              "%s.attention.causal"                 },
+
+        { LLM_KV_ROPE_DIMENSION_COUNT,          "%s.rope.dimension_count"                 },
+        { LLM_KV_ROPE_FREQ_BASE,                "%s.rope.freq_base"                       },
+        { LLM_KV_ROPE_SCALE_LINEAR,             "%s.rope.scale_linear"                    },
+        { LLM_KV_ROPE_SCALING_TYPE,             "%s.rope.scaling.type"                    },
+        { LLM_KV_ROPE_SCALING_FACTOR,           "%s.rope.scaling.factor"                  },
+        { LLM_KV_ROPE_SCALING_ORIG_CTX_LEN,     "%s.rope.scaling.original_context_length" },
+        { LLM_KV_ROPE_SCALING_FINETUNED,        "%s.rope.scaling.finetuned"               },
+
+        { LLM_KV_SPLIT_NO,                      "split.no"            },
+        { LLM_KV_SPLIT_COUNT,                   "split.count"         },
+        { LLM_KV_SPLIT_TENSORS_COUNT,           "split.tensors.count" },
+
+        { LLM_KV_SSM_CONV_KERNEL,               "%s.ssm.conv_kernel"    },
+        { LLM_KV_SSM_INNER_SIZE,                "%s.ssm.inner_size"     },
+        { LLM_KV_SSM_STATE_SIZE,                "%s.ssm.state_size"     },
+        { LLM_KV_SSM_TIME_STEP_RANK,            "%s.ssm.time_step_rank" },
+
+        { LLM_KV_TOKENIZER_MODEL,               "tokenizer.ggml.model"              },
+        { LLM_KV_TOKENIZER_LIST,                "tokenizer.ggml.tokens"             },
+        { LLM_KV_TOKENIZER_TOKEN_TYPE,          "tokenizer.ggml.token_type"         },
+        { LLM_KV_TOKENIZER_TOKEN_TYPE_COUNT,    "tokenizer.ggml.token_type_count"   },
+        { LLM_KV_TOKENIZER_SCORES,              "tokenizer.ggml.scores"             },
+        { LLM_KV_TOKENIZER_MERGES,              "tokenizer.ggml.merges"             },
+        { LLM_KV_TOKENIZER_BOS_ID,              "tokenizer.ggml.bos_token_id"       },
+        { LLM_KV_TOKENIZER_EOS_ID,              "tokenizer.ggml.eos_token_id"       },
+        { LLM_KV_TOKENIZER_UNK_ID,              "tokenizer.ggml.unknown_token_id"   },
+        { LLM_KV_TOKENIZER_SEP_ID,              "tokenizer.ggml.seperator_token_id" },
+        { LLM_KV_TOKENIZER_PAD_ID,              "tokenizer.ggml.padding_token_id"   },
+        { LLM_KV_TOKENIZER_ADD_BOS,             "tokenizer.ggml.add_bos_token"      },
+        { LLM_KV_TOKENIZER_ADD_EOS,             "tokenizer.ggml.add_eos_token"      },
+        { LLM_KV_TOKENIZER_ADD_PREFIX,          "tokenizer.ggml.add_space_prefix"   },
+        { LLM_KV_TOKENIZER_HF_JSON,             "tokenizer.huggingface.json"        },
+        { LLM_KV_TOKENIZER_RWKV,                "tokenizer.rwkv.world"              },
+};
+
 static const std::map<LLM_ARCH, std::map<LLM_TENSOR, std::string>> LLM_TENSOR_NAMES = {
         {
                 LLM_ARCH_LLAMA,
@@ -248,10 +352,96 @@ static const std::map<LLM_ARCH, std::map<LLM_TENSOR, std::string>> LLM_TENSOR_NA
         // TODO add more llm model
 };
 
+
+enum llama_vocab_type {
+    LLAMA_VOCAB_TYPE_NONE = 0, // For models without vocab
+    LLAMA_VOCAB_TYPE_SPM  = 1, // LLaMA tokenizer based on byte-level BPE with byte fallback
+    LLAMA_VOCAB_TYPE_BPE  = 2, // GPT-2 tokenizer based on byte-level BPE
+    LLAMA_VOCAB_TYPE_WPM  = 3, // BERT tokenizer based on WordPiece
+};
+
+// note: these values should be synchronized with ggml_rope
+// TODO: maybe move this enum to ggml.h (ggml_rope_type)
+enum llama_rope_type {
+    LLAMA_ROPE_TYPE_NONE = -1,
+    LLAMA_ROPE_TYPE_NORM =  0,
+    LLAMA_ROPE_TYPE_NEOX =  2,
+    LLAMA_ROPE_TYPE_GLM  =  4,
+};
+
+enum llama_token_type {
+    LLAMA_TOKEN_TYPE_UNDEFINED    = 0,
+    LLAMA_TOKEN_TYPE_NORMAL       = 1,
+    LLAMA_TOKEN_TYPE_UNKNOWN      = 2,
+    LLAMA_TOKEN_TYPE_CONTROL      = 3,
+    LLAMA_TOKEN_TYPE_USER_DEFINED = 4,
+    LLAMA_TOKEN_TYPE_UNUSED       = 5,
+    LLAMA_TOKEN_TYPE_BYTE         = 6,
+};
+
+// model file types
+enum llama_ftype {
+    LLAMA_FTYPE_ALL_F32              = 0,
+    LLAMA_FTYPE_MOSTLY_F16           = 1,  // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q4_0          = 2,  // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q4_1          = 3,  // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q4_1_SOME_F16 = 4,  // tok_embeddings.weight and output.weight are F16
+    // LLAMA_FTYPE_MOSTLY_Q4_2       = 5,  // support has been removed
+    // LLAMA_FTYPE_MOSTLY_Q4_3       = 6,  // support has been removed
+    LLAMA_FTYPE_MOSTLY_Q8_0          = 7,  // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q5_0          = 8,  // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q5_1          = 9,  // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q2_K          = 10, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q3_K_S        = 11, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q3_K_M        = 12, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q3_K_L        = 13, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q4_K_S        = 14, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q4_K_M        = 15, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q5_K_S        = 16, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q5_K_M        = 17, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q6_K          = 18, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_IQ2_XXS       = 19, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_IQ2_XS        = 20, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_Q2_K_S        = 21, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_IQ3_XS        = 22, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_IQ3_XXS       = 23, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_IQ1_S         = 24, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_IQ4_NL        = 25, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_IQ3_S         = 26, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_IQ3_M         = 27, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_IQ2_S         = 28, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_IQ2_M         = 29, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_IQ4_XS        = 30, // except 1d tensors
+    LLAMA_FTYPE_MOSTLY_IQ1_M         = 31, // except 1d tensors
+
+    LLAMA_FTYPE_GUESSED = 1024, // not specified in the model file
+};
+
+enum llama_rope_scaling_type {
+    LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED = -1,
+    LLAMA_ROPE_SCALING_TYPE_NONE        = 0,
+    LLAMA_ROPE_SCALING_TYPE_LINEAR      = 1,
+    LLAMA_ROPE_SCALING_TYPE_YARN        = 2,
+    LLAMA_ROPE_SCALING_TYPE_MAX_VALUE   = LLAMA_ROPE_SCALING_TYPE_YARN,
+};
+
+enum llama_pooling_type {
+    LLAMA_POOLING_TYPE_UNSPECIFIED = -1,
+    LLAMA_POOLING_TYPE_NONE = 0,
+    LLAMA_POOLING_TYPE_MEAN = 1,
+    LLAMA_POOLING_TYPE_CLS  = 2,
+};
+
+enum llama_split_mode {
+    LLAMA_SPLIT_MODE_NONE    = 0, // single GPU
+    LLAMA_SPLIT_MODE_LAYER   = 1, // split layers and KV across GPUs
+    LLAMA_SPLIT_MODE_ROW     = 2, // split rows across GPUs
+};
+
 /// 创建gguf net params
 /// \param path gguf 模型路径
 /// \param allLayerParams
-void readGGUF(const std::string path, std::map<int, std::shared_ptr<LayerParams> >& netParams);
+void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >& netParams);
 
 }
 #endif //MINFER_GGUF_LOADER_H

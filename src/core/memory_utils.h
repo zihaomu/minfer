@@ -13,7 +13,7 @@
 extern "C" {
 #endif
 
-#define M_MEMORY_ALIGN_DEFAULT 64 // 通用内存对齐到 64 字节
+#define M_MEMORY_ALIGN_DEFAULT 64
 
 /**
  * @brief alloc memory with given size & alignment.

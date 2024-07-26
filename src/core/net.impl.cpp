@@ -24,7 +24,7 @@ Net::NetImpl::~NetImpl()
 void Net::NetImpl::readNet(const std::string path, const std::string modelType)
 {
     // TODO Add model model type supported!
-    std::map<int, std::shared_ptr<LayerParams> > netParams;
+    std::vector<std::shared_ptr<LayerParams> > netParams;
     M_ASSERT(modelType == "gguf" && "Only GGUF model has been supported!");
 
     readGGUF(path, netParams);
@@ -179,26 +179,23 @@ void Net::NetImpl::init()
 }
 
 void Net::NetImpl::createLayerRecurve(int layerIdx, std::vector<int>& isLayerCreated, const std::map<int,
-        std::vector<int> >& layer2Custom,  const std::map<int, std::shared_ptr<LayerParams> >& allLayerParams)
+        std::vector<int> >& layer2Parent, const std::vector<std::shared_ptr<LayerParams> >& allLayerParams)
 {
-    if(isLayerCreated[layerIdx])
+    if (isLayerCreated[layerIdx])
     {
         return;
     }
 
     // create layer's parents first
-    auto it = layer2Custom.find(layerIdx);
-    M_ASSERT(it != layer2Custom.end());
+    auto it = layer2Parent.find(layerIdx);
+    M_ASSERT(it != layer2Parent.end());
 
     for (int i = 0; i < it->second.size(); i++)
     {
-        createLayerRecurve(it->second[i], isLayerCreated, layer2Custom, allLayerParams);
+        createLayerRecurve(it->second[i], isLayerCreated, layer2Parent, allLayerParams);
     }
 
-    auto it2 = allLayerParams.find(layerIdx);
-    M_ASSERT(it2 != allLayerParams.end());
-
-    if (createLayer(it2->second) >= 0)
+    if (createLayer(allLayerParams[layerIdx]) >= 0)
     {
         isLayerCreated[layerIdx] = 1;
     }
@@ -206,43 +203,45 @@ void Net::NetImpl::createLayerRecurve(int layerIdx, std::vector<int>& isLayerCre
 
 // 此函数保证在 allLayerParams乱序情况下，仍然能够让模型从input层一层层创建，从而让后面层的创建滞后于前面的层。
 // 此部分代码有待测试
-void Net::NetImpl::createNet(const std::map<int, std::shared_ptr<LayerParams> >& allLayerParams)
+void Net::NetImpl::createNet(const std::vector<std::shared_ptr<LayerParams> >& allLayerParams)
 {
-    // find all net output node
-
-    // 建立网格，找到谁是谁的消费者
-    std::map<int, std::vector<int> > layer2Custom; // 建立layerid 到消费者的网格
+    // find every layer's parent layer index.
     std::vector<int> outLayerIndex;
-    for (auto it = allLayerParams.begin(); it != allLayerParams.end(); it++)
+    std::map<int, std::vector<int> > layer2Parent; // 建立layer -> parent 的映射
+    for (int i = 0; i < allLayerParams.size(); i++)
     {
-        std::vector<int> currCustom = {};
+        std::vector<int> curParent = {};
+        auto& cur = allLayerParams[i];
 
-        // 如果只有一个输出，只需要找哪些层需要这个输出作为输入就行
-        for (int i = 0; i < it->second->outputIndex.size(); i++)
+        // loop cur layer's input mat, and find the layer index which output these mat.
+        for (int k = 0; k < cur->inputIndex.size(); k++)
         {
-            int currOutIdx = it->second->outputIndex[i];
-            for (auto it2 = allLayerParams.begin(); it2 != allLayerParams.end(); it2++)
+            int currInIdx = allLayerParams[i]->inputIndex[k];
+            for (int j = 0; j < allLayerParams.size(); j++)
             {
-                auto itFind = std::find(it2->second->inputIndex.begin(), it2->second->inputIndex.end(), currOutIdx);
-                if (itFind != it2->second->inputIndex.end())
+                auto itFind = std::find(allLayerParams[j]->outputIndex.begin(), allLayerParams[j]->outputIndex.end(), currInIdx);
+
+                if (itFind != allLayerParams[j]->outputIndex.end())
                 {
-                    currCustom.push_back(it2->first);
+                    curParent.push_back(j);
                 }
             }
         }
 
-        layer2Custom[it->first] = currCustom;
-        if (currCustom.size() == 0)
+        layer2Parent[i] = curParent;
+        if (cur->type == Output)
         {
-            outLayerIndex.push_back(it->first);
+            outLayerIndex.push_back(i);
         }
     }
+
+    M_ASSERT(outLayerIndex.size() > 0 && "Model is broken, it does not have output!!");
 
     std::vector<int> isLayerCreated(allLayerParams.size(), 0);
     // 递归的调用createLayerParents，建立是否创建表格。
     for (int i = 0; i < outLayerIndex.size(); i++)
     {
-        createLayerRecurve(outLayerIndex[i], isLayerCreated, layer2Custom, allLayerParams);
+        createLayerRecurve(outLayerIndex[i], isLayerCreated, layer2Parent, allLayerParams);
     }
 }
 
@@ -283,11 +282,7 @@ int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
     {
         int inputId = param->inputIndex[i];
         Mat* m = getMat(inputId);
-        if (!m)
-        {
-            // The input Mat has not been created.
-            M_ERROR("The input Mat has not been created!");
-        }
+        M_ASSERT(m && "The input Mat has not been created!");
         inps[i] = m;
     }
 

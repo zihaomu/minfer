@@ -37,7 +37,6 @@ public:
 private:
     std::shared_ptr<Allocator::AllocatorImpl> memoryAllocatorCPUImpl;
     std::shared_ptr<Allocator> memoryAllocatorCPU;
-
 };
 
 }

@@ -28,7 +28,9 @@ include_directories(
 )
 
 FILE(GLOB_RECURSE M_Core_SRC
-        ${CMAKE_CURRENT_LIST_DIR}/src/core/*.cpp)
+        ${CMAKE_CURRENT_LIST_DIR}/src/core/*.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/src/core/gguf_mode/*.cpp
+    )
 
 add_library(M_Core OBJECT ${M_Core_SRC})
 list(APPEND M_OBJECTS_TO_LINK $<TARGET_OBJECTS:M_Core>)

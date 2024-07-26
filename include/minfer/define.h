@@ -29,6 +29,8 @@
 #define M_ERROR(format, ...) printf(format, ##__VA_ARGS__)
 #endif
 
+#define M_PAD(x, n) (((x) + (n) - 1) & ~((n) - 1))
+
 #define M_ASSERT(x)                                            \
     {                                                            \
         int res = (x);                                           \

@@ -14,6 +14,7 @@ namespace minfer
 {
 
 typedef unsigned char uchar;
+typedef std::vector<int> MatShape;
 #define MAT_MAX_DIM 8
 class MatAllocator;
 struct MatData;
@@ -145,6 +146,8 @@ public:
 
     // print the mat value and shape.
     void print(int len = -1) const;
+
+    MatShape shape() const;
 
     bool empty() const;
 

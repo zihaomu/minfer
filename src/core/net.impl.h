@@ -46,13 +46,13 @@ public:
 
     int createLayer(std::shared_ptr<LayerParams> param);
 
-    void createNet(const std::map<int, std::shared_ptr<LayerParams> >& allLayerParams);
+    void createNet(const std::vector<std::shared_ptr<LayerParams> >& allLayerParams);
 
     void init(); // 初始化之后，调用系统中已经注册好的全局Backend变量。
 
 private:
     void createLayerRecurve(int layerIdx, std::vector<int>& isLayerCreated, const std::map<int,
-            std::vector<int> >& layer2Custom,  const std::map<int, std::shared_ptr<LayerParams> >& allLayerParams);
+            std::vector<int> >& layer2Parent, const std::vector<std::shared_ptr<LayerParams> >& allLayerParams);
 
     Mat* getMat(const int matIdx);
     void getMats(const std::vector<int> matsIdx, std::vector<Mat*>& mats);

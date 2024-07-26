@@ -17,7 +17,7 @@ Layer::Layer()
 Layer::Layer(std::shared_ptr<LayerParams> param)
 {
     layerId = -1;
-    layerName = param->name;
+//    layerName = param->name;
     layerType = param->type;
 }
 
@@ -60,7 +60,7 @@ void Layer::getBasicInfo(const std::shared_ptr<LayerParams> param)
 {
     layerId = param->layerId;
     layerType = param->type;
-    layerName = param->name;
+//    layerName = param->name;
 }
 
 }

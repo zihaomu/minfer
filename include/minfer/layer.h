@@ -17,11 +17,27 @@ enum LayerType {
     UnSupported = -1,
     Input = 0, // input layer only has the output Mat
     Output = 1, // output layer only has the input Mat
-    LayerNormal,
-    Attention,
-    FFN,
     CONVOLUTION,
     Add,
+
+    // llm layer
+    Embedding,
+    RMSNorm,
+    RoPe,
+    Softmax,
+    FFN,
+    Linear,
+    Attention,
+    LayerNorm,
+};
+
+enum ActivateType {
+    UNKONW = -1,
+    RELU = 0,
+    SILU = 1,
+    GELU = 2,
+    SWISH = 3,
+
 };
 
 // 这里是否应当包含模型参数信息？
@@ -31,16 +47,70 @@ class LayerParams
 {
 public:
     LayerParams()
-    :layerId(-1), name(), type(UnSupported), inputIndex({}), outputIndex({})
+    :type(LayerType::UnSupported), inputIndex({}), outputIndex({})
     {}
-    LayerParams(int _layerId, std::string _name, LayerType _type, std::vector<int> _inputIndex, std::vector<int> _outputIndex)
-    :layerId(_layerId), name(_name), type(_type), inputIndex(_inputIndex), outputIndex(_outputIndex)
+
+    LayerParams(LayerType _type, std::vector<int> _inputIndex, std::vector<int> _outputIndex)
+    :type(_type), inputIndex(_inputIndex), outputIndex(_outputIndex)
     {}
-    int layerId = -1;
-    std::string name;
+
+//    LayerParams(LayerType _type, std::vector<int> _inputIndex, std::vector<int> _outputIndex)
+//    :type(_type), inputIndex(_inputIndex), outputIndex(_outputIndex)
+//    {}
+
+//    int layerId = -1;               // It will be set
     LayerType type;
     std::vector<int> inputIndex;
     std::vector<int> outputIndex;
+    std::vector<Mat> weights;
+};
+
+// 卷积的参数
+class ConvLayerParams : public LayerParams
+{
+public:
+
+};
+
+// Attention参数
+class AttentionLayerParams : public LayerParams
+{
+public:
+    AttentionLayerParams(LayerType _type, std::vector<int> _inputIndex, std::vector<int> _outputIndex, int _head_count, int head_count_kv, Mat _q, Mat _k, Mat _v, Mat _out)
+    :head_count(_head_count), head_count_kv(_head_count), q(_q), k(_k), v(_v), out(_out)
+    {
+        type = _type;
+        inputIndex = _inputIndex;
+        outputIndex = outputIndex;
+    }
+
+    int head_count;    // num_attention_heads
+    int head_count_kv; // num_key_value_heads, the flag of Grouped Query Attention(GQA), if head_count_kv == head_count, the model will use Multi Head Attention(QHA), if head_count_kv==1, the model will use Multi Query Attention(MQA)
+
+    Mat q;// 此处使用的是指定内存的
+    Mat k;
+    Mat v;
+    Mat out;
+    int d_k;         // 特征长度
+    int head_num;    // 头个数
+    int head_kv;
+    int d_model;     // d_model / head_num
+};
+
+class FeedForwardLayerParams : public LayerParams
+{
+public:
+    FeedForwardLayerParams(LayerType _type, std::vector<int> _inputIndex, std::vector<int> _outputIndex, ActivateType _actType, Mat _up, Mat _down)
+    : actType(_actType), up(_up), down(_down)
+    {
+        type = _type;
+        inputIndex = _inputIndex;
+        outputIndex = outputIndex;
+    }
+
+    ActivateType actType;
+    Mat up;
+    Mat down;
 };
 
 // layer 层抽象

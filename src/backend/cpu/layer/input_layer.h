@@ -5,7 +5,7 @@
 #ifndef MINFER_INPUT_LAYER_H
 #define MINFER_INPUT_LAYER_H
 
-#include "minfer/layer.h"
+#include "common_layer.h"
 
 namespace minfer {
 

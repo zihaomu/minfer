@@ -23,7 +23,7 @@ int Net::createLayer(std::shared_ptr<LayerParams> param)
     return impl->createLayer(param);
 }
 
-void Net::createNet(const std::map<int, std::shared_ptr<LayerParams>> &netParams)
+void Net::createNet(const std::vector<std::shared_ptr<LayerParams> > &netParams)
 {
     M_ASSERT(impl != nullptr);
     return impl->createNet(netParams);

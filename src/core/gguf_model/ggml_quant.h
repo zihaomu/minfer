@@ -9,6 +9,7 @@
 #include <vector>
 #include <map>
 #include "minfer/net.h"
+#include "gguf_loader.h"
 
 namespace minfer {
 
@@ -26,41 +27,6 @@ typedef uint32_t ggml_half2;
 typedef uint16_t ggml_fp16_t;
 
 // Currently, we only support partial llama.cpp quantized data type.
-
-// quantized type
-enum GGML_TYPE {
-    GGML_TYPE_F32     = 0,
-    GGML_TYPE_F16     = 1,
-    GGML_TYPE_Q4_0    = 2, // supported
-    GGML_TYPE_Q4_1    = 3, //
-    // GGML_TYPE_Q4_2 = 4, support has been removed
-    // GGML_TYPE_Q4_3 = 5, support has been removed
-    GGML_TYPE_Q5_0    = 6,
-    GGML_TYPE_Q5_1    = 7,
-    GGML_TYPE_Q8_0    = 8,
-    GGML_TYPE_Q8_1    = 9,
-    GGML_TYPE_Q2_K    = 10,
-    GGML_TYPE_Q3_K    = 11,
-    GGML_TYPE_Q4_K    = 12,
-    GGML_TYPE_Q5_K    = 13,
-    GGML_TYPE_Q6_K    = 14,
-    GGML_TYPE_Q8_K    = 15,
-    GGML_TYPE_IQ2_XXS = 16,
-    GGML_TYPE_IQ2_XS  = 17,
-    GGML_TYPE_IQ3_XXS = 18,
-    GGML_TYPE_IQ1_S   = 19,
-    GGML_TYPE_IQ4_NL  = 20,
-    GGML_TYPE_IQ3_S   = 21,
-    GGML_TYPE_IQ2_S   = 22,
-    GGML_TYPE_IQ4_XS  = 23,
-    GGML_TYPE_I8      = 24,
-    GGML_TYPE_I16     = 25,
-    GGML_TYPE_I32     = 26,
-    GGML_TYPE_I64     = 27,
-    GGML_TYPE_F64     = 28,
-    GGML_TYPE_IQ1_M   = 29,
-    GGML_TYPE_COUNT,
-};
 
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Define different quantized type >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 #define QK4_0 32
@@ -354,28 +320,28 @@ static const ggml_type_traits_t typeTraits[GGML_TYPE_COUNT] = {
                 .vec_dot_type             = GGML_TYPE_Q8_K,
                 .nrows                    = 1,
         },
-        [GGML_TYPE_IQ4_NL] = {
-                .type_name                = "iq4_nl",
-                .blck_size                = QK4_NL,
-                .is_quantized             = true,
-                .vec_dot_type             = GGML_TYPE_Q8_0,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_IQ4_XS] = {
-                .type_name                = "iq4_xs",
-#if QK_K == 64
-                .blck_size                = QK4_NL,
-#else
-                .blck_size                = QK_K,
-#endif
-                .is_quantized             = true,
-#if QK_K == 64
-                .vec_dot_type             = GGML_TYPE_Q8_0,
-#else
-                .vec_dot_type             = GGML_TYPE_Q8_K,
-#endif
-                .nrows                    = 1,
-        },
+//        [GGML_TYPE_IQ4_NL] = {
+//                .type_name                = "iq4_nl",
+//                .blck_size                = QK4_NL,
+//                .is_quantized             = true,
+//                .vec_dot_type             = GGML_TYPE_Q8_0,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_IQ4_XS] = {
+//                .type_name                = "iq4_xs",
+//#if QK_K == 64
+//                .blck_size                = QK4_NL,
+//#else
+//                .blck_size                = QK_K,
+//#endif
+//                .is_quantized             = true,
+//#if QK_K == 64
+//                .vec_dot_type             = GGML_TYPE_Q8_0,
+//#else
+//                .vec_dot_type             = GGML_TYPE_Q8_K,
+//#endif
+//                .nrows                    = 1,
+//        },
         [GGML_TYPE_Q8_K] = {
                 .type_name                = "q8_K",
                 .blck_size                = QK_K,
@@ -383,8 +349,11 @@ static const ggml_type_traits_t typeTraits[GGML_TYPE_COUNT] = {
         }
 };
 
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Common function  >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Define quantized and de-quantized func  >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Compute function  >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 }
 #endif //MINFER_GGML_QUANT_H

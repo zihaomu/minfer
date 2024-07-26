@@ -10,6 +10,7 @@
 #include <iostream>
 #include <fstream>
 #include <stdint.h>
+#include <inttypes.h>
 
 #ifdef __has_include
 #if __has_include(<unistd.h>)
@@ -27,254 +28,12 @@
 #include "gguf_loader.h"
 
 #include "../memory_utils.h"
-#include "ggml.h"
+#include "ggml_quant.h"
+#include "gguf_utils.h"
 
 namespace minfer
 {
-#define GGML_MAX_NAME           64
-#define GGML_MAX_DIMS           4
-#define GGUF_DEFAULT_ALIGNMENT 32
-//>>>>>>>>>>>>>>>>>>>>>> common  <<<<<<<<<<<<<<<<<<<<<<<<<<<<
-
-#if defined(_MSC_VER)
-#pragma warning(disable: 4244 4267) // possible loss of data
-#endif
-
-#ifdef __GNUC__
-#ifdef __MINGW32__
-#define LLAMA_ATTRIBUTE_FORMAT(...) __attribute__((format(gnu_printf, __VA_ARGS__)))
-#else
-#define LLAMA_ATTRIBUTE_FORMAT(...) __attribute__((format(printf, __VA_ARGS__)))
-#endif
-#else
-#define LLAMA_ATTRIBUTE_FORMAT(...)
-#endif
-
-LLAMA_ATTRIBUTE_FORMAT(1, 2)
-static std::string format(const char * fmt, ...) {
-    va_list ap;
-    va_list ap2;
-    va_start(ap, fmt);
-    va_copy(ap2, ap);
-    int size = vsnprintf(NULL, 0, fmt, ap);
-    M_ASSERT(size >= 0 && size < INT_MAX); // NOLINT
-    std::vector<char> buf(size + 1);
-    int size2 = vsnprintf(buf.data(), size + 1, fmt, ap2);
-    M_ASSERT(size2 == size);
-    va_end(ap2);
-    va_end(ap);
-    return std::string(buf.data(), size);
-}
-
-#define GGUF_MAGIC "GGUF"
-
-//>>>>>>>>>>>>>>>>>>>>>> GGUF common  <<<<<<<<<<<<<<<<<<<<<<<<<<<<
-struct GGUF_header
-{
-    char magic[4];       // GGUF
-
-    uint32_t version;
-    uint64_t n_tensors; // kv tensor number, GGUV V2
-    uint64_t n_kv;      // kv number
-};
-
-struct GGUF_str {
-    uint64_t n; // length of string, GGUFv2
-    char* data; // point of data.
-};
-
-static const size_t GGUF_TYPE_SIZE[GGUF_TYPE_COUNT] = {
-        [GGUF_TYPE_UINT8]   = sizeof(uint8_t),
-        [GGUF_TYPE_INT8]    = sizeof(int8_t),
-        [GGUF_TYPE_UINT16]  = sizeof(uint16_t),
-        [GGUF_TYPE_INT16]   = sizeof(int16_t),
-        [GGUF_TYPE_UINT32]  = sizeof(uint32_t),
-        [GGUF_TYPE_INT32]   = sizeof(int32_t),
-        [GGUF_TYPE_FLOAT32] = sizeof(float),
-        [GGUF_TYPE_BOOL]    = sizeof(bool),
-        [GGUF_TYPE_STRING]  = sizeof(struct GGUF_str),
-        [GGUF_TYPE_UINT64]  = sizeof(uint64_t),
-        [GGUF_TYPE_INT64]   = sizeof(int64_t),
-        [GGUF_TYPE_FLOAT64] = sizeof(double),
-        [GGUF_TYPE_ARRAY]   = 0, // undefined
-};
-
-static const char * GGUF_TYPE_NAME[GGUF_TYPE_COUNT] = {
-        [GGUF_TYPE_UINT8]   = "u8",
-        [GGUF_TYPE_INT8]    = "i8",
-        [GGUF_TYPE_UINT16]  = "u16",
-        [GGUF_TYPE_INT16]   = "i16",
-        [GGUF_TYPE_UINT32]  = "u32",
-        [GGUF_TYPE_INT32]   = "i32",
-        [GGUF_TYPE_FLOAT32] = "f32",
-        [GGUF_TYPE_BOOL]    = "bool",
-        [GGUF_TYPE_STRING]  = "str",
-        [GGUF_TYPE_ARRAY]   = "arr",
-        [GGUF_TYPE_UINT64]  = "u64",
-        [GGUF_TYPE_INT64]   = "i64",
-        [GGUF_TYPE_FLOAT64] = "f64",
-};
-
-static size_t gguf_type_size(enum GGUF_TYPE type) {
-    M_ASSERT(0 <= type && type < GGUF_TYPE_COUNT);
-    return GGUF_TYPE_SIZE[type];
-}
-
-union GGUF_value {
-    uint8_t  uint8;
-    int8_t   int8;
-    uint16_t uint16;
-    int16_t  int16;
-    uint32_t uint32;
-    int32_t  int32;
-    float    float32;
-    uint64_t uint64;
-    int64_t  int64;
-    double   float64;
-    bool     bool_;
-
-    struct GGUF_str str; // string data type,
-
-    struct { // arrray data type
-        GGUF_TYPE type;
-
-        uint64_t n;  // GGUFv2
-        void * data;
-    } arr;
-};
-
-struct GGUF_kv
-{
-    struct GGUF_str key;
-    GGUF_TYPE type;
-    GGUF_value value;
-};
-
-// TODO how to be compatible with the V1 and V2 version
-struct GGUF_tensor_info {
-    struct GGUF_str name;
-
-    uint32_t n_dims;
-    uint64_t  ne[GGML_MAX_NAME];
-
-    GGML_TYPE type;
-
-    uint64_t offset;
-
-    const void* data;
-    size_t size;
-};
-
-// This file keep all the gguf model.
-struct GGUF_context {
-    struct GGUF_header header;
-    struct GGUF_kv *kv;              // pointer to all the kv list. What is kv? kv means the gguf key-value data struct, and the kv list contains all key-value info where the model has.
-    struct GGUF_tensor_info* infos;  // pointer to all tensor info list.
-
-    size_t alignment;
-    size_t offset;     // offset of data from beginning of file.
-    size_t size;       // size of data in bytes
-
-    void* data;
-
-~GGUF_context();
-};
-
-GGUF_context::~GGUF_context()
-{
-    if (this->kv) {
-        // free string memory - not great..
-        for (uint64_t i = 0; i < this->header.n_kv; ++i) {
-            struct GGUF_kv * kv = &this->kv[i];
-
-            if (kv->key.data) {
-                MMemoryFreeAlign(kv->key.data);
-            }
-
-            if (kv->type == GGUF_TYPE_STRING) {
-                if (kv->value.str.data) {
-                    MMemoryFreeAlign(kv->value.str.data);
-                }
-            }
-
-            if (kv->type == GGUF_TYPE_ARRAY)
-            {
-                if (kv->value.arr.data)
-                {
-                    if (kv->value.arr.type == GGUF_TYPE_STRING)
-                    {
-                        for (uint64_t j = 0; j < kv->value.arr.n; ++j)
-                        {
-                            struct GGUF_str * str = &((struct GGUF_str *) kv->value.arr.data)[j];
-                            if (str->data)
-                            {
-                                MMemoryFreeAlign(str->data);
-                            }
-                        }
-                    }
-                    MMemoryFreeAlign(kv->value.arr.data);
-                }
-            }
-        }
-
-        MMemoryFreeAlign(this->kv);
-    }
-
-    if (this->infos)
-    {
-        for (uint64_t i = 0; i < this->header.n_tensors; ++i)
-        {
-            struct GGUF_tensor_info * info = &this->infos[i];
-
-            if (info->name.data)
-            {
-                MMemoryFreeAlign(info->name.data);
-            }
-        }
-
-        MMemoryFreeAlign(this->infos);
-    }
-}
-
 //>>>>>>>>>>>>>>>>>>>>>> LLama common  <<<<<<<<<<<<<<<<<<<<<<<<<<<<
-FILE* gguf_fopen(const char* fname, const char* mode)
-{
-#ifdef _WIN32
-#error "No implement!"
-#else
-    return fopen(fname, mode);
-#endif
-}
-
-// read element with given offset and given length.
-static bool gguf_fread_el(FILE * file, void * dst, size_t size, size_t * offset) {
-    const size_t n = fread(dst, 1, size, file);
-    *offset += n;
-    return n == size;
-}
-
-static bool gguf_fread_str(FILE* file, GGUF_str* p, size_t* offset)
-{
-    p->n    = 0;
-    p->data = NULL;
-
-    bool ok = true;
-
-    ok = ok && gguf_fread_el(file, &p->n, sizeof(p->n), offset);
-
-    // early exit if string length is invalid, prevents from integer overflow
-    if (p->n == SIZE_MAX) {
-        M_ERROR("alloc memory error %s: invalid string length %d!", __func__, (int)p->n);
-        return false;
-    }
-
-    p->data = (char *)MMemoryCallocAlign(p->n + 1, M_MEMORY_ALIGN_DEFAULT);
-
-    ok = ok && gguf_fread_el(file,  p->data, p->n, offset);
-
-    return ok;
-}
-
 struct LLama_file {
     FILE* fp;
     size_t size;
@@ -412,40 +171,8 @@ struct LLama_mmap {
     }
 };
 
-struct LLama_context {
-    struct GGUF_header *header;
-    struct GGUF_kv *kv;
-    struct GGUF_tensor_info *info;
-
-    size_t alignment;
-    size_t offset;
-    size_t size;
-
-    void* data;
-};
-
-enum LLama_model_kv_override_type
-{
-    LLAMA_KV_OVERRIDE_TYPE_INT,
-    LLAMA_KV_OVERRIDE_TYPE_FLOAT,
-    LLAMA_KV_OVERRIDE_TYPE_BOOL,
-};
-
-struct LLama_model_kv_override
-{
-    char key[128];
-    LLama_model_kv_override_type tag;
-
-    // TODO Why the float is double, and the int64_t is int.
-    union {
-        int64_t int_value;
-        double float_value;
-        bool bool_value;
-    };
-};
-
 // sanity check
-static void gguf_tensor_info_sanitize(struct GGUF_tensor_info* info)
+static void gguf_tensor_info_sanitize(struct GGUF_tensor* info)
 {
     M_ASSERT(info->n_dims <= GGML_MAX_DIMS);
     M_ASSERT(0 <= info->type && info->type < GGML_TYPE_COUNT);
@@ -459,115 +186,6 @@ static void gguf_tensor_info_sanitize(struct GGUF_tensor_info* info)
     M_ASSERT(INT64_MAX/info->ne[1] > info->ne[0]);
     M_ASSERT(INT64_MAX/info->ne[2] > info->ne[0]*info->ne[1]);
     M_ASSERT(INT64_MAX/info->ne[3] > info->ne[0]*info->ne[1]*info->ne[2]);
-}
-
-void gguf_free(struct GGUF_context * ctx) {
-    if (ctx == NULL) {
-        return;
-    }
-
-    if (ctx->kv) {
-        // free string memory - not great..
-        for (uint64_t i = 0; i < ctx->header.n_kv; ++i) {
-            struct GGUF_kv * kv = &ctx->kv[i];
-
-            if (kv->key.data) {
-                MMemoryFreeAlign(kv->key.data);
-            }
-
-            if (kv->type == GGUF_TYPE_STRING) {
-                if (kv->value.str.data) {
-                    MMemoryFreeAlign(kv->value.str.data);
-                }
-            }
-
-            if (kv->type == GGUF_TYPE_ARRAY)
-            {
-                if (kv->value.arr.data)
-                {
-                    if (kv->value.arr.type == GGUF_TYPE_STRING)
-                    {
-                        for (uint64_t j = 0; j < kv->value.arr.n; ++j)
-                        {
-                            struct GGUF_str * str = &((struct GGUF_str *) kv->value.arr.data)[j];
-                            if (str->data)
-                            {
-                                MMemoryFreeAlign(str->data);
-                            }
-                        }
-                    }
-                    MMemoryFreeAlign(kv->value.arr.data);
-                }
-            }
-        }
-
-        MMemoryFreeAlign(ctx->kv);
-    }
-
-    if (ctx->infos) {
-        for (uint64_t i = 0; i < ctx->header.n_tensors; ++i) {
-            struct GGUF_tensor_info * info = &ctx->infos[i];
-
-            if (info->name.data) {
-                MMemoryFreeAlign(info->name.data);
-            }
-        }
-
-        MMemoryFreeAlign(ctx->infos);
-    }
-
-    MMemoryFreeAlign(ctx);
-}
-
-const char * gguf_type_name(enum GGUF_TYPE type) {
-    return GGUF_TYPE_NAME[type];
-}
-
-int gguf_get_version(const struct GGUF_context * ctx) {
-    return ctx->header.version;
-}
-
-size_t gguf_get_alignment(const struct GGUF_context * ctx) {
-    return ctx->alignment;
-}
-
-size_t gguf_get_data_offset(const struct GGUF_context * ctx) {
-    return ctx->offset;
-}
-
-void * gguf_get_data(const struct GGUF_context * ctx) {
-    return ctx->data;
-}
-
-int gguf_get_n_kv(const struct GGUF_context * ctx) {
-    return ctx->header.n_kv;
-}
-
-const char * gguf_get_key(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    return ctx->kv[key_id].key.data;
-}
-
-int gguf_find_key(const struct GGUF_context * ctx, const char * key) {
-    // return -1 if key not found
-    int keyfound = -1;
-
-    const int n_kv = gguf_get_n_kv(ctx);
-
-    for (int i = 0; i < n_kv; ++i) {
-        if (strcmp(key, gguf_get_key(ctx, i)) == 0) {
-            keyfound = i;
-            break;
-        }
-    }
-
-    return keyfound;
-}
-
-uint32_t gguf_get_val_u32(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_UINT32);
-    return ctx->kv[key_id].value.uint32;
 }
 
 std::shared_ptr<GGUF_context> gguf_init_from_file(const char* fname)
@@ -610,7 +228,7 @@ std::shared_ptr<GGUF_context> gguf_init_from_file(const char* fname)
             strncpy(ctx->header.magic, magic, 4);
 
             ctx->kv    = nullptr;
-            ctx->infos = nullptr;
+            ctx->tensors = nullptr;
             ctx->data  = nullptr;
 
             ok = ok & gguf_fread_el(file, &ctx->header.version,   sizeof(ctx->header.version),   &offset);
@@ -626,7 +244,7 @@ std::shared_ptr<GGUF_context> gguf_init_from_file(const char* fname)
             }
 
             // sanity-checks to prevent from integer/buffer overflows.
-            ok = ok & (ctx->header.n_tensors < (SIZE_MAX/2)/sizeof(GGUF_tensor_info));
+            ok = ok & (ctx->header.n_tensors < (SIZE_MAX/2)/sizeof(GGUF_tensor));
             ok = ok & (ctx->header.n_kv      < (SIZE_MAX/2)/sizeof(GGUF_kv));
 
             if (!ok)
@@ -733,33 +351,33 @@ std::shared_ptr<GGUF_context> gguf_init_from_file(const char* fname)
 
         // read the tensor infos
         {
-            ctx->infos = (GGUF_tensor_info *)MMemoryAllocAlign(ctx->header.n_tensors * sizeof (GGUF_tensor_info));
+            ctx->tensors = (GGUF_tensor *)MMemoryAllocAlign(ctx->header.n_tensors * sizeof (GGUF_tensor));
 
             for (uint64_t i = 0; i < ctx->header.n_tensors; i++)
             {
-                GGUF_tensor_info* info = &ctx->infos[i];
+                GGUF_tensor* tensors = &ctx->tensors[i];
 
                 // set default dim
                 for (int j = 0; j < GGML_MAX_DIMS; j++)
                 {
-                    info->ne[j] = 1;
+                    tensors->ne[j] = 1;
                 }
 
-                ok = ok && gguf_fread_str(file, &info->name,  &offset);
-                ok = ok && gguf_fread_el(file, &info->n_dims, sizeof(info->n_dims), &offset);
+                ok = ok && gguf_fread_str(file, &tensors->name,  &offset);
+                ok = ok && gguf_fread_el(file, &tensors->n_dims, sizeof(tensors->n_dims), &offset);
 
-                ok = ok && (info->n_dims <= GGML_MAX_DIMS);
+                ok = ok && (tensors->n_dims <= GGML_MAX_DIMS);
 
                 // get right dim
-                for (uint32_t j = 0; j < info->n_dims; ++j)
+                for (uint32_t j = 0; j < tensors->n_dims; ++j)
                 {
-                    ok = ok && gguf_fread_el(file, &info->ne[j], sizeof(info->ne[j]), &offset);
+                    ok = ok && gguf_fread_el(file, &tensors->ne[j], sizeof(tensors->ne[j]), &offset);
                 }
 
-                ok = ok && gguf_fread_el(file, &info->type, sizeof(info->type), &offset);
-                ok = ok && gguf_fread_el(file, &info->offset, sizeof(info->offset), &offset);
+                ok = ok && gguf_fread_el(file, &tensors->type, sizeof(tensors->type), &offset);
+                ok = ok && gguf_fread_el(file, &tensors->offset, sizeof(tensors->offset), &offset);
 
-                gguf_tensor_info_sanitize(info);
+                gguf_tensor_info_sanitize(tensors);
 
                 if (!ok) {
                     fprintf(stderr, "%s: failed to read tensor info\n", __func__);
@@ -798,24 +416,77 @@ std::shared_ptr<GGUF_context> gguf_init_from_file(const char* fname)
 
             for (uint64_t i =0; i < ctx->header.n_tensors; ++i)
             {
-                GGUF_tensor_info* info = &ctx->infos[i];
+                GGUF_tensor* info = &ctx->tensors[i];
 
                 const int64_t ne =
                         (int64_t) info->ne[0] * (int64_t) info->ne[1] *
                         (int64_t) info->ne[2] * (int64_t) info->ne[3];
 
                 // need every data type
-                if (ne % ggml_bloc)
+                if (ne % ggml_blck_size(info->type) != 0)
                 {
-
+                    fprintf(stderr, "%s: tensor '%s' of type %d (%s) number of elements (%" PRId64 ") is not a multiple of block size (%d)\n",
+                            __func__, info->name.data, (int)info->type, ggml_type_name(info->type), ne, ggml_blck_size(info->type));
+                    fclose(file);
+                    ctx.reset();
+                    return NULL;
                 }
+
+                const size_t size_cur = ggml_row_size(info->type, ne);
+                ctx->size += M_PAD(size_cur, ctx->alignment);
             }
         }
 
+        // loading tensor data
+        {
+            // Alloc memory
+            size_t mem_size = M_PAD(ctx->size, GGML_MEM_ALIGN);
+            ctx->data = MMemoryAllocAlign(mem_size);
+
+            // loading all data from binary to data
+            ok = ok & gguf_fread_el(file, ctx->data, ctx->size, &offset);
+
+            // create and loading tensor one by one.
+            for (int i = 0; i < ctx->header.n_tensors; i++)
+            {
+                struct GGUF_tensor* tensor = &ctx->tensors[i];
+
+                size_t data_size = ggml_row_size(tensor->type, tensor->ne[0]);
+                for (int i = 1; i < tensor->n_dims; i++)
+                {
+                    data_size *= tensor->ne[i];
+                }
+
+                tensor->nb[0] = ggml_type_size(tensor->type);
+                tensor->nb[1] = tensor->nb[0] * (tensor->ne[0]/ ggml_blck_size(tensor->type));
+                for (int i = 2; i < GGML_MAX_DIMS; i++)
+                {
+                    tensor->nb[i] = tensor->nb[i-1] * tensor->ne[i-1];
+                }
+
+                tensor->size = data_size;
+                tensor->data = (char *)ctx->data + tensor->offset;
+            }
+        }
+
+        fclose(file);
     }
+
+    return ctx;
 }
 
-struct LLama_loader {
+struct LLM_KV_Impl {
+    LLM_KV_Impl(LLM_ARCH arch) : arch(arch) {}
+
+    LLM_ARCH arch;
+
+    std::string operator()(LLM_KV kv) const {
+        return format(LLM_KV_NAMES.at(kv), LLM_ARCH_NAMES.at(arch));
+    }
+};
+
+struct LLama_loader
+{
     int n_kv      = 0;
     int n_tensors = 0;
     int n_created = 0;
@@ -826,16 +497,24 @@ struct LLama_loader {
     std::unique_ptr<LLama_file> file;
     std::unique_ptr<LLama_mmap> mapping;
 
-    struct LLama_tensor_weights {
+    struct LLama_tensor_weights
+    {
         uint16_t idx; // source file idex
         size_t offs;  // tensor data offset in the original file.
-        void *data;
+        GGUF_tensor* tensor;
         char name[GGML_MAX_NAME];
 
         // TODO here
-        LLama_tensor_weights(uint16_t idx, const char *name)
-                : idx(idx) {
-            // TODO fix
+        LLama_tensor_weights(uint16_t idx, const struct GGUF_context* gguf_ctx)
+                : idx(idx)
+        {
+            tensor = &gguf_ctx->tensors[idx];
+            offs = tensor->offset;
+
+            for (int i = 0; i < GGML_MAX_NAME; i++)
+            {
+                name[i] = tensor->name.data[i];
+            }
         }
     };
 
@@ -844,14 +523,34 @@ struct LLama_loader {
     // kv_overrides is used for user reset model hyper-params for fine-tuning the model effect.
     std::unordered_map<std::string, struct LLama_model_kv_override> kv_overrides;
 
-    struct GGUF_context* meta = NULL;
-//        std::vector<GGML_context* > contexts; //TODO What the context for?
+    std::shared_ptr<GGUF_context> meta;
 
     std::string arch_name;
-    LLM_KV llmKv = LLM_KV(LLM_ARCH_UNKNOWN);
+    LLM_KV_Impl llmKv = LLM_KV_Impl(LLM_ARCH_UNKNOWN);
 
-    // MINFER_LOG_LEVEL
+    template<typename T>
+    bool get_key(const std::string & key, T & result, const bool required = true) {
+        auto it = kv_overrides.find(key);
+
+        const struct llama_model_kv_override * override =
+                it != kv_overrides.end() ? &it->second : nullptr;
+
+        const bool found = GGUFMeta::GKV<T>::set(meta, key, result, override);
+
+        if (required && !found) {
+            throw std::runtime_error(format("key not found in model: %s", key.c_str()));
+        }
+
+        return found;
+    }
+
+    template<typename T>
+    bool get_key(const enum LLM_KV kid, T & result, const bool required = true) {
+        return get_key(LLM_KV(kid), result, required);
+    }
+
     // TODO support the param overrider p argument!
+    // 这个类别只需要做到，能够自由的加载所有参数到内存，以及方便的获取key-value键值对就行。
     LLama_loader(const std::string& fname, bool use_mmap, const struct LLama_model_kv_override* param_overrides_p)
     {
         int trace = 0;
@@ -861,14 +560,35 @@ struct LLama_loader {
             trace = atoi(getenv("MINFER_LOG_LEVEL"));
         }
 
+        // 可以根据我后面的结构来调整此部分的键值设置？
+        if (param_overrides_p != nullptr) {
+            // 根据配置修改一些参数，作为后面的features
+            for (const struct LLama_model_kv_override *p = param_overrides_p; p->key[0] != 0; p++) {
+                kv_overrides.insert({std::string(p->key), *p});
+            }
+        }
+
         char split_path[PATH_MAX] = {0};
-        std::shared_ptr<GGUF_context> ctx = gguf_init_from_file(fname.c_str());
+        meta = gguf_init_from_file(fname.c_str());
     }
 };
 
-void readGGUF(const std::string path, std::map<int, std::shared_ptr<LayerParams> >& netParams)
-{
+template<>
+bool LLama_loader::get_key(const enum LLM_KV kid, enum llama_pooling_type & result, const bool required) {
+    uint32_t tmp;
+    const bool found = get_key(kid, tmp, required);
+    if (found) {
+        result = (enum llama_pooling_type) tmp;
+    } else {
+        result = LLAMA_POOLING_TYPE_UNSPECIFIED;
+    }
+    return found;
+}
 
+void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >& netParams)
+{
+    // different platform has different structure?
+    // how to construct the model from context
 }
 
 }
