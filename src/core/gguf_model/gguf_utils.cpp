@@ -143,7 +143,7 @@ size_t gguf_type_size(enum GGUF_TYPE type) {
     return GGUF_TYPE_SIZE[type];
 }
 
-const char * gguf_type_name(enum GGUF_TYPE type) {
+const char * GGUF_TYPE_name(enum GGUF_TYPE type) {
     return GGUF_TYPE_NAME[type];
 }
 

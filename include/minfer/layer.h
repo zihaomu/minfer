@@ -65,7 +65,39 @@ public:
     std::vector<Mat> weights;
 };
 
-// 卷积的参数
+class RMSNormLayerParams: public LayerParams
+{
+public:
+    RMSNormLayerParams(std::vector<int> _inputIndex, std::vector<int> _outputIndex, int _embd_dim, float _rms_eps, Mat _w)
+    :embd_dim(_embd_dim), rms_eps(_rms_eps), w(_w)
+    {
+        type = LayerType::RMSNorm;
+        inputIndex = _inputIndex;
+        outputIndex = _outputIndex;
+    }
+
+    int embd_dim; // output, embedding feature length.
+    float rms_eps;// RMS norm layer
+    Mat w;        // Embedding layer params
+};
+
+class EmbdLayerParams: public LayerParams
+{
+public:
+    EmbdLayerParams(std::vector<int> _inputIndex, std::vector<int> _outputIndex, int _vocab_dim, int _embd_dim, Mat _w)
+    :vocab_dim(_vocab_dim), embd_dim(_embd_dim), w(_w)
+    {
+        type = LayerType::Embedding;
+        inputIndex = _inputIndex;
+        outputIndex = _outputIndex;
+    }
+
+    int vocab_dim;  // input, the length of vocabulary
+    int embd_dim; // output, embedding feature length.
+    Mat w;        // Embedding layer params
+};
+
+// TODO
 class ConvLayerParams : public LayerParams
 {
 public:
@@ -76,39 +108,55 @@ public:
 class AttentionLayerParams : public LayerParams
 {
 public:
-    AttentionLayerParams(LayerType _type, std::vector<int> _inputIndex, std::vector<int> _outputIndex, int _head_count, int head_count_kv, Mat _q, Mat _k, Mat _v, Mat _out)
-    :head_count(_head_count), head_count_kv(_head_count), q(_q), k(_k), v(_v), out(_out)
+    AttentionLayerParams(std::vector<int> _inputIndex, std::vector<int> _outputIndex, int _embd_dim, int _head_count, int head_count_kv, float _rms_eps,
+                         Mat _norm, Mat _q, Mat _k, Mat _v, Mat _out, Mat _qb, Mat _kb, Mat _vb, Mat _outb)
+    :embd_dim(_embd_dim), head_count(_head_count), head_count_kv(head_count_kv), rms_eps(_rms_eps), norm(_norm),
+    q(_q), k(_k), v(_v), out(_out), qb(_qb), kb(_kb), vb(_vb), outb(_outb)
     {
-        type = _type;
+        type = LayerType::Attention;
         inputIndex = _inputIndex;
-        outputIndex = outputIndex;
+        outputIndex = _outputIndex;
     }
 
+    int embd_dim;      // length of embedding feature
     int head_count;    // num_attention_heads
     int head_count_kv; // num_key_value_heads, the flag of Grouped Query Attention(GQA), if head_count_kv == head_count, the model will use Multi Head Attention(QHA), if head_count_kv==1, the model will use Multi Query Attention(MQA)
+    float rms_eps;
 
+    Mat norm;
     Mat q;// 此处使用的是指定内存的
     Mat k;
     Mat v;
     Mat out;
-    int d_k;         // 特征长度
-    int head_num;    // 头个数
-    int head_kv;
-    int d_model;     // d_model / head_num
+
+    Mat qb;
+    Mat kb;
+    Mat vb;
+    Mat outb;
+
+//    int head_num;    // 头个数
+//    int head_kv;
+//    int d_model;     // d_model / head_num
 };
 
 class FeedForwardLayerParams : public LayerParams
 {
 public:
-    FeedForwardLayerParams(LayerType _type, std::vector<int> _inputIndex, std::vector<int> _outputIndex, ActivateType _actType, Mat _up, Mat _down)
-    : actType(_actType), up(_up), down(_down)
+    FeedForwardLayerParams(std::vector<int> _inputIndex, std::vector<int> _outputIndex, ActivateType _actType,
+                           int _embd_dim, int _ffn_dim, float _rms_eps, Mat _norm, Mat _gate, Mat _up, Mat _down)
+    : actType(_actType), embd_dim(_embd_dim), ffn_dim(_ffn_dim), rms_eps(_rms_eps), norm(_norm), gate(_gate), up(_up), down(_down)
     {
-        type = _type;
+        type = LayerType::FFN;
         inputIndex = _inputIndex;
-        outputIndex = outputIndex;
+        outputIndex = _outputIndex;
     }
 
     ActivateType actType;
+    int embd_dim; // input embedding feature length
+    int ffn_dim;  // ffn feature length
+    float rms_eps;
+    Mat norm;
+    Mat gate;
     Mat up;
     Mat down;
 };

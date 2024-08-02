@@ -485,6 +485,22 @@ struct LLM_KV_Impl {
     }
 };
 
+struct LLama_param
+{
+    uint32_t n_vocab = 0;
+    uint32_t n_ctx_train = 0;
+    uint32_t n_embd = 0;
+    uint32_t n_ff = 0;
+    uint32_t n_head = 0;
+    uint32_t n_layer = 0;
+    uint32_t n_head_kv = 0; // n_head_kv is optional, by default it is equal to n_head
+    uint32_t n_rope_dim_count = 0; //
+    float rope_freq_base_train = 10000.f;
+
+    // specific model
+    float f_norm_rms_eps = 0.f;
+};
+
 struct LLama_loader
 {
     int n_kv      = 0;
@@ -493,6 +509,8 @@ struct LLama_loader
 
     int64_t n_elements = 0;
     size_t n_bytes = 0;
+
+    LLama_param params;
 
     std::unique_ptr<LLama_file> file;
     std::unique_ptr<LLama_mmap> mapping;
@@ -518,8 +536,6 @@ struct LLama_loader
         }
     };
 
-    std::vector<LLama_tensor_weights> weights;
-
     // kv_overrides is used for user reset model hyper-params for fine-tuning the model effect.
     std::unordered_map<std::string, struct LLama_model_kv_override> kv_overrides;
 
@@ -528,14 +544,43 @@ struct LLama_loader
     std::string arch_name;
     LLM_KV_Impl llmKv = LLM_KV_Impl(LLM_ARCH_UNKNOWN);
 
+    LLM_ARCH get_arch()
+    {
+        return llmKv.arch;
+    }
+
+    template<typename T>
+    typename std::enable_if<std::is_integral<T>::value, bool>::type
+    get_arr_n(const std::string & key, T & result, const bool required = true) {
+        const int kid = gguf_find_key(meta.get(), key.c_str());
+
+        if (kid < 0) {
+            if (required) {
+                throw std::runtime_error(format("key not found in model: %s", key.c_str()));
+            }
+            return false;
+        }
+
+        struct GGUFMeta::ArrayInfo arr_info =
+                GGUFMeta::GKV<GGUFMeta::ArrayInfo>::get_kv(meta.get(), kid);
+
+        result = arr_info.length;
+        return true;
+    }
+
+    template<typename T>
+    typename std::enable_if<std::is_integral<T>::value, bool>::type
+    get_arr_n(const enum LLM_KV kid, T & result, const bool required = true) {
+        return get_arr_n(llmKv(kid), result, required);
+    }
+
     template<typename T>
     bool get_key(const std::string & key, T & result, const bool required = true) {
         auto it = kv_overrides.find(key);
 
-        const struct llama_model_kv_override * override =
+        const struct LLama_model_kv_override * override =
                 it != kv_overrides.end() ? &it->second : nullptr;
-
-        const bool found = GGUFMeta::GKV<T>::set(meta, key, result, override);
+        const bool found = GGUFMeta::GKV<T>::set(meta.get(), key, result, override);
 
         if (required && !found) {
             throw std::runtime_error(format("key not found in model: %s", key.c_str()));
@@ -546,7 +591,61 @@ struct LLama_loader
 
     template<typename T>
     bool get_key(const enum LLM_KV kid, T & result, const bool required = true) {
-        return get_key(LLM_KV(kid), result, required);
+        return get_key(llmKv(kid), result, required);
+    }
+
+    GGUF_tensor* get_tensor(const std::string& name)
+    {
+        M_ASSERT(meta && "meta is empty!!");
+        int n_tensors = gguf_get_n_tensors(meta.get());
+
+        // create Mat based on tensor info
+        for (int i = 0; i < n_tensors; i++)
+        {
+            auto& t = meta->tensors[i];
+            if (std::strcmp(name.c_str(), t.name.data) == 0)
+            {
+                return &t;
+            }
+        }
+        return nullptr;
+    }
+
+    Mat create_mat(const std::string& name, bool required = true)
+    {
+        Mat m;
+        M_ASSERT(meta && "meta is empty!!");
+        GGUF_tensor* t = get_tensor(name);
+        if (!t)
+        {
+            if (required)
+                M_ERROR("Can not found tensor with name = %s !", name.c_str());
+            else
+                M_PRINT("Can not found tensor with name = %s !", name.c_str());
+            return m;
+        }
+
+        // convert uint64 to int 32
+        std::vector<int> dims(t->n_dims);
+        for (int i = 0; i < dims.size(); i++)
+        {
+            dims[i] = t->ne[i];
+        }
+
+        switch (t->type) {
+            case GGML_TYPE_F32:
+                m = Mat(dims, DT_32F, const_cast<void *>(t->data));
+                break;
+            case GGML_TYPE_F16:
+                m = Mat(dims, DT_16F, const_cast<void *>(t->data));
+                break;
+            case GGML_TYPE_Q8_0:
+                m = Mat(dims, DT_8U, const_cast<void *>(t->data));
+                break;
+            default:
+                M_ERROR("Fail to create mat with type = %d !!", (int )t->type);
+        }
+        return m;
     }
 
     // TODO support the param overrider p argument!
@@ -568,8 +667,28 @@ struct LLama_loader
             }
         }
 
-        char split_path[PATH_MAX] = {0};
         meta = gguf_init_from_file(fname.c_str());
+
+        // get architecture
+        get_key(llmKv(LLM_KV_GENERAL_ARCHITECTURE), arch_name, false);
+        llmKv = LLM_KV_Impl(llm_arch_from_string(arch_name));
+
+        // get params
+        this->get_key(LLM_KV_VOCAB_SIZE, params.n_vocab, false) || this->get_arr_n(LLM_KV_TOKENIZER_LIST, params.n_vocab);
+        this->get_key(LLM_KV_EMBEDDING_LENGTH, params.n_embd);
+        this->get_key(LLM_KV_FEED_FORWARD_LENGTH, params.n_ff);
+        this->get_key(LLM_KV_ATTENTION_HEAD_COUNT, params.n_head);
+
+        params.n_head_kv = params.n_head;
+        this->get_key(LLM_KV_ATTENTION_HEAD_COUNT_KV, params.n_head_kv);
+
+        this->get_key(LLM_KV_BLOCK_COUNT, params.n_layer);
+
+        params.n_rope_dim_count = (params.n_head == 0) ? 0 : params.n_embd / params.n_head;
+        this->get_key(LLM_KV_ROPE_DIMENSION_COUNT, params.n_rope_dim_count, false);
+        M_ASSERT(params.n_rope_dim_count == params.n_embd / params.n_head && "Invalid n_rope_dim_count!");
+
+        this->get_key(LLM_KV_ROPE_FREQ_BASE, params.rope_freq_base_train, false);
     }
 };
 
@@ -585,10 +704,166 @@ bool LLama_loader::get_key(const enum LLM_KV kid, enum llama_pooling_type & resu
     return found;
 }
 
+// helper to handle gguf constants
+// usage:
+//
+//   const auto tn = LLM_TN(LLM_ARCH_LLAMA);
+//
+//   std::string name = tn(LLM_TENSOR_OUTPUT);                     -> "output"
+//   std::string name = tn(LLM_TENSOR_TOKEN_EMBD, "bias");         -> "token_embd.bias"
+//   std::string name = tn(LLM_TENSOR_ATTN_NORM, "weight", 3);     -> "blk.3.attn_norm.weight"
+//
+struct LLM_TN {
+    LLM_TN(LLM_ARCH arch) : arch(arch) {}
+
+    LLM_ARCH arch;
+
+    std::string operator()(LLM_TENSOR tensor) const {
+        if (LLM_TENSOR_NAMES.at(arch).find(tensor) == LLM_TENSOR_NAMES.at(arch).end()) {
+            return "__missing__";
+        }
+        return LLM_TENSOR_NAMES.at(arch).at(tensor);
+    }
+
+    std::string operator()(LLM_TENSOR tensor, const std::string suffix) const {
+        if (LLM_TENSOR_NAMES.at(arch).find(tensor) == LLM_TENSOR_NAMES.at(arch).end()) {
+            return "__missing__";
+        }
+        return LLM_TENSOR_NAMES.at(arch).at(tensor) + "." + suffix;
+    }
+
+    std::string operator()(LLM_TENSOR tensor, int bid) const {
+        if (LLM_TENSOR_NAMES.at(arch).find(tensor) == LLM_TENSOR_NAMES.at(arch).end()) {
+            return "__missing__";
+        }
+        return format(LLM_TENSOR_NAMES.at(arch).at(tensor).c_str(), bid);
+    }
+
+    std::string operator()(LLM_TENSOR tensor, const std::string suffix, int bid) const {
+        if (LLM_TENSOR_NAMES.at(arch).find(tensor) == LLM_TENSOR_NAMES.at(arch).end()) {
+            return "__missing__";
+        }
+        return format(LLM_TENSOR_NAMES.at(arch).at(tensor).c_str(), bid) + "." + suffix;
+    }
+
+    std::string operator()(LLM_TENSOR tensor, const std::string & suffix, int bid, int xid) const {
+        if (LLM_TENSOR_NAMES.at(arch).find(tensor) == LLM_TENSOR_NAMES.at(arch).end()) {
+            return "__missing__";
+        }
+        return format(LLM_TENSOR_NAMES.at(arch).at(tensor).c_str(), bid, xid) + "." + suffix;
+    }
+};
+
 void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >& netParams)
 {
+    netParams.clear();
+
     // different platform has different structure?
     // how to construct the model from context
+
+    LLama_loader loader = LLama_loader(path, false, nullptr);
+    LLM_ARCH arch = loader.get_arch();
+
+    std::cout<<"Arch = "<<LLM_ARCH_NAMES.at(arch)<<std::endl;
+
+    const auto getTensorName = LLM_TN(arch);
+    // construct llama by loader to netParams
+    std::string miss = "__missing__";
+
+    auto& p = loader.params;
+    // parse llama model
+    if (arch == LLM_ARCH_LLAMA)
+    {
+        std::string out;
+
+        // handle tok_embedding
+        Mat embdMat = loader.create_mat(getTensorName(LLM_TENSOR_TOKEN_EMBD, "weight"));
+        M_ASSERT(!embdMat.empty() && "Error when to create llama mat!");
+
+        // set model input
+        netParams.push_back(
+                std::shared_ptr<LayerParams>(new LayerParams(LayerType::Input, {0}, {1}))
+                );
+
+        netParams.push_back(
+                std::shared_ptr<LayerParams>(
+                new EmbdLayerParams({1}, {2}, p.n_vocab, p.n_embd, embdMat)));
+
+        int layer_id = 2;
+        // handle multi attention layer
+        {
+            for (int i = 0; i < loader.params.n_layer; i++)
+            {
+                // get attn Mats
+                Mat attn_norm = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_NORM, "weight", i));
+                Mat wq = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_Q, "weight", i));
+                Mat wk = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_K, "weight", i));
+                Mat wv = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_V, "weight", i));
+                Mat wo = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_OUT, "weight", i));
+
+                // optional bias tensors
+                Mat bq = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_Q, "bias", i), false);
+                Mat bk = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_K, "bias", i), false);
+                Mat bv = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_V, "bias", i), false);
+                Mat bo = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_OUT, "bias", i), false);
+
+                // add Attn layer
+                netParams.push_back(
+                        std::shared_ptr<LayerParams>(new AttentionLayerParams(
+                                {layer_id}, {layer_id + 1}, p.n_embd, p.n_head, p.n_head_kv, p.f_norm_rms_eps, attn_norm, wq, wk, wv, wo,
+                                bq, bk, bv, bo
+                                ))
+                        );
+
+                layer_id ++;
+
+                // get FFN mats
+                Mat ffn_norm = loader.create_mat(getTensorName(LLM_TENSOR_FFN_NORM, "weight", i));
+                Mat ffn_gate = loader.create_mat(getTensorName(LLM_TENSOR_FFN_GATE, "weight", i), false);
+                Mat ffn_down = loader.create_mat(getTensorName(LLM_TENSOR_FFN_DOWN, "weight", i), false);
+                Mat ffn_up = loader.create_mat(getTensorName(LLM_TENSOR_FFN_UP, "weight", i), false);
+
+                // add FFN layer
+                netParams.push_back(
+                        std::shared_ptr<LayerParams>(new FeedForwardLayerParams(
+                                {layer_id}, {layer_id + 1}, ActivateType::SILU, p.n_embd, p.n_ff, p.f_norm_rms_eps,
+                                ffn_norm, ffn_gate, ffn_up, ffn_down
+                                ))
+                        );
+                layer_id++;
+            }
+        }
+
+        // handle output
+        {
+            // create output norm
+            Mat out_norm = loader.create_mat(getTensorName(LLM_TENSOR_OUTPUT_NORM, "weight"));
+            M_ASSERT(!out_norm.empty() && "Error when to create llama mat!");
+
+            netParams.push_back(std::shared_ptr<LayerParams>(
+                    new RMSNormLayerParams({layer_id}, {layer_id + 1}, p.n_embd, p.f_norm_rms_eps, out_norm)));
+
+            layer_id++;
+
+            Mat outEmbd = loader.create_mat(getTensorName(LLM_TENSOR_OUTPUT, "weight"), false);
+
+            // if output is NULL, init from the input tok embed
+            if (outEmbd.empty())
+            {
+                outEmbd = loader.create_mat(getTensorName(LLM_TENSOR_TOKEN_EMBD, "weight"));
+            }
+
+            // create output out-embedding
+            netParams.push_back(std::shared_ptr<LayerParams>(
+                    new EmbdLayerParams({layer_id}, {layer_id + 1}, p.n_vocab, p.n_embd, outEmbd)));
+            layer_id++;
+        }
+
+        // set model output
+        netParams.push_back(
+                std::shared_ptr<LayerParams>(new LayerParams(LayerType::Output, {layer_id}, {layer_id + 1}))
+        );
+    }
 }
 
 }

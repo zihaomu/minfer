@@ -179,7 +179,7 @@ void _setSize(Mat& m, int _dim, const int* _sz)
 
     if (_dim != m.dims)
     {
-        fastFree(m.size.p0); // free first.
+        fastFree(m.size.p0); // free and reset the dim
         m.size.p0 = (int *) fastMalloc((_dim + 1) * sizeof( int)); // one more for dim
         m.size.p = m.size.p0 + 1;
         m.size.p0[0] = _dim;
@@ -292,14 +292,14 @@ Mat::Mat(const Mat& m)
 }
 
 Mat::Mat(int _dims, const int* _sizes, int _type, void* _data)
-:dims(0), data(0), allocator(0), u(0), size(&dims), matType(_type)
+:dims(0), data(0), allocator(0), u(0), size(nullptr), matType(_type)
 {
     data = (uchar*)_data;
     _setSize(*this, _dims, _sizes);
 }
 
 Mat::Mat(const std::vector<int> _sizes, int _type, void* _data)
-:dims(0), data(0), allocator(0), u(0), size(&dims), matType(_type)
+:dims(0), data(0), allocator(0), u(0), size(nullptr), matType(_type)
 {
     data = (uchar*)_data;
     _setSize(*this, _sizes.size(), _sizes.data());

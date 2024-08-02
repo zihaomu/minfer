@@ -258,6 +258,11 @@ int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
     int layerId = lds.size();
     std::shared_ptr<Layer> layer = runtime->createLayer(param);
 
+    if (!layer)
+    {
+        M_ERROR("Fail to create layer instance with type = %d!", (int)param->type);
+    }
+
     // 对输入输出对特殊处理
     // 输入将会在setinput中进行初始化。
     if (param->type == LayerType::Input)
@@ -265,7 +270,7 @@ int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
         inputMatClone.push_back(Mat());
         inputMatId.push_back(param->inputIndex[0]);
         M_ASSERT(param->inputIndex.size() == 1);
-        mats[param->inputIndex[0]] = nullptr;
+        mats[param->inputIndex[0]] = &inputMatClone[inputMatClone.size() - 1];
         inputLayers.push_back(layerId);
         matId2layer[param->inputIndex[0]] = layerId;
     }

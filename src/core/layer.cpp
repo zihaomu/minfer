@@ -58,9 +58,8 @@ void Layer::setId(int id)
 
 void Layer::getBasicInfo(const std::shared_ptr<LayerParams> param)
 {
-    layerId = param->layerId;
+    // layer id was set as layer create time.
     layerType = param->type;
-//    layerName = param->name;
 }
 
 }

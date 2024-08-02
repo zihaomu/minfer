@@ -149,7 +149,7 @@ struct GGUF_tensor {
 
 struct GGUF_context {
     struct GGUF_header header;
-    struct GGUF_kv *kv;              // pointer to all the kv list. What is kv? kv means the gguf key-value data struct, and the kv list contains all key-value info where the model has.
+    struct GGUF_kv *kv;           // pointer to all the kv list. What is kv? kv means the gguf key-value data struct, and the kv list contains all key-value info where the model has.
     struct GGUF_tensor* tensors;  // pointer to all tensor info list.
 
     size_t alignment;
@@ -290,7 +290,7 @@ namespace GGUFMeta {
     template<> struct GKV_Base<ArrayInfo> {
     public:
         static constexpr GGUF_TYPE gt = GGUF_TYPE_ARRAY;
-        ArrayInfo getter(const GGUF_context *ctx, const int k) {
+        static ArrayInfo getter(const GGUF_context *ctx, const int k) {
             return ArrayInfo {
                     gguf_get_arr_type(ctx, k),
                     size_t(gguf_get_arr_n(ctx, k)),
@@ -350,7 +350,7 @@ namespace GGUFMeta {
                 }
                 return true;
             }
-            LLAMA_LOG_WARN("%s: Warning: Bad metadata override type for key '%s', expected %s but got %s\n",
+            M_PRINT("%s: Warning: Bad metadata override type for key '%s', expected %s but got %s\n",
                            __func__, ovrd->key, override_type_to_str(expected_type), override_type_to_str(ovrd->tag));
             return false;
         }

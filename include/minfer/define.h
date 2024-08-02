@@ -29,6 +29,27 @@
 #define M_ERROR(format, ...) printf(format, ##__VA_ARGS__)
 #endif
 
+#ifdef CV_Func
+// keep current value (through OpenCV port file)
+#elif defined __GNUC__ || (defined (__cpluscplus) && (__cpluscplus >= 201103))
+#define CV_Func __func__
+#elif defined __clang__ && (__clang_minor__ * 100 + __clang_major__ >= 305)
+#define CV_Func __func__
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION >= 199901)
+#define CV_Func __func__
+#elif defined _MSC_VER
+#define CV_Func __FUNCTION__
+#elif defined(__INTEL_COMPILER) && (_INTEL_COMPILER >= 600)
+#define CV_Func __FUNCTION__
+#elif defined __IBMCPP__ && __IBMCPP__ >=500
+#define CV_Func __FUNCTION__
+#elif defined __BORLAND__ && (__BORLANDC__ >= 0x550)
+#define CV_Func __FUNC__
+#else
+#define CV_Func "<unknown>"
+#endif
+
+
 #define M_PAD(x, n) (((x) + (n) - 1) & ~((n) - 1))
 
 #define M_ASSERT(x)                                            \
@@ -78,7 +99,8 @@ MU_ERROR("Check failed: %s ==> %s\n", #success, #log); \
 #define M_VERSION_MAJOR 0
 #define M_VERSION_MINOR 0
 #define M_VERSION_PATCH 1
-#define M_VERSION STR(MU_VERSION_MAJOR) "." STR(MU_VERSION_MINOR) "." STR(MU_VERSION_PATCH)
+#define M_VERSION_STATUS   "-dev"
+#define M_VERSION STR(M_VERSION_MAJOR) "." STR(M_VERSION_MINOR) "." STR(M_VERSION_PATCH) M_VERSION_STATUS
 
 // ERROR CODE
 #ifndef M_PI

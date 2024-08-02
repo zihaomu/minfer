@@ -9,5 +9,6 @@
 #include "./minfer/net.h"
 #include "./minfer/utils.h"
 #include "./minfer/define.h"
+#include "./minfer/system.h"
 
 #endif //MINFER_H
