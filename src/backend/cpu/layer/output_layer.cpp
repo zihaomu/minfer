@@ -8,7 +8,7 @@ namespace minfer {
 
 void OutputLayer::init(const std::vector<Mat *> &input, std::vector<Mat *> &output)
 {
-    M_ASSERT(input.size() == output.size() && input.size() == 1);
+    M_Assert(input.size() == output.size() && input.size() == 1);
 
     // 设置同样的shape
     output[0]->setSize(*input[0]);
@@ -16,7 +16,7 @@ void OutputLayer::init(const std::vector<Mat *> &input, std::vector<Mat *> &outp
 
 void OutputLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *> &output)
 {
-    M_ASSERT(input.size() == output.size() && input.size() == 1);
+    M_Assert(input.size() == output.size() && input.size() == 1);
 
     if (output[0]->data != input[0]->data)
     {
@@ -36,7 +36,7 @@ OutputLayer::~OutputLayer()
 
 OutputLayer::OutputLayer(const std::shared_ptr<LayerParams> param)
 {
-    M_ASSERT(param->type == LayerType::Output);
+    M_Assert(param->type == LayerType::Output);
     getBasicInfo(param);
 }
 

@@ -13,7 +13,7 @@ InputLayer::~InputLayer()
 
 void InputLayer::init(const std::vector<Mat *> &input, std::vector<Mat *> &output)
 {
-    M_ASSERT(input.size() == output.size() && input.size() == 1);
+    M_Assert(input.size() == output.size() && input.size() == 1);
 
     // 设置同样的shape
     output[0]->setSize(*input[0]);
@@ -21,7 +21,7 @@ void InputLayer::init(const std::vector<Mat *> &input, std::vector<Mat *> &outpu
 
 void InputLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *> &output)
 {
-    M_ASSERT(input.size() == output.size() && input.size() == 1);
+    M_Assert(input.size() == output.size() && input.size() == 1);
 
     (*input[0]).print();
     if (output[0]->data != input[0]->data)
@@ -38,7 +38,7 @@ void InputLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *> &ou
 
 InputLayer::InputLayer(const std::shared_ptr<LayerParams> param)
 {
-    M_ASSERT(param->type == LayerType::Input);
+    M_Assert(param->type == LayerType::Input);
     getBasicInfo(param);
 }
 

@@ -30,7 +30,7 @@ public:
 
     virtual void release(std::pair<void*, size_t> ptr)
     {
-        M_ASSERT(ptr.second == 0);
+        M_Assert(ptr.second == 0);
         MMemoryFreeAlign(ptr.first);
     }
 };
@@ -57,7 +57,7 @@ void Allocator::release(bool allRelease)
     {
         if (f.second == nullptr)
         {
-            M_ASSERT(mTotalSize >= f.first);
+            M_Assert(mTotalSize >= f.first);
             mTotalSize -= f.first;
         }
     }
@@ -88,7 +88,7 @@ std::pair<void *, size_t> Allocator::alloc(size_t size, size_t align)
     mTotalSize += size;
 
     usedList.insert(std::make_pair(pointer.second, pointer.first));
-    M_ASSERT(pointer.second % align == 0);
+    M_Assert(pointer.second % align == 0);
     return pointer;
 }
 

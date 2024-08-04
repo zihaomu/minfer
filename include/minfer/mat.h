@@ -9,13 +9,15 @@
 #include <assert.h>
 
 #include "define.h"
+#include "system.h"
 
 namespace minfer
 {
 
 typedef unsigned char uchar;
 typedef std::vector<int> MatShape;
-#define MAT_MAX_DIM 8
+#define MAT_MAX_DIM 8 // Max mat dimension
+
 class MatAllocator;
 struct MatData;
 class Mat;

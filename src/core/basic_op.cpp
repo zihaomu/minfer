@@ -1,4 +1,4 @@
-#include "minfer/basic_op.h"
+#include "minfer.h"
 
 namespace minfer
 {

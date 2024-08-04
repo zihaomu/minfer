@@ -7,7 +7,7 @@
 
 using namespace minfer;
 
-TEST(Systemn, log_test)
+TEST(System, log_test)
 {
     EXPECT_THROW({
         try

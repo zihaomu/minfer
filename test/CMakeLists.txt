@@ -23,4 +23,4 @@ target_link_libraries(minfer_test ${M_TARGETS})
 
 # This is so you can do 'make test' to see all your tests run, instead of
 # manually running the executable runUnitTests to see those specific tests.
-add_test(NAME minfer_test COMMAND minfer_test)
+add_test(NAME minfer_test COMMAND `minfer_test`)

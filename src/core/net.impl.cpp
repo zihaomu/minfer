@@ -25,7 +25,7 @@ void Net::NetImpl::readNet(const std::string path, const std::string modelType)
 {
     // TODO Add model model type supported!
     std::vector<std::shared_ptr<LayerParams> > netParams;
-    M_ASSERT(modelType == "gguf" && "Only GGUF model has been supported!");
+    M_Assert(modelType == "gguf" && "Only GGUF model has been supported!");
 
     readGGUF(path, netParams);
 
@@ -37,7 +37,7 @@ void Net::NetImpl::setInput(const Mat input, const int _mIndx)
     int mIndx = _mIndx;
     if (mIndx == -1)
     {
-        M_ASSERT(inputMatId.size() == 1);
+        M_Assert(inputMatId.size() == 1);
         mIndx = inputMatId[0];
     }
 
@@ -47,17 +47,17 @@ void Net::NetImpl::setInput(const Mat input, const int _mIndx)
 
     // Update input Mat pointer.
     auto itLayerId = matId2layer.find(mIndx);
-    M_ASSERT(itLayerId != matId2layer.end());
+    M_Assert(itLayerId != matId2layer.end());
 
     auto& ld = lds[itLayerId->second];
     if (ld.layer->getType() == LayerType::Input)
     {
-        M_ASSERT(ld.inputsIdx.size() == 1);
+        M_Assert(ld.inputsIdx.size() == 1);
 
         ld.inputs[0] = &inputMatClone[index];
 
         auto itM = mats.find(index);
-        M_ASSERT(itM != mats.end());
+        M_Assert(itM != mats.end());
 
         itM->second = &inputMatClone[index];
     }
@@ -76,10 +76,10 @@ Mat Net::NetImpl::forward()
         it->layer->forward(it->inputs, it->outputs);
     }
 
-    M_ASSERT(outputMatId.size() == 1);
+    M_Assert(outputMatId.size() == 1);
 
     Mat* m = this->getMat(outputMatId[0]);
-    M_ASSERT(m && "m can not be empty!");
+    M_Assert(m && "m can not be empty!");
     return *m;
 }
 
@@ -120,7 +120,7 @@ void Net::NetImpl::init()
     for (auto it = mats.begin(); it != mats.end(); it++)
     {
         auto itLy = matId2layer.find(it->first);
-        M_ASSERT(itLy != matId2layer.end());
+        M_Assert(itLy != matId2layer.end());
 
         auto itLd = lds[itLy->second];
 
@@ -168,7 +168,7 @@ void Net::NetImpl::init()
             int outId = it->outputsIdx[i];
             auto it2 = matReleaseAtLayer.find(outId);
 
-            M_ASSERT(it2 != matReleaseAtLayer.end());
+            M_Assert(it2 != matReleaseAtLayer.end());
 
             if (it2->second == it->layerId)
             {
@@ -188,7 +188,7 @@ void Net::NetImpl::createLayerRecurve(int layerIdx, std::vector<int>& isLayerCre
 
     // create layer's parents first
     auto it = layer2Parent.find(layerIdx);
-    M_ASSERT(it != layer2Parent.end());
+    M_Assert(it != layer2Parent.end());
 
     for (int i = 0; i < it->second.size(); i++)
     {
@@ -235,7 +235,7 @@ void Net::NetImpl::createNet(const std::vector<std::shared_ptr<LayerParams> >& a
         }
     }
 
-    M_ASSERT(outLayerIndex.size() > 0 && "Model is broken, it does not have output!!");
+    M_Assert(outLayerIndex.size() > 0 && "Model is broken, it does not have output!!");
 
     std::vector<int> isLayerCreated(allLayerParams.size(), 0);
     // 递归的调用createLayerParents，建立是否创建表格。
@@ -269,14 +269,14 @@ int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
     {
         inputMatClone.push_back(Mat());
         inputMatId.push_back(param->inputIndex[0]);
-        M_ASSERT(param->inputIndex.size() == 1);
+        M_Assert(param->inputIndex.size() == 1);
         mats[param->inputIndex[0]] = &inputMatClone[inputMatClone.size() - 1];
         inputLayers.push_back(layerId);
         matId2layer[param->inputIndex[0]] = layerId;
     }
     else if (param->type == LayerType::Output)
     {
-        M_ASSERT(param->outputIndex.size() == 1);
+        M_Assert(param->outputIndex.size() == 1);
         outputMatId.push_back(param->outputIndex[0]);
         outputLayers.push_back(layerId);
     }
@@ -287,7 +287,7 @@ int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
     {
         int inputId = param->inputIndex[i];
         Mat* m = getMat(inputId);
-        M_ASSERT(m && "The input Mat has not been created!");
+        M_Assert(m && "The input Mat has not been created!");
         inps[i] = m;
     }
 

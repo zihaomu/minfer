@@ -22,33 +22,6 @@ namespace minfer
 #pragma warning(disable: 4244 4267) // possible loss of data
 #endif
 
-#ifdef __GNUC__
-#ifdef __MINGW32__
-#define LLAMA_ATTRIBUTE_FORMAT(...) __attribute__((format(gnu_printf, __VA_ARGS__)))
-#else
-#define LLAMA_ATTRIBUTE_FORMAT(...) __attribute__((format(printf, __VA_ARGS__)))
-#endif
-#else
-#define LLAMA_ATTRIBUTE_FORMAT(...)
-#endif
-
-LLAMA_ATTRIBUTE_FORMAT(1, 2)
-static std::string format(const char * fmt, ...) {
-    va_list ap;
-    va_list ap2;
-    va_start(ap, fmt);
-    va_copy(ap2, ap);
-    int size = vsnprintf(NULL, 0, fmt, ap);
-    M_ASSERT(size >= 0 && size < INT_MAX); // NOLINT
-    std::vector<char> buf(size + 1);
-    int size2 = vsnprintf(buf.data(), size + 1, fmt, ap2);
-    M_ASSERT(size2 == size);
-    va_end(ap2);
-    va_end(ap);
-    return std::string(buf.data(), size);
-}
-
-
 //>>>>>>>>>>>>>>>>>>>>>> GGUF common  <<<<<<<<<<<<<<<<<<<<<<<<<<<<
 struct GGUF_str {
     uint64_t n; // length of string, GGUFv2
@@ -97,7 +70,7 @@ struct GGUF_header
 };
 
 static size_t GGUF_TYPE_size(enum GGUF_TYPE type) {
-    M_ASSERT(0 <= type && type < GGUF_TYPE_COUNT);
+    M_Assert(0 <= type && type < GGUF_TYPE_COUNT);
     return GGUF_TYPE_SIZE[type];
 }
 

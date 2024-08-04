@@ -139,7 +139,7 @@ size_t ggml_row_size(enum GGML_TYPE type, int64_t ne) {
 }
 
 size_t gguf_type_size(enum GGUF_TYPE type) {
-    M_ASSERT(0 <= type && type < GGUF_TYPE_COUNT);
+    M_Assert(0 <= type && type < GGUF_TYPE_COUNT);
     return GGUF_TYPE_SIZE[type];
 }
 
@@ -185,117 +185,117 @@ int gguf_find_key(const struct GGUF_context * ctx, const char * key) {
 
 //>>>>>>>>>>>>>>>>>>>>>> get basic data BEGIN <<<<<<<<<<<<<<<<<<<<<<<<<<<<
 const char * gguf_get_key(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
     return ctx->kv[key_id].key.data;
 }
 
 enum GGUF_TYPE gguf_get_kv_type(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
     return ctx->kv[key_id].type;
 }
 
 enum GGUF_TYPE gguf_get_arr_type(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_ARRAY);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_ARRAY);
     return ctx->kv[key_id].value.arr.type;
 }
 
 const void * gguf_get_arr_data(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_ARRAY);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_ARRAY);
     return ctx->kv[key_id].value.arr.data;
 }
 
 const char * gguf_get_arr_str(const struct GGUF_context * ctx, int key_id, int i) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_ARRAY);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_ARRAY);
     struct GGUF_kv * kv = &ctx->kv[key_id];
     struct GGUF_str * str = &((struct GGUF_str *) kv->value.arr.data)[i];
     return str->data;
 }
 
 int gguf_get_arr_n(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_ARRAY);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_ARRAY);
     return ctx->kv[key_id].value.arr.n;
 }
 
 uint8_t gguf_get_val_u8(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_UINT8);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_UINT8);
     return ctx->kv[key_id].value.uint8;
 }
 
 int8_t gguf_get_val_i8(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_INT8);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_INT8);
     return ctx->kv[key_id].value.int8;
 }
 
 uint16_t gguf_get_val_u16(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_UINT16);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_UINT16);
     return ctx->kv[key_id].value.uint16;
 }
 
 int16_t gguf_get_val_i16(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_INT16);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_INT16);
     return ctx->kv[key_id].value.int16;
 }
 
 uint32_t gguf_get_val_u32(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_UINT32);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_UINT32);
     return ctx->kv[key_id].value.uint32;
 }
 
 int32_t gguf_get_val_i32(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_INT32);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_INT32);
     return ctx->kv[key_id].value.int32;
 }
 
 float gguf_get_val_f32(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_FLOAT32);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_FLOAT32);
     return ctx->kv[key_id].value.float32;
 }
 
 uint64_t gguf_get_val_u64(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_UINT64);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_UINT64);
     return ctx->kv[key_id].value.uint64;
 }
 
 int64_t gguf_get_val_i64(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_INT64);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_INT64);
     return ctx->kv[key_id].value.int64;
 }
 
 double gguf_get_val_f64(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_FLOAT64);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_FLOAT64);
     return ctx->kv[key_id].value.float64;
 }
 
 bool gguf_get_val_bool(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_BOOL);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_BOOL);
     return ctx->kv[key_id].value.bool_;
 }
 
 const char * gguf_get_val_str(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type == GGUF_TYPE_STRING);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type == GGUF_TYPE_STRING);
     return ctx->kv[key_id].value.str.data;
 }
 
 const void * gguf_get_val_data(const struct GGUF_context * ctx, int key_id) {
-    M_ASSERT(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
-    M_ASSERT(ctx->kv[key_id].type != GGUF_TYPE_ARRAY);
-    M_ASSERT(ctx->kv[key_id].type != GGUF_TYPE_STRING);
+    M_Assert(key_id >= 0 && key_id < gguf_get_n_kv(ctx));
+    M_Assert(ctx->kv[key_id].type != GGUF_TYPE_ARRAY);
+    M_Assert(ctx->kv[key_id].type != GGUF_TYPE_STRING);
     return &ctx->kv[key_id].value;
 }
 

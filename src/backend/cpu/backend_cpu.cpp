@@ -8,6 +8,7 @@
 #include "layer/add_layer.h"
 #include "layer/input_layer.h"
 #include "layer/output_layer.h"
+#include "layer/attention_layer.h"
 
 namespace minfer
 {
@@ -48,11 +49,12 @@ void BackendCPU::LayerFactoryCPU::registerAllLayer()
     M_CPU_REGISTER_LAYER(LayerType::Add, AddLayer);
     M_CPU_REGISTER_LAYER(LayerType::Input, InputLayer);
     M_CPU_REGISTER_LAYER(LayerType::Output, OutputLayer);
+    M_CPU_REGISTER_LAYER(LayerType::Attention, AttentionLayer);
 }
 
 std::shared_ptr<Layer> BackendCPU::createLayer(std::shared_ptr<LayerParams> param)
 {
-    M_ASSERT(checkLayerSupported(param))
+    M_Assert(checkLayerSupported(param));
 
     return layerFactory->createLayerInstance(param);
 }

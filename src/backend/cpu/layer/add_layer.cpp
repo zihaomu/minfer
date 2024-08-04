@@ -8,7 +8,7 @@ namespace minfer {
 
 AddLayer::AddLayer(const std::shared_ptr<LayerParams> param)
 {
-    M_ASSERT(param->type == LayerType::Add);
+    M_Assert(param->type == LayerType::Add);
     getBasicInfo(param);
 }
 
@@ -22,8 +22,8 @@ void AddLayer::init(const std::vector<Mat*> &input, std::vector<Mat*> &output)
     // pre check
     inputNum = input.size();
 
-    M_ASSERT(inputNum == 2);
-    M_ASSERT(output.size() == 1);
+    M_Assert(inputNum == 2);
+    M_Assert(output.size() == 1);
 
     // 设置同样的shape
     output[0]->setSize(*input[0]);

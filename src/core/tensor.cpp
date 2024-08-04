@@ -4,6 +4,7 @@
 
 #include "minfer/tensor.h"
 #include "memory_utils.h"
+#include "minfer/system.h"
 
 namespace minfer
 {
@@ -35,7 +36,7 @@ size_t Tensor::total(int start, int end)
 Tensor::Tensor(const std::vector<int> &_shape, minfer::Tensor::DataType type, void *_data)
 : shape(_shape), data(_data), dType(type), mType(HOST_MEMORY)
 {
-    M_ASSERT(type == DT_FLOAT); // TODO to add more DT support for Tensor
+    M_Assert(type == DT_FLOAT); // TODO to add more DT support for Tensor
 
     if (data)
     {

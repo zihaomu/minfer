@@ -57,7 +57,7 @@ struct LLama_file {
 #else
         long ret = std::ftell(fp);
 #endif
-        M_ASSERT(ret != -1); // this really shouldn't fail
+        M_Assert(ret != -1); // this really shouldn't fail
         return (size_t) ret;
     }
 
@@ -68,7 +68,7 @@ struct LLama_file {
 #else
         int ret = std::fseek(fp, (long) offset, whence);
 #endif
-        M_ASSERT(ret == 0); // same
+        M_Assert(ret == 0); // same
     }
 
     // read raw
@@ -174,18 +174,18 @@ struct LLama_mmap {
 // sanity check
 static void gguf_tensor_info_sanitize(struct GGUF_tensor* info)
 {
-    M_ASSERT(info->n_dims <= GGML_MAX_DIMS);
-    M_ASSERT(0 <= info->type && info->type < GGML_TYPE_COUNT);
+    M_Assert(info->n_dims <= GGML_MAX_DIMS);
+    M_Assert(0 <= info->type && info->type < GGML_TYPE_COUNT);
 
     for (uint32_t i = 0; i < info->n_dims; ++i)
     {
-        M_ASSERT(info->ne[i] > 0);
+        M_Assert(info->ne[i] > 0);
     }
 
     // prevent overflow for total number of elements.
-    M_ASSERT(INT64_MAX/info->ne[1] > info->ne[0]);
-    M_ASSERT(INT64_MAX/info->ne[2] > info->ne[0]*info->ne[1]);
-    M_ASSERT(INT64_MAX/info->ne[3] > info->ne[0]*info->ne[1]*info->ne[2]);
+    M_Assert(INT64_MAX/info->ne[1] > info->ne[0]);
+    M_Assert(INT64_MAX/info->ne[2] > info->ne[0]*info->ne[1]);
+    M_Assert(INT64_MAX/info->ne[3] > info->ne[0]*info->ne[1]*info->ne[2]);
 }
 
 std::shared_ptr<GGUF_context> gguf_init_from_file(const char* fname)
@@ -329,10 +329,10 @@ std::shared_ptr<GGUF_context> gguf_init_from_file(const char* fname)
                                 }
                             } break;
                             case GGUF_TYPE_ARRAY:
-                            default: M_ASSERT(false && "invalid type"); break;
+                            default: M_Assert(false && "invalid type"); break;
                         }
                     } break;
-                    default: M_ASSERT(false && "invalid type");
+                    default: M_Assert(false && "invalid type");
                 }
 
                 if (!ok) {
@@ -596,7 +596,7 @@ struct LLama_loader
 
     GGUF_tensor* get_tensor(const std::string& name)
     {
-        M_ASSERT(meta && "meta is empty!!");
+        M_Assert(meta && "meta is empty!!");
         int n_tensors = gguf_get_n_tensors(meta.get());
 
         // create Mat based on tensor info
@@ -614,14 +614,14 @@ struct LLama_loader
     Mat create_mat(const std::string& name, bool required = true)
     {
         Mat m;
-        M_ASSERT(meta && "meta is empty!!");
+        M_Assert(meta && "meta is empty!!");
         GGUF_tensor* t = get_tensor(name);
         if (!t)
         {
             if (required)
-                M_ERROR("Can not found tensor with name = %s !", name.c_str());
+                M_Error_(Error::StsBadFunc, ("Can not found tensor with name = %s ! \n", name.c_str()));
             else
-                M_PRINT("Can not found tensor with name = %s !", name.c_str());
+                M_PRINT_DBG("Can not found tensor with name = %s ! \n", name.c_str());
             return m;
         }
 
@@ -653,7 +653,7 @@ struct LLama_loader
     LLama_loader(const std::string& fname, bool use_mmap, const struct LLama_model_kv_override* param_overrides_p)
     {
         int trace = 0;
-        M_ASSERT(param_overrides_p == nullptr && "Currently, do not support the param override!")
+        M_Assert(param_overrides_p == nullptr && "Currently, do not support the param override!");
         if (getenv("MINFER_LOG_LEVEL"))
         {
             trace = atoi(getenv("MINFER_LOG_LEVEL"));
@@ -686,7 +686,7 @@ struct LLama_loader
 
         params.n_rope_dim_count = (params.n_head == 0) ? 0 : params.n_embd / params.n_head;
         this->get_key(LLM_KV_ROPE_DIMENSION_COUNT, params.n_rope_dim_count, false);
-        M_ASSERT(params.n_rope_dim_count == params.n_embd / params.n_head && "Invalid n_rope_dim_count!");
+        M_Assert(params.n_rope_dim_count == params.n_embd / params.n_head && "Invalid n_rope_dim_count!");
 
         this->get_key(LLM_KV_ROPE_FREQ_BASE, params.rope_freq_base_train, false);
     }
@@ -778,7 +778,7 @@ void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >
 
         // handle tok_embedding
         Mat embdMat = loader.create_mat(getTensorName(LLM_TENSOR_TOKEN_EMBD, "weight"));
-        M_ASSERT(!embdMat.empty() && "Error when to create llama mat!");
+        M_Assert(!embdMat.empty() && "Error when to create llama mat!");
 
         // set model input
         netParams.push_back(
@@ -838,7 +838,7 @@ void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >
         {
             // create output norm
             Mat out_norm = loader.create_mat(getTensorName(LLM_TENSOR_OUTPUT_NORM, "weight"));
-            M_ASSERT(!out_norm.empty() && "Error when to create llama mat!");
+            M_Assert(!out_norm.empty() && "Error when to create llama mat!");
 
             netParams.push_back(std::shared_ptr<LayerParams>(
                     new RMSNormLayerParams({layer_id}, {layer_id + 1}, p.n_embd, p.f_norm_rms_eps, out_norm)));

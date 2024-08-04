@@ -57,7 +57,7 @@ bool Backend::LayerFactory::checkLayerSupported(std::shared_ptr<LayerParams> par
 
 bool Backend::checkLayerSupported(std::shared_ptr<LayerParams> param)
 {
-    M_ASSERT(layerFactory != nullptr);
+    M_Assert(layerFactory != nullptr);
 
     return layerFactory->checkLayerSupported(param);
 }

@@ -46,6 +46,8 @@ enum ActivateType {
 class LayerParams
 {
 public:
+    virtual ~LayerParams() = default;
+
     LayerParams()
     :type(LayerType::UnSupported), inputIndex({}), outputIndex({})
     {}
@@ -93,8 +95,8 @@ public:
     }
 
     int vocab_dim;  // input, the length of vocabulary
-    int embd_dim; // output, embedding feature length.
-    Mat w;        // Embedding layer params
+    int embd_dim;   // output, embedding feature length.
+    Mat w;          // Embedding layer params
 };
 
 // TODO
@@ -104,7 +106,7 @@ public:
 
 };
 
-// Attention参数
+// Multi-head Attention参数
 class AttentionLayerParams : public LayerParams
 {
 public:
@@ -133,10 +135,6 @@ public:
     Mat kb;
     Mat vb;
     Mat outb;
-
-//    int head_num;    // 头个数
-//    int head_kv;
-//    int d_model;     // d_model / head_num
 };
 
 class FeedForwardLayerParams : public LayerParams

@@ -20,6 +20,12 @@ set(CMAKE_MODULE_PATH
     "${CMAKE_CURRENT_LIST_DIR}/cmake"
 )
 
+# Add debug macro to project
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+    add_definitions(-DM_DEBUG)
+endif ()
+
+
 include_directories(
         ${CMAKE_CURRENT_LIST_DIR}/include/
         ${CMAKE_CURRENT_LIST_DIR}/src/

@@ -113,7 +113,7 @@ TEST(Net_TEST, net_tiny_llama)
 {
     std::cout<<"print test on net_tiny_llama"<<std::endl;
     Net net;
-    net.readNet("/Users/mzh/work/models/llm_model/lite_oute_llama/Lite-Oute-1-65M-FP16.gguf");
+    net.readNet("/Users/moo/work/models/llm_model/Lite-Oute-1-65M-FP16.gguf");
 
     // TODO add the forward type.
 }

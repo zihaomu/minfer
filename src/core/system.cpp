@@ -61,6 +61,14 @@ int m_snprintf(char* buf, int len, const char* fmt, ...)
     return res;
 }
 
+void mprintf(const char* fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    vprintf(fmt, args);
+    va_end(args);
+}
+
 std::string format( const char* fmt, ... )
 {
     std::vector<char> buf(1024);
@@ -73,7 +81,7 @@ std::string format( const char* fmt, ... )
         int len = m_vsnprintf(buf.data(), bsize, fmt, va);
         va_end(va);
 
-        M_ASSERT(len >= 0 && "Check format string for errors");
+        M_Assert(len >= 0 && "Check format string for errors");
         if (len >= bsize)
         {
             buf.resize(len + 1);

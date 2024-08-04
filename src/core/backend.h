@@ -8,6 +8,7 @@
 #include "non_copyable.h"
 #include "minfer/mat.h"
 #include "minfer/layer.h"
+#include "minfer/system.h"
 #include <map>
 #include "string"
 #include "define.impl.h"

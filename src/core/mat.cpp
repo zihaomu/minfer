@@ -3,6 +3,7 @@
 //
 
 #include "minfer/mat.h"
+#include "minfer/system.h"
 
 #define M_XADD(addr, delta) __c11_atomic_fetch_add((_Atomic(int)*)(addr), delta, __ATOMIC_ACQ_REL)
 
@@ -91,7 +92,7 @@ public:
         return true;
     }
 
-    void deallocate(MatData* u) const
+    void deallocate(MatData* u) const override
     {
         if(!u)
             return;
@@ -248,7 +249,7 @@ Mat::Mat(const std::vector<int> _sizes, int _type)
 Mat::Mat(int _dims, const int* _sizes, int _type, int v)
 :dims(0), data(0), allocator(0), u(0), size(0), matType(_type)
 {
-    M_ASSERT(_type == DT_32S || _type == DT_32U || _type == DT_32F);
+    M_Assert(_type == DT_32S || _type == DT_32U || _type == DT_32F);
     int type = _type;
     create(_dims, _sizes, type);
 
@@ -264,7 +265,7 @@ Mat::Mat(int _dims, const int* _sizes, int _type, int v)
 Mat::Mat(const std::vector<int> _sizes, int _type, int v)
 :dims(0), data(0), allocator(0), u(0), size(0), matType(_type)
 {
-    M_ASSERT(_type == DT_32S || _type == DT_32U || _type == DT_32F);
+    M_Assert(_type == DT_32S || _type == DT_32U || _type == DT_32F);
     int type = _type;
     create(_sizes, type);
 
@@ -355,6 +356,8 @@ Mat& Mat::operator=(const float v)
     }
     else
         M_ERROR(NULL, "Unsupported format at function \"Mat::operator= \" type = %d!", type());
+
+    return *this;
 }
 
 Mat& Mat::operator=(const int v)
@@ -528,7 +531,7 @@ void Mat::setSize(std::vector<int> size)
 
 void Mat::setSize(int dim, const int *size)
 {
-    M_ASSERT(dim > 0);
+    M_Assert(dim > 0);
     _setSize(*this, dim, size);
 }
 
