@@ -92,7 +92,7 @@ public:
         return true;
     }
 
-    void deallocate(MatData* u) const
+    void deallocate(MatData* u) const override
     {
         if(!u)
             return;
@@ -322,6 +322,8 @@ Mat& Mat::operator=(const float v)
             p[i] = (int)v;
         }
     }
+
+    return *this;
 }
 
 Mat& Mat::operator=(const int v)
