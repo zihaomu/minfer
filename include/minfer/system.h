@@ -36,6 +36,7 @@
 #endif
 
 // Log system
+// TODO use new Log system, instead of the following.
 #ifdef M_USE_LOGCAT
 #include <android/log.h>
 #define M_ERROR(format, ...) __android_log_print(ANDROID_LOG_ERROR, "MJNI", format, ##__VA_ARGS__)
@@ -90,9 +91,10 @@ namespace Error {
         StsBadArg=                  -5,  //!< function arg/param is bad
         StsBadFunc=                 -6,  //!< unsupported function
         StsNullPtr=                 -7,  //!< null pointer
-        StsBadSize=                 -8, //!< the input/output structure size is incorrect
-        StsNotImplemented=          -9, //!< the requested function/feature is not implemented
-        StsAssert=                 -10, //!< assertion failed
+        StsBadSize=                 -8,  //!< the input/output structure size is incorrect
+        StsNotImplemented=          -9,  //!< the requested function/feature is not implemented
+        StsAssert=                 -10,  //!< assertion failed
+        StsBadType=                -11,  //!< data type mismatch error.
     };
 }
 

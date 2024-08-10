@@ -111,9 +111,9 @@ class AttentionLayerParams : public LayerParams
 {
 public:
     AttentionLayerParams(std::vector<int> _inputIndex, std::vector<int> _outputIndex, int _embd_dim, int _head_count, int head_count_kv, float _rms_eps,
-                         Mat _norm, Mat _q, Mat _k, Mat _v, Mat _out, Mat _qb, Mat _kb, Mat _vb, Mat _outb)
+                         Mat _norm, Mat _wq, Mat _wk, Mat _wv, Mat _wout, Mat _bq, Mat _bk, Mat _bv, Mat _bout)
     :embd_dim(_embd_dim), head_count(_head_count), head_count_kv(head_count_kv), rms_eps(_rms_eps), norm(_norm),
-    q(_q), k(_k), v(_v), out(_out), qb(_qb), kb(_kb), vb(_vb), outb(_outb)
+    wq(_wq), wk(_wk), wv(_wv), wout(_wout), bq(_bq), bk(_bk), bv(_bv), bout(_bout)
     {
         type = LayerType::Attention;
         inputIndex = _inputIndex;
@@ -126,15 +126,15 @@ public:
     float rms_eps;
 
     Mat norm;
-    Mat q;// 此处使用的是指定内存的
-    Mat k;
-    Mat v;
-    Mat out;
+    Mat wq;
+    Mat wk;
+    Mat wv;
+    Mat wout;
 
-    Mat qb;
-    Mat kb;
-    Mat vb;
-    Mat outb;
+    Mat bq;
+    Mat bk;
+    Mat bv;
+    Mat bout;
 };
 
 class FeedForwardLayerParams : public LayerParams

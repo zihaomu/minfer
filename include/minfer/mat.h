@@ -14,7 +14,6 @@
 namespace minfer
 {
 
-typedef unsigned char uchar;
 typedef std::vector<int> MatShape;
 #define MAT_MAX_DIM 8 // Max mat dimension
 
@@ -122,6 +121,9 @@ public:
     Mat clone() const;
 
     void copyTo(Mat& m) const;
+
+    // convert mat to other mat with specific data type.
+    void convertTo(Mat& m, int rtype) const;
 
     void create(int ndims, const int* sizes, int type);
 
@@ -247,6 +249,17 @@ MatExpr operator / (const MatExpr& e, const Mat& b);
 MatExpr operator / (const MatExpr& e1, const MatExpr& e2);
 
 MatExpr operator == (const Mat& a, const Mat& b);
+
+// compute shape.
+size_t total(const Mat& m);
+size_t total(const Mat& m, int startDim, int endDim);
+size_t total(const MatShape shape);
+size_t total(const MatShape shape, int startDim, int endDim);
+
+// for fast gemm
+Mat gemm(const Mat& a, const Mat& b);
+
+// TODO Mat inv, and other type mat operator.
 }
 
 #include "./mat.inl.h"

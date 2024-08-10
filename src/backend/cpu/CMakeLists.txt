@@ -1,5 +1,10 @@
 
 FILE(GLOB M_CPU_SRC ${CMAKE_CURRENT_LIST_DIR}/*.cpp ${CMAKE_CURRENT_LIST_DIR}/layer/*.cpp)
+
+include_directories(
+        ${CMAKE_CURRENT_LIST_DIR}/include/
+        ${CMAKE_CURRENT_LIST_DIR}/src/
+)
 add_library(M_CPU OBJECT ${M_CPU_SRC})
 
 list(APPEND M_OBJECTS_TO_LINK $<TARGET_OBJECTS:M_CPU>)

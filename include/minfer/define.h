@@ -42,45 +42,39 @@
 #define M_LOG2 0.69314718055994530941723212145818
 #endif
 
+/****************************************************************************************\
+*                                  Basic Data Type                                       *
+\****************************************************************************************/
 
+using uchar = unsigned char;
+using schar = signed char;
+using ushort = unsigned short;
+using uint = unsigned int;
+using uint64 = unsigned long int;
+using int64 = long int;
 
 /****************************************************************************************\
 *                                  Matrix type (Mat)                                     *
 \****************************************************************************************/
 
 // all Mat type
-#define DT_8U   0
-#define DT_8S   1
-#define DT_16U  2
-#define DT_16S  3
-#define DT_32S  4
-#define DT_32F  5
-#define DT_64F  6
-#define DT_16F  7
-#define DT_16BF 8
-#define DT_Bool 9
-#define DT_64U  10
-#define DT_64S  11
-#define DT_32U  12
+#define DT_8U   0   // - 1 byte
+#define DT_8S   1   // - 1 byte
+#define DT_16U  2   // - 2 byte
+#define DT_16S  3   // - 2 byte
+#define DT_32F  4   // - 4 byte
+#define DT_32S  5   // - 4 byte
+#define DT_32U  6   // - 4 byte
+#define DT_16F  7   // - 2 byte
+#define DT_64F  8   // - 8 byte
+#define DT_16BF 9   // - 2 byte
+#define DT_Bool 10  // - 1 byte
+#define DT_64U  11  // - 8 byte
+#define DT_64S  12  // - 8 byte
 
-/** Size of an array/scalar single value, 4 bits per type:
-#define DT_8U   - 1 byte
-#define DT_8S   - 1 byte
-#define DT_16U  - 2
-#define DT_16S  - 2
-#define DT_32S  - 4
-#define DT_32F  - 4
-#define DT_64F  - 8
-#define DT_16F  - 2
-#define DT_16BF - 2
-#define DT_Bool - 1
-#define DT_64U  - 8
-#define DT_64S  - 8
-#define DT_32U  - 4
-    ...
-*/
-#define DT_ELEM_SIZE(type) ((int)((0x4881228442211ULL >> (type * 4)) & 15))
+#define DT_MAX  12 // Equal to MAX Data Type
 
+#define DT_ELEM_SIZE(type) ((int)((0x8812824442211ULL >> (type * 4)) & 15))
 
 // Comparing flag
 #define M_CMP_EQ   0
@@ -89,5 +83,88 @@
 #define M_CMP_LT   3
 #define M_CMP_LE   4
 #define M_CMP_NE   5
+
+/****************************************************************************************\
+*                                  Float16 Define                                        *
+\****************************************************************************************/
+#ifdef __cplusplus
+class hfloat
+{
+public:
+#if M_WITH_ARM // TODO add arm
+    hfloat() : h(0) {}
+    explicit hfloat(float x) { h = (__fp16)x; }
+    operator float() const { return (float)h; }
+protected:
+    __fp16 h;
+
+#else
+    hfloat() : w(0) {}
+    explicit hfloat(float x)
+    {
+        // taken from https://gist.github.com/zhuker/b4bd1fb306c7b04975b712c37c4c4075
+        uint32_t inu = *((uint32_t * ) & x);
+        uint32_t t1;
+        uint32_t t2;
+        uint32_t t3;
+
+        t1 = inu & 0x7fffffffu;                 // Non-sign bits
+        t2 = inu & 0x80000000u;                 // Sign bit
+        t3 = inu & 0x7f800000u;                 // Exponent
+
+        t1 >>= 13u;                             // Align mantissa on MSB
+        t2 >>= 16u;                             // Shift sign bit into position
+
+        t1 -= 0x1c000;                         // Adjust bias
+
+        t1 = (t3 < 0x38800000u) ? 0 : t1;       // Flush-to-zero
+        t1 = (t3 > 0x8e000000u) ? 0x7bff : t1;  // Clamp-to-max
+        t1 = (t3 == 0 ? 0 : t1);               // Denormals-as-zero
+
+        t1 |= t2;                              // Re-insert sign bit
+
+        *((ushort *)&w) = t1;
+    }
+
+    operator float() const
+    {
+#if M_WITH_AVX2 // TODO Add AVX support
+        float f;
+        _mm_store_ss(&f, _mm_cvtph_ps(_mm_cvtsi32_si128(w)));
+        return f;
+#else
+        float f;
+        uint32_t t1;
+        uint32_t t2;
+        uint32_t t3;
+
+        t1 = w & 0x7fffu;                       // Non-sign bits
+        t2 = w & 0x8000u;                       // Sign bit
+        t3 = w & 0x7c00u;                       // Exponent
+
+        t1 <<= 13u;                              // Align mantissa on MSB
+        t2 <<= 16u;                              // Shift sign bit into position
+
+        t1 += 0x38000000;                       // Adjust bias
+
+        t1 = (t3 == 0 ? 0 : t1);                // Denormals-as-zero
+
+        t1 |= t2;                               // Re-insert sign bit
+
+        *(uint32_t* )(&f) = t1;
+        return f;
+#endif
+    }
+
+protected:
+    ushort w;
+#endif
+};
+
+#else
+#error "Fp16 must compile with c++"
+#endif
+
+
 
 #endif //MINFER_DEFINE_H

@@ -7,6 +7,7 @@
 #include "./minfer/mat.h"
 #include "./minfer/layer.h"
 #include "./minfer/net.h"
+#include "./minfer/saturate.h"
 #include "./minfer/utils.h"
 #include "./minfer/define.h"
 #include "./minfer/system.h"

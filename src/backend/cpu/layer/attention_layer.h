@@ -5,6 +5,7 @@
 #ifndef MINFER_ATTENTION_LAYER_H
 #define MINFER_ATTENTION_LAYER_H
 
+#include "minfer.h"
 #include "common_layer.h"
 
 namespace minfer {
@@ -38,9 +39,23 @@ public:
     void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
 private:
-    int d_model;
-    int num_head;
-    int d_k; // d_k = d_model / num_head.
+    Mat norm;
+    Mat wq;
+    Mat wk;
+    Mat wv;
+    Mat wout;
+
+    bool has_bias;
+    Mat bq;
+    Mat bk;
+    Mat bv;
+    Mat bout;
+
+    int embd_dim;      // length of embedding feature
+    int head_count;    // num_attention_heads
+    int head_count_kv; // num_key_value_heads, the flag of Grouped Query Attention(GQA), if head_count_kv == head_count, the model will use Multi Head Attention(QHA), if head_count_kv==1, the model will use Multi Query Attention(MQA)
+    float rms_eps;
+
     AttentionLayer(const std::shared_ptr<AttentionLayerParams> param);
 };
 
