@@ -17,8 +17,8 @@ float fp16_to_fp32(const uint16_t in);
 uint16_t fp32_to_fp16(const float in);
 
 // convert the mat shape to char*, it is used to conveniently print mat dimension info.
-std::string& shape_to_str(const Mat& m);
-std::string& shape_to_str(const MatShape& shape);
+std::string shape_to_str(const Mat& m);
+std::string shape_to_str(const MatShape& shape);
 
 }
 

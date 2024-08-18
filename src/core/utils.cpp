@@ -75,22 +75,21 @@ uint16_t fp32_to_fp16(const float in) {
 //    *((uint16_t *) out) = t1;
 }
 
-std::string& shape_to_str(const Mat& m)
+std::string shape_to_str(const Mat& m)
 {
     return shape_to_str(m.shape());
 }
 
-std::string& shape_to_str(const MatShape& shape)
+std::string shape_to_str(const MatShape& shape)
 {
     int dims = shape.size();
     const auto& p = shape.data();
-    std::string shape_str = "[ " + std::to_string(p[0]) + " x ";
-    std::cout<<"shape = ["<<p[0]<<"x";
+    std::string shape_str = "[ " + std::to_string(p[0]);
     for (int i = 1; i < dims; i++)
     {
-        shape_str += std::to_string(p[i]) + " x ";
+        shape_str += " x " + std::to_string(p[i]);
     }
-    std::cout<<"]"<<std::endl;
+    shape_str += "]";
 
     return shape_str;
 }

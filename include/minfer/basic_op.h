@@ -10,6 +10,35 @@
 namespace minfer
 {
 
+// BinaryOp
+enum BinaryOp
+{
+    AND = 0,
+    EQUAL,
+    GREATER,
+    GREATER_EQUAL,
+    LESS,
+    LESS_EQUAL,
+    OR,
+    POW,
+    XOR,
+    BITSHIFT,
+    MOD,  // Integer Mod. Reminder's sign = Divisor's sign.
+    MUL,
+    SUB,
+    ADD,
+    DIV,
+
+// TODO support the following op.
+//        SUM,
+//        FMOD, // Floating-point Mod. Reminder's sign = Dividend's sign.
+//        MAX,
+//        MEAN,
+//        MIN,
+};
+
+void binaryFunc(BinaryOp op, const Mat& a, const Mat& b, Mat& c);
+
 // a + b = c
 void add(const Mat& a, const Mat& b, Mat& c);
 

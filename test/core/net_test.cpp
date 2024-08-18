@@ -109,6 +109,23 @@ TEST(Net_TEST, multi_head_transform_test)
 //    outM.print();
 }
 
+TEST(Net_TEST, test_mat_brodcast)
+{
+    float f20 = 20.f;
+    float f30 = 30.f;
+    float f50 = 50.f;
+    Mat inpM1 = Mat({4}, DT_32F, reinterpret_cast<int&>(f20));
+    Mat inpM2 = Mat({2, 3, 4}, DT_32F, reinterpret_cast<int&>(f30));
+
+    Mat outM  = Mat({2, 3, 4}, DT_32F, reinterpret_cast<int&>(f50));
+
+    Mat out;
+    add(inpM1, inpM2, out);
+
+    out.print();
+    outM.print();
+}
+
 TEST(Net_TEST, net_tiny_llama)
 {
     std::cout<<"print test on net_tiny_llama"<<std::endl;
