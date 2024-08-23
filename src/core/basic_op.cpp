@@ -240,13 +240,116 @@ void divide(const Mat& a, const Mat& b, Mat& c)
 
 void compare(const Mat& a, const Mat& b, Mat& c, int op)
 {
-    // TODO
+    // TODO add implementation!
     M_ERROR(NULL, "Un-implemented function at compare!");
 }
 
-void broad_cast_(const Mat& a, const Mat& b, Mat& c)
+void transpose(const Mat& input, Mat& out)
 {
+    M_Assert(!input.empty() && "The transpose function get empty input!");
+    MatShape inpShape = input.shape();
 
+    if (inpShape.size() == 1)
+    {
+        out = input.clone();
+        out.setSize({1, inpShape[0]});
+    }
+    else
+    {
+        int dim = inpShape.size();
+        MatShape outShape = inpShape;
+        std::swap(outShape[dim - 2], outShape[dim - 1]);
+        transposeND(input, outShape, out);
+    }
+}
+
+void transposeND(const Mat& input, const std::vector<int>& order, Mat& out)
+{
+    M_Assert(input.dims == order.size() && "Number of dimensions shouldn't change");
+    auto order_ = order;
+    std::sort(order_.begin(), order_.end());
+
+    for (int i = 0; i < order_.size(); i++)
+    {
+        if (order_[i] != i)
+        {
+            M_Error(Error::StsBadSize, "New order shold be a valid permutation of the old one.");
+        }
+    }
+
+    const auto& oldShape = input.shape();
+    std::vector<int> newShape(order.size());
+    for (int i = 0; i < order.size(); i++)
+    {
+        newShape[i] = oldShape[order[i]];
+    }
+
+    out.create(newShape, input.type());
+
+    size_t continuous_size = 1;
+    size_t step_in = 1;
+    size_t step_out = 1;
+    bool is_continuous = true;
+    int continuous_idx = order.size();
+
+    std::vector<size_t> out_steps(order.size());
+    std::vector<size_t> inp_steps(order.size());
+    for (int i = order.size() - 1; i >= 0; --i)
+    {
+        if (i < order.size() - 1)
+        {
+            step_in *= newShape[i];
+            step_out *= oldShape[i];
+        }
+
+
+        if (order[i] == i && is_continuous)
+        {
+            continuous_size = step_in;
+            continuous_idx = i;
+        }
+        else
+        {
+            is_continuous = false;
+        }
+
+        out_steps[i] = step_in;
+        inp_steps[i] = step_out;
+    }
+
+    size_t out_size = input.total() / continuous_size;
+
+    auto* src = input.data;
+    auto* dst = out.data;
+
+    size_t src_offset = 0;
+    size_t es = DT_ELEM_SIZE(out.type());
+    size_t continuous_size_es = es * continuous_size;
+    for (size_t i = 0; i < out_size; i++)
+    {
+        src_offset = 0;
+        size_t src_left = i;
+
+        for (int j = 0; j < continuous_idx; j++)
+        {
+            int k = src_left/oldShape[j];
+            src_left -= k * oldShape[j];
+            src_offset += k * oldShape[j];
+        }
+
+        std::memcpy(dst, src + es * src_offset, continuous_size_es);
+        dst += continuous_size_es;
+
+//        for (int j = continuous_idx - 1; j >= 0; --j)
+//        {
+//            src_offset += inp_steps[j];
+//            if ((src_offset / inp_steps[j]) % out.size[j] != 0)
+//            {
+//                break;
+//            }
+//            src_offset -= inp_steps[j] * out.size[j];
+//        }
+    }
 }
 
 /****************************************************************************************\
@@ -346,8 +449,6 @@ public:
         isInit = true; // set isInit as true.
     }
 };
-
-
 
 template<typename T, typename Func>
 void binary_forward(const Func& op, const BinaryOpHelper& helper,  const uchar* inp0, const uchar* inp1, uchar* out)

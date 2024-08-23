@@ -177,7 +177,7 @@ public:
     int matType;
 
     struct MatExtrInfo;
-    std::shared_ptr<MatExtrInfo> extrInfo; // 保存backend的信息
+    std::shared_ptr<MatExtrInfo> extrInfo; // 保存backend的信息, TODO 暂时没用到
 };
 
 ///////////////////////////////// Matrix Expressions //////////////
@@ -230,6 +230,8 @@ MatExpr operator + (const Mat& a, const Mat& b);
 MatExpr operator + (const Mat& a, const MatExpr& e);
 MatExpr operator + (const MatExpr& e, const Mat& b);
 MatExpr operator + (const MatExpr& e1, const MatExpr& e2);
+// Add scalar operator
+//MatExpr operator +
 
 MatExpr operator - (const Mat& a);
 MatExpr operator - (const MatExpr& e);
@@ -257,7 +259,7 @@ size_t total(const MatShape shape);
 size_t total(const MatShape shape, int startDim, int endDim);
 
 // for fast gemm
-Mat gemm(const Mat& a, const Mat& b);
+Mat gemm(const Mat& a, const Mat& b, bool transA = false, bool transB = false);
 
 // TODO Mat inv, and other type mat operator.
 }

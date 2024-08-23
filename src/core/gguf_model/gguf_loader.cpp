@@ -487,8 +487,8 @@ struct LLM_KV_Impl {
 
 struct LLama_param
 {
-    uint32_t n_vocab = 0;
-    uint32_t n_ctx_train = 0;
+    uint32_t n_vocab = 0;      // vocabulary length
+    uint32_t n_ctx_length = 0; // context length
     uint32_t n_embd = 0;
     uint32_t n_ff = 0;
     uint32_t n_head = 0;
@@ -675,6 +675,7 @@ struct LLama_loader
 
         // get params
         this->get_key(LLM_KV_VOCAB_SIZE, params.n_vocab, false) || this->get_arr_n(LLM_KV_TOKENIZER_LIST, params.n_vocab);
+        this->get_key(LLM_KV_CONTEXT_LENGTH, params.n_ctx_length);
         this->get_key(LLM_KV_EMBEDDING_LENGTH, params.n_embd);
         this->get_key(LLM_KV_FEED_FORWARD_LENGTH, params.n_ff);
         this->get_key(LLM_KV_ATTENTION_HEAD_COUNT, params.n_head);
@@ -810,8 +811,8 @@ void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >
                 // add Attn layer
                 netParams.push_back(
                         std::shared_ptr<LayerParams>(new AttentionLayerParams(
-                                {layer_id}, {layer_id + 1}, p.n_embd, p.n_head, p.n_head_kv, p.f_norm_rms_eps, attn_norm, wq, wk, wv, wo,
-                                bq, bk, bv, bo
+                                {layer_id}, {layer_id + 1}, p.n_ctx_length, p.n_embd, p.n_head, p.n_head_kv,
+                                p.f_norm_rms_eps, attn_norm, wq, wk, wv, wo, bq, bk, bv, bo
                                 ))
                         );
 

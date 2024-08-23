@@ -28,12 +28,22 @@ Layer::~Layer()
 
 void Layer::init(const std::vector<Mat*> &, std::vector<Mat*> &)
 {
-    M_ERROR(NULL, "Not implementation at Layer::init!");
+    M_Error(Error::StsNotImplemented, "Not implementation at Layer::init!");
+}
+
+void Layer::finalize(const std::vector<Mat *> &, std::vector<Mat *> &)
+{
+    M_Error(Error::StsNotImplemented, "Not implementation at Layer::finalize!");
 }
 
 void Layer::forward(const std::vector<Mat*> &, std::vector<Mat*> &)
 {
-    M_ERROR(NULL, "Not implementation at Layer::forward!");
+    M_Error(Error::StsNotImplemented, "Not implementation at Layer::forward!");
+}
+
+void Layer::forward(const std::vector<Mat*> & input, std::vector<Mat*> & output, int)
+{
+    this->forward(input, output);
 }
 
 int Layer::getId()

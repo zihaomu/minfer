@@ -126,6 +126,21 @@ TEST(Net_TEST, test_mat_brodcast)
     outM.print();
 }
 
+TEST(Net_TEST, test_mat_trans)
+{
+    float f20 = 20.f;
+    float f30 = 30.f;
+    float f50 = 50.f;
+    Mat inpM1 = Mat({4}, DT_32F, reinterpret_cast<int&>(f20));
+    Mat inpM2 = Mat({2, 3, 4, 2}, DT_32F, reinterpret_cast<int&>(f30));
+
+    Mat inpM3;
+    transposeND(inpM2, {0, 2, 1, 3}, inpM3);
+
+    inpM2.print();
+    inpM3.print();
+}
+
 TEST(Net_TEST, net_tiny_llama)
 {
     std::cout<<"print test on net_tiny_llama"<<std::endl;

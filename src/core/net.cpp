@@ -59,6 +59,12 @@ void Net::forward(Mat& out)
     return impl->forward(out);
 }
 
+void Net::generate(minfer::Mat &out)
+{
+    M_Assert(impl != nullptr);
+    return impl->forward(out);
+}
+
 //void Net::forward(std::vector<Mat>& outs, const std::vector<std::string> names)
 //{
 //    M_Assert(impl != nullptr);

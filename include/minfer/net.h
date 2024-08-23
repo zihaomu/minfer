@@ -45,16 +45,17 @@ public:
     /// ⚠️目前只支持gguf一种模型格式
     void readNet(const std::string path, const std::string modelType = "gguf");
 
-//    void setInput(const Mat input, const std::string name = {});
-
     /// set input data with given mat index
     /// \param input
-    /// \param mIndx defaule is -1, if the net is single input, default value is en
+    /// \param mIndx defaule is -1, if the net is single input.
     void setInput(const Mat input, const int mIndx = -1);
 
     void init();
 
     void forward(Mat& out);
+
+    // 生成模式
+    void generate(Mat& out);
 
     Mat forward();
 

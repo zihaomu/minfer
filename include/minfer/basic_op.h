@@ -59,6 +59,12 @@ void divide(const Mat& a, const Mat& b, Mat& c);
 
 void compare(const Mat& a, const Mat& b, Mat& c, int op);
 
+// Transpose Mat last two dimension, if the Mat is one dimension, add the axis to the shape.
+void transpose(const Mat& input, Mat& out);
+
+// transpose Mat according to the input mat and the given new order.
+void transposeND(const Mat& input, const std::vector<int>& order, Mat& out);
+
 #define MAT_AUG_OPERATOR1(op, cvop) \
 
 #define MAT_AUG_OPERATOR(op, cvop) \

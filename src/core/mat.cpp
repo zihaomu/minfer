@@ -282,7 +282,6 @@ Mat::Mat(const std::vector<int> _sizes, int _type, int v)
 Mat::Mat(const Mat& m)
 :dims(m.dims), data(m.data), allocator(m.allocator), u(m.u), size(0), matType(m.matType)
 {
-
     if (u)
     {
         //    std::atomic_fetch_add((_Atomic(int)*)(&u->refcount), 1);
@@ -667,76 +666,6 @@ size_t total(const MatShape shape, int startDim, int endDim)
         p *= shape[i];
     }
     return p;
-}
-
-Mat gemm(const Mat& a, const Mat& b)
-{
-    MatShape shape_a = a.shape();
-    MatShape shape_b = b.shape();
-
-    M_Assert(shape_a.size() == shape_b.size() && "Two Mat dimension on gemm function are different!");
-    int len_s = shape_a.size();
-    M_Assert(len_s >= 2 && "Only multi-dimension Mat is supported for gemm function!");
-
-    int M = shape_a[len_s - 2];
-    int K = shape_a[len_s - 1];
-    int N = shape_b[len_s - 1];
-
-    M_Assert(K == shape_b[len_s - 1]);
-    M_Assert(a.type() == b.type());
-
-    M_Assert(a.type() == DT_32F && "Currently only FP32 mat is supported!");
-
-    int i = len_s - 3;
-    while (i > 0)
-    {
-        M_Assert(shape_a[i] == shape_b[i] && "Mat shapes on gemm function are miss matching!");
-        i--;
-    }
-
-    // for dimension > 2, use numpy broadcasting rule for previous dimension.
-    // Add broadcasting rule here.
-    MatShape outShape(shape_a); // M x N
-    outShape[len_s - 1] = N;
-
-    Mat out = Mat(outShape, DT_32F);
-
-    size_t out_loop = len_s > 2 ? total(shape_a, 0, len_s - 3): 1;
-    size_t step_a = M * K;
-    size_t step_b = K * N;
-    size_t step_c = M * N;
-
-    const float* pa = (const float*)a.data;
-    const float* pb = (const float*)b.data;
-    float* pc = (float*)out.data;
-
-    for (int i = 0; i < out_loop; i++)
-    {
-        const float* pai = i * step_a + pa;
-        const float* pbi = i * step_b + pb;
-        float* pci = i * step_c + pc;
-
-        // TODO optimize the gemm kernel, the following is naive implementation.
-        for (int m = 0; m < M; m++)
-        {
-            const float* paim = pai + K * m;
-            float* pcim = pci + N * m;
-
-            for (int n = 0; n < N; n++)
-            {
-                const float* pain = pai + n;
-                float sum = 0;
-                for (int k = 0; k < K; k++)
-                {
-                    sum += paim[k] * pain[k * N];
-                }
-
-                pcim[n] = sum;
-            }
-        }
-    }
-
-    return out;
 }
 
 }

@@ -110,16 +110,18 @@ public:
 class AttentionLayerParams : public LayerParams
 {
 public:
-    AttentionLayerParams(std::vector<int> _inputIndex, std::vector<int> _outputIndex, int _embd_dim, int _head_count, int head_count_kv, float _rms_eps,
+    AttentionLayerParams(std::vector<int> _inputIndex, std::vector<int> _outputIndex, int _max_seq_len, int _embd_dim,
+                         int _head_count, int _head_count_kv, float _rms_eps,
                          Mat _norm, Mat _wq, Mat _wk, Mat _wv, Mat _wout, Mat _bq, Mat _bk, Mat _bv, Mat _bout)
-    :embd_dim(_embd_dim), head_count(_head_count), head_count_kv(head_count_kv), rms_eps(_rms_eps), norm(_norm),
-    wq(_wq), wk(_wk), wv(_wv), wout(_wout), bq(_bq), bk(_bk), bv(_bv), bout(_bout)
+    :max_seq_len(_max_seq_len), embd_dim(_embd_dim), head_count(_head_count), head_count_kv(_head_count_kv),
+    rms_eps(_rms_eps), norm(_norm), wq(_wq), wk(_wk), wv(_wv), wout(_wout), bq(_bq), bk(_bk), bv(_bv), bout(_bout)
     {
         type = LayerType::Attention;
         inputIndex = _inputIndex;
         outputIndex = _outputIndex;
     }
 
+    int max_seq_len;   // sequence max length
     int embd_dim;      // length of embedding feature
     int head_count;    // num_attention_heads
     int head_count_kv; // num_key_value_heads, the flag of Grouped Query Attention(GQA), if head_count_kv == head_count, the model will use Multi Head Attention(QHA), if head_count_kv==1, the model will use Multi Query Attention(MQA)
@@ -171,7 +173,15 @@ public:
     // 此处的Tensor囊括了GPU的内存数据。
 
     // 初始化，根据输入Mat的shape，完成输出shape的计算，以及一些其他的初始化
+    // TODO 加入这两项进入到推理中。
+    // start pos 是llm模型的输入启始位置，而seqlen是此次推理seqlen的长度。
     virtual void init(const std::vector<Mat*>& input, std::vector<Mat*>& output);
+
+    // 初始化完成之后，需要调用finalize函数完成一些初始化任务。
+    virtual void finalize(const std::vector<Mat*>& input, std::vector<Mat*>& output);
+
+    // and the forward can be run several times
+    virtual void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output, int start_pos);
 
     // and the forward can be run several times
     virtual void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output);
