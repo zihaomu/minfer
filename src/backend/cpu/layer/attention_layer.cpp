@@ -38,6 +38,35 @@ void AttentionLayer::finalize(const std::vector<Mat *> &input, std::vector<Mat *
 
 }
 
+Mat softmax(Mat inp)
+{
+    Mat out = inp.clone();
+    M_Assert(inp.type() == DT_32F);
+    size_t total = inp.total();
+    const float* p_i = (const float*)inp.data;
+    float* p_o = (float*)out.data;
+
+    float max_val = p_i[0];
+    for (int i = 1; i < total; i++)
+    {
+        if (p_i[i] > max_val)
+            max_val = p_i[i];
+    }
+
+    float sum = 0.0f;
+    for (int i = 0; i < total; i++)
+    {
+        p_o[i] = expf(p_i[i] - max_val);
+        sum += p_o[i];
+    }
+    // normalize
+    for (int i = 0; i < total; i++) {
+        p_o[i] /= sum;
+    }
+
+    return out;
+}
+
 /* forward function contains two operator, RMSnorm and attention.
  * forward contain start_pos and sequence len, how to set the sequence len to the forward?
  * */
@@ -46,6 +75,8 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
 {
     // shape check
     M_Assert(input.size() == 1 && input[0]);
+    M_Assert(output.size() == 1 && output[0]);
+
     MatShape in_shape = input[0]->shape();
 
     M_Assert(in_shape.size() == 3);
@@ -148,9 +179,17 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     // implementation softmax
     Mat qk_sqrt = qk / sqrtf(embd_dim_head);
 
+    // TODO score add mask
+
+    // apply the softmax to score
+    Mat score = softmax(qk_sqrt);
+
     // implementation matmul V
+    Mat qkv = gemm(score, x_v, false, true); // qk shape is [bsz, seq_len, seq_len + cache_len]
 
     // implementation out linear.
+    *output[0] = gemm(qkv, wout);
+    *output[0] += *input[0];
 }
 
 void precompute_freq_cis(int dim, int end, int rms_eps)
@@ -160,7 +199,7 @@ void precompute_freq_cis(int dim, int end, int rms_eps)
 
 void AttentionLayer::init(const std::vector<Mat *> &input, std::vector<Mat *> &output)
 {
-    //
+
 }
 
 AttentionLayer::~AttentionLayer()

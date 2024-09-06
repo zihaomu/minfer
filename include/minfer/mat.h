@@ -144,6 +144,9 @@ public:
     // 设置和输入Mat 一样的shape
     void setSize(Mat& m);
 
+    // 将Mat中的所有数值设置到给定的v中，注意，内部会将float v转换成Mat所对应的数据类型。
+    void setTo(float v);
+
     size_t total() const;
 
     size_t total(int startDim, int endDim=INT_MAX) const;
@@ -230,8 +233,10 @@ MatExpr operator + (const Mat& a, const Mat& b);
 MatExpr operator + (const Mat& a, const MatExpr& e);
 MatExpr operator + (const MatExpr& e, const Mat& b);
 MatExpr operator + (const MatExpr& e1, const MatExpr& e2);
-// Add scalar operator
-//MatExpr operator +
+MatExpr operator + (const MatExpr& e1, const float e);
+MatExpr operator + (const float e, const MatExpr& e2);
+MatExpr operator + (const Mat& a, const float e);
+MatExpr operator + (const float e, const Mat& b);
 
 MatExpr operator - (const Mat& a);
 MatExpr operator - (const MatExpr& e);
@@ -239,16 +244,28 @@ MatExpr operator - (const Mat& a, const Mat& b);
 MatExpr operator - (const Mat& a, const MatExpr& e);
 MatExpr operator - (const MatExpr& e, const Mat& b);
 MatExpr operator - (const MatExpr& e1, const MatExpr& e2);
+MatExpr operator - (const MatExpr& e1, const float e);
+MatExpr operator - (const float e, const MatExpr& e2);
+MatExpr operator - (const Mat& a, const float e);
+MatExpr operator - (const float e, const Mat& b);
 
 MatExpr operator * (const Mat& a, const Mat& b);
 MatExpr operator * (const Mat& a, const MatExpr& e);
 MatExpr operator * (const MatExpr& e, const Mat& b);
 MatExpr operator * (const MatExpr& e1, const MatExpr& e2);
+MatExpr operator * (const MatExpr& e1, const float e);
+MatExpr operator * (const float e, const MatExpr& e2);
+MatExpr operator * (const Mat& a, const float e);
+MatExpr operator * (const float e, const Mat& b);
 
 MatExpr operator / (const Mat& a, const Mat& b);
 MatExpr operator / (const Mat& a, const MatExpr& e);
 MatExpr operator / (const MatExpr& e, const Mat& b);
 MatExpr operator / (const MatExpr& e1, const MatExpr& e2);
+MatExpr operator / (const MatExpr& e1, const float e);
+MatExpr operator / (const float e, const MatExpr& e2);
+MatExpr operator / (const Mat& a, const float e);
+MatExpr operator / (const float e, const Mat& b);
 
 MatExpr operator == (const Mat& a, const Mat& b);
 

@@ -377,6 +377,56 @@ MatExpr operator + (const MatExpr& e1, const MatExpr& e2)
     return en;
 }
 
+MatExpr operator + (const MatExpr& e1, const float e)
+{
+    // convert float to specific type.
+    int type = e1.type();
+    Mat em = Mat({1}, type);
+    em.setTo(e);
+
+    MatExpr en;
+    e1.op->add(e1, MatExpr(em), en);
+    return en;
+}
+
+MatExpr operator + (const float e, const MatExpr& e2)
+{
+    // convert float to specific type.
+    int type = e2.type();
+    Mat em = Mat({1}, type);
+    em.setTo(e);
+
+    MatExpr en;
+    e2.op->add(MatExpr(em), e2, en);
+    return en;
+}
+
+MatExpr operator + (const Mat& a, const float e)
+{
+    checkOperandsExist(a);
+
+    int type = a.type();
+    Mat b = Mat({1}, type);
+    b.setTo(e);
+
+    MatExpr en;
+    MatOp_AddEx::makeExpr(en, a, b, 1, 1);
+    return en;
+}
+
+MatExpr operator + (const float e, const Mat& b)
+{
+    checkOperandsExist(b);
+
+    int type = b.type();
+    Mat a = Mat({1}, type);
+    a.setTo(e);
+
+    MatExpr en;
+    MatOp_AddEx::makeExpr(en, a, b, 1, 1);
+    return en;
+}
+
 MatExpr operator - (const Mat& a)
 {
     checkOperandsExist(a);
@@ -422,6 +472,56 @@ MatExpr operator - (const MatExpr& e1, const MatExpr& e2)
     return en;
 }
 
+MatExpr operator - (const MatExpr& e1, const float e)
+{
+    // convert float to specific type.
+    int type = e1.type();
+    Mat em = Mat({1}, type);
+    em.setTo(e);
+
+    MatExpr en;
+    e1.op->subtract(e1, MatExpr(em), en);
+    return en;
+}
+
+MatExpr operator - (const float e, const MatExpr& e2)
+{
+    // convert float to specific type.
+    int type = e2.type();
+    Mat em = Mat({1}, type);
+    em.setTo(e);
+
+    MatExpr en;
+    e2.op->subtract(MatExpr(em), e2, en);
+    return en;
+}
+
+MatExpr operator - (const Mat& a, const float e)
+{
+    checkOperandsExist(a);
+
+    int type = a.type();
+    Mat b = Mat({1}, type);
+    b.setTo(e);
+
+    MatExpr en;
+    MatOp_AddEx::makeExpr(en, a, b, 1, -1);
+    return en;
+}
+
+MatExpr operator - (const float e, const Mat& b)
+{
+    checkOperandsExist(b);
+
+    int type = b.type();
+    Mat a = Mat({1}, type);
+    a.setTo(e);
+
+    MatExpr en;
+    MatOp_AddEx::makeExpr(en, a, b, 1, -1);
+    return en;
+}
+
 MatExpr operator * (const Mat& a, const Mat& b)
 {
     checkOperandsExist(a, b);
@@ -454,6 +554,55 @@ MatExpr operator * (const MatExpr& e1, const MatExpr& e2)
     return en;
 }
 
+MatExpr operator * (const MatExpr& e1, const float e)
+{
+    // convert float to specific type.
+    int type = e1.type();
+    Mat em = Mat({1}, type);
+    em.setTo(e);
+
+    MatExpr en;
+    e1.op->multiply(e1, MatExpr(em), en);
+    return en;
+}
+
+MatExpr operator * (const float e, const MatExpr& e2)
+{
+    // convert float to specific type.
+    int type = e2.type();
+    Mat em = Mat({1}, type);
+    em.setTo(e);
+
+    MatExpr en;
+    e2.op->multiply(MatExpr(em), e2, en);
+    return en;
+}
+
+MatExpr operator * (const Mat& a, const float e)
+{
+    checkOperandsExist(a);
+
+    int type = a.type();
+    Mat b = Mat({1}, type);
+    b.setTo(e);
+
+    MatExpr en;
+    MatOp_Bin::makeExpr(en, '*', a, b);
+    return en;
+}
+
+MatExpr operator * (const float e, const Mat& b)
+{
+    checkOperandsExist(b);
+
+    int type = b.type();
+    Mat a = Mat({1}, type);
+    a.setTo(e);
+
+    MatExpr en;
+    MatOp_Bin::makeExpr(en, '*', a, b);
+    return en;
+}
 
 MatExpr operator / (const Mat& a, const Mat& b)
 {
@@ -483,6 +632,56 @@ MatExpr operator / (const MatExpr& e1, const MatExpr& e2)
 {
     MatExpr en;
     e1.op->divide(e1, e2, en);
+    return en;
+}
+
+MatExpr operator / (const MatExpr& e1, const float e)
+{
+    // convert float to specific type.
+    int type = e1.type();
+    Mat em = Mat({1}, type);
+    em.setTo(e);
+
+    MatExpr en;
+    e1.op->divide(e1, MatExpr(em), en);
+    return en;
+}
+
+MatExpr operator / (const float e, const MatExpr& e2)
+{
+    // convert float to specific type.
+    int type = e2.type();
+    Mat em = Mat({1}, type);
+    em.setTo(e);
+
+    MatExpr en;
+    e2.op->divide(MatExpr(em), e2, en);
+    return en;
+}
+
+MatExpr operator / (const Mat& a, const float e)
+{
+    checkOperandsExist(a);
+
+    int type = a.type();
+    Mat b = Mat({1}, type);
+    b.setTo(e);
+
+    MatExpr en;
+    MatOp_Bin::makeExpr(en, '/', a, b);
+    return en;
+}
+
+MatExpr operator / (const float e, const Mat& b)
+{
+    checkOperandsExist(b);
+
+    int type = b.type();
+    Mat a = Mat({1}, type);
+    a.setTo(e);
+
+    MatExpr en;
+    MatOp_Bin::makeExpr(en, '/', a, b);
     return en;
 }
 

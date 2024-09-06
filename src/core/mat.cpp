@@ -5,6 +5,7 @@
 #include "minfer/mat.h"
 #include "minfer/system.h"
 #include "minfer/utils.h"
+#include "minfer/saturate.h"
 
 #define M_XADD(addr, delta) __c11_atomic_fetch_add((_Atomic(int)*)(addr), delta, __ATOMIC_ACQ_REL)
 
@@ -538,6 +539,76 @@ void Mat::setSize(int dim, const int *size)
 void Mat::setSize(Mat &m)
 {
     _setSize(*this, m.size.dims(), m.size.p);
+}
+
+void Mat::setTo(float v)
+{
+    int vi;
+    switch (matType)
+    {
+        case DT_8U:
+        {
+            uint8_t u = saturate_cast<uint8_t>(v);
+            uchar* p = (uchar *)&vi;
+            p[0] = u; p[1] = u; p[2] = u; p[3] = u;
+            memset_pattern8(data, &vi, total() * sizeof(uint8_t));
+            break;
+        }
+        case DT_8S:
+        {
+            int8_t u = saturate_cast<int8_t>(v);
+            char* p = (char *)&vi;
+            p[0] = u; p[1] = u; p[2] = u; p[3] = u;
+            memset_pattern8(data, &vi, total() * sizeof(uint8_t));
+            break;
+        }
+        case DT_16U:
+        {
+            ushort u = saturate_cast<ushort>(v);
+            ushort * p = (ushort *)&vi;
+            p[0] = u; p[1] = u;
+            memset_pattern4(data, &vi, total() * sizeof(ushort));
+            break;
+        }
+        case DT_16S:
+        {
+            short u = saturate_cast<short>(v);
+            short * p = (short *)&vi;
+            p[0] = u; p[1] = u;
+            memset_pattern4(data, &vi, total() * sizeof(ushort));
+            break;
+        }
+        case DT_32F:
+        {
+            memcpy(&vi, &v, sizeof(float ));
+            memset(data, vi, total() * sizeof(int ));
+            break;
+        }
+        case DT_32S:
+        {
+            memset(data, v, total() * sizeof(int ));
+            break;
+        }
+        case DT_32U:
+        {
+            uint uv = saturate_cast<uint>(v);
+            memcpy(&vi, &uv, sizeof(int ));
+
+            memset(data, vi, total() * sizeof(int ));
+            break;
+        }
+        case DT_16F:
+        {
+            // TODO check if the half-float is correct?
+            ushort u = *(ushort *)hfloat(v).get_ptr();
+            ushort * p = (ushort *)&vi;
+            p[0] = u; p[1] = u;
+            memset(data, vi, total() * sizeof(ushort));
+            break;
+        }
+        default:
+            M_Error_(Error::StsNotImplemented, ("Unsupported type:%d in setTo function!", matType));
+    }
 }
 
 size_t Mat::total() const

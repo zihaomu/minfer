@@ -95,10 +95,12 @@ public:
     hfloat() : h(0) {}
     explicit hfloat(float x) { h = (__fp16)x; }
     operator float() const { return (float)h; }
+    void* get_ptr() { return &h; }
 protected:
     __fp16 h;
 
 #else
+    void* get_ptr() { return &w; }
     hfloat() : w(0) {}
     explicit hfloat(float x)
     {
