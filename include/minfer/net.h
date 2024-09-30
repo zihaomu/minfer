@@ -8,7 +8,6 @@
 namespace minfer
 {
 
-
 /// Net 类别
 /* 例子代码：
  * Net net = readNet("llama.gguf");

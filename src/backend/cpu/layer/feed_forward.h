@@ -21,10 +21,10 @@ public:
 
     void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output, int start_pos) override;
 
+    void finalize(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
+
 private:
     FeedForwardLayer(const std::shared_ptr<FeedForwardLayerParams> param);
-
-    void finalize(const std::vector<Mat *> &input, std::vector<Mat *> &output);
 
     int embd_dim; // input embedding feature length
     int ffn_dim;  // ffn feature length

@@ -65,6 +65,11 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     }
 }
 
+void FeedForwardLayer::finalize(const std::vector<Mat*>& input, std::vector<Mat*>& output)
+{
+
+}
+
 FeedForwardLayer::~FeedForwardLayer()
 {
 
