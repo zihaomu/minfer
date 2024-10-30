@@ -33,6 +33,7 @@ private:
     Mat gate;
     Mat up;
     Mat down;
+    ActivateType activateType;
 };
 
 }

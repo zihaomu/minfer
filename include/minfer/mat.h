@@ -10,6 +10,7 @@
 
 #include "define.h"
 #include "system.h"
+#include "libnpy/npy.hpp"
 
 namespace minfer
 {
@@ -277,6 +278,9 @@ size_t total(const MatShape shape, int startDim, int endDim);
 
 // for fast gemm
 Mat gemm(const Mat& a, const Mat& b, bool transA = false, bool transB = false);
+
+// read data from given path and re-construct it to Mat.
+Mat readMatFromNpy(const std::string& path);
 
 // TODO Mat inv, and other type mat operator.
 }

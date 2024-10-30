@@ -17,6 +17,8 @@ FeedForwardLayer::FeedForwardLayer(const std::shared_ptr<FeedForwardLayerParams>
     param->up.convertTo(up, DT_32F);
     param->gate.convertTo(gate, DT_32F);
     param->down.convertTo(down, DT_32F);
+
+    activateType = param->actType;
 }
 
 void FeedForwardLayer::init(const std::vector<Mat *> &input, std::vector<Mat *> &output)
@@ -24,6 +26,7 @@ void FeedForwardLayer::init(const std::vector<Mat *> &input, std::vector<Mat *> 
 
 }
 
+// support start_pos
 void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *> &output, int start_pos)
 {
     M_Assert(input.size() == 1 && input[0]);
@@ -38,13 +41,35 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     M_Assert(in_shape[0] == 1 && "Currently, only support single batch!");
 
     Mat x = *input[0];
-    Mat x_norm = Mat(x.dims, x.size.p, DT_32F); // shape [bsz, seq_len, embed]
+    Mat x_norm = Mat(x.dims-1, x.size.p+1, DT_32F); // shape [bsz, seq_len, embed]
     float* p = (float *)x_norm.data;
     float* pi = (float *)x.data;
     float * p_norm = (float *)norm.data;
 
     int seq_len = in_shape[1];
 
+    // relu act
+    std::function<float(const float )> act_func;
+    if (activateType == ActivateType::SILU)
+    {
+        act_func = [&](const float v)
+        {
+            return std::max(0.f, v);
+        };
+    }
+    else if (activateType == ActivateType::RELU)
+    {
+        act_func = [&](const float v)
+        {
+            return v/(1 + exp(-v));
+        };
+    }
+    else
+    {
+        M_Error(NULL, "Un-supported activation type!");
+    }
+
+    // rms-norm
     for (int i = 0; i < seq_len; i++)
     {
         float sum_f2 = 0;
@@ -63,6 +88,24 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
             p[i * embd_dim + j]= pi_s[j] * x1 * p_norm[j];
         }
     }
+
+    // x1 = silu(self.linear1.forward(x))
+    Mat x1 = gemm(x_norm, gate, false, true);
+
+    float* p_x1 = (float *)x1.data;
+    for (int i = 0; i < seq_len; i++)
+    {
+        p_x1[i] = act_func(p_x1[i]);
+    }
+
+    // x3 = self.linear3.forward(x)
+    Mat x3 = gemm(x_norm, up, false, true);
+
+    // x_out = self.linear2.forward(x1 * x3)
+    Mat out = *output[0];
+    Mat x_out = Mat(out.size.dims() - 1, out.size.p+1, out.type(), out.data);
+
+    gemm(x1 * x3, down, false, true).copyTo(x_out);
 }
 
 void FeedForwardLayer::finalize(const std::vector<Mat*>& input, std::vector<Mat*>& output)

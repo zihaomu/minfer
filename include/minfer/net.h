@@ -63,8 +63,8 @@ private:
     NetImpl* impl; // 里面保存多种Backend，subnet，
 };
 
-// 释放全局资源
-void releaseMinfer();
+//// 释放全局资源 TODO
+//void releaseMinfer();
 
 }
 

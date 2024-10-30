@@ -87,6 +87,7 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
     MatShape shape_a = a.shape();
     MatShape shape_b = b.shape();
 
+    // TODO, support the different shape gemm!
     M_Assert(shape_a.size() == shape_b.size() && "Two Mat dimension on gemm function are different!");
     int len_s = shape_a.size();
     M_Assert(len_s >= 2 && "Only multi-dimension Mat is supported for gemm function!");
@@ -105,6 +106,11 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
         M_Assert(shape_a[i] == shape_b[i] && "Mat shapes on gemm function are miss matching!");
         i--;
     }
+
+    MatShape outShape(shape_a); // M x N
+    outShape[len_s - 1] = N;
+
+    c = Mat(outShape, DT_32F);
 
     size_t out_loop = len_s > 2 ? total(shape_a, 0, len_s - 3): 1;
     size_t step_a = M * K;
@@ -143,6 +149,7 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
 }
 
 // implementation of rox x column
+// TODO gemm support the different shape.
 Mat gemm(const Mat& a, const Mat& b, bool transA, bool transB)
 {
     Mat out;
