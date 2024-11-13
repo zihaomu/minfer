@@ -26,7 +26,7 @@ void FeedForwardLayer::init(const std::vector<Mat *> &input, std::vector<Mat *> 
 
 }
 
-// support start_pos
+// TODO: add support start_pos
 void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *> &output, int start_pos)
 {
     M_Assert(input.size() == 1 && input[0]);
@@ -40,10 +40,13 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     M_Assert(in_shape[2] == embd_dim);
     M_Assert(in_shape[0] == 1 && "Currently, only support single batch!");
 
+    // pos_stripe 确定细节pos对计算对影响。
+    // size_t pos_stripe = start_pos * total(in_shape, 1) * DT_ELEM_SIZE(input[0]->type());
+
     Mat x = *input[0];
     Mat x_norm = Mat(x.dims-1, x.size.p+1, DT_32F); // shape [bsz, seq_len, embed]
     float* p = (float *)x_norm.data;
-    float* pi = (float *)x.data;
+    float* pi = (float *)(x.data);
     float * p_norm = (float *)norm.data;
 
     int seq_len = in_shape[1];
@@ -106,6 +109,11 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     Mat x_out = Mat(out.size.dims() - 1, out.size.p+1, out.type(), out.data);
 
     gemm(x1 * x3, down, false, true).copyTo(x_out);
+
+//    out.print(10);
+    Mat m = out + *input[0];
+    m.copyTo(out);
+//    out.print(10);
 }
 
 void FeedForwardLayer::finalize(const std::vector<Mat*>& input, std::vector<Mat*>& output)

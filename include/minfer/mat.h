@@ -272,9 +272,9 @@ MatExpr operator == (const Mat& a, const Mat& b);
 
 // compute shape.
 size_t total(const Mat& m);
-size_t total(const Mat& m, int startDim, int endDim);
+size_t total(const Mat& m, int startDim, int endDim = -1);
 size_t total(const MatShape shape);
-size_t total(const MatShape shape, int startDim, int endDim);
+size_t total(const MatShape shape, int startDim, int endDim = -1);
 
 // for fast gemm
 Mat gemm(const Mat& a, const Mat& b, bool transA = false, bool transB = false);

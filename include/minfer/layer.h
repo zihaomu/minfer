@@ -112,7 +112,7 @@ class AttentionLayerParams : public LayerParams
 public:
     AttentionLayerParams(std::vector<int> _inputIndex, std::vector<int> _outputIndex, int _max_seq_len, int _embd_dim,
                          int _head_count, int _head_count_kv, float _rms_eps,
-                         Mat _norm, Mat _wq, Mat _wk, Mat _wv, Mat _wout, Mat _bq, Mat _bk, Mat _bv, Mat _bout)
+                         Mat _norm, Mat _wq, Mat _wk, Mat _wv, Mat _wout, Mat _bq = {}, Mat _bk = {}, Mat _bv = {}, Mat _bout = {})
     :max_seq_len(_max_seq_len), embd_dim(_embd_dim), head_count(_head_count), head_count_kv(_head_count_kv),
     rms_eps(_rms_eps), norm(_norm), wq(_wq), wk(_wk), wv(_wv), wout(_wout), bq(_bq), bk(_bk), bv(_bv), bout(_bout)
     {

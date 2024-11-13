@@ -96,6 +96,7 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
     int K = shape_a[len_s - 1];
     int N = shape_b[len_s - 2];
 
+    if (K != shape_b[len_s - 1])
     M_Assert(K == shape_b[len_s - 1]);
     M_Assert(a.type() == b.type());
     M_Assert(a.type() == DT_32F && "Currently only FP32 mat is supported!");

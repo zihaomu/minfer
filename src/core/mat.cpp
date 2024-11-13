@@ -628,7 +628,7 @@ size_t Mat::total(int startDim, int endDim) const
     size_t p = 1;
 
     int endDim_ = endDim <= dims ? endDim : dims;
-    for (int i = startDim; i < endDim; i++)
+    for (int i = startDim; i < endDim_; i++)
     {
         p *= size.p[i];
     }
@@ -717,6 +717,10 @@ size_t total(const Mat& m)
 
 size_t total(const Mat& m, int startDim, int endDim)
 {
+    if (endDim == -1)
+    {
+        endDim = m.dims;
+    }
     return m.total(startDim, endDim);
 }
 
@@ -727,12 +731,17 @@ size_t total(const MatShape shape)
 
 size_t total(const MatShape shape, int startDim, int endDim)
 {
+    if (endDim == -1)
+    {
+        endDim = shape.size();
+    }
+
     assert(startDim >= 0 && startDim <= endDim);
     size_t p = 1;
     int dims = shape.size();
 
     int endDim_ = endDim <= dims ? endDim : dims;
-    for (int i = startDim; i < endDim; i++)
+    for (int i = startDim; i < endDim_; i++)
     {
         p *= shape[i];
     }

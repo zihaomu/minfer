@@ -3,6 +3,9 @@
 //
 
 #include "attention_layer.h"
+#include "autobuffer.h"
+
+#define ATTEN_DEBUG 1
 namespace minfer {
 
 AttentionLayer::AttentionLayer(const std::shared_ptr<AttentionLayerParams> param)
@@ -31,6 +34,14 @@ AttentionLayer::AttentionLayer(const std::shared_ptr<AttentionLayerParams> param
     param->bk.convertTo(bk, DT_32F);
     param->bv.convertTo(bv, DT_32F);
     param->bout.convertTo(bout, DT_32F);
+
+#if ATTEN_DEBUG
+    std::cout<<"print in init q k v out shape and params"<<std::endl;
+    wq.print(2);
+    wk.print(2);
+    wv.print(2);
+    wout.print(2);
+#endif
 }
 
 void AttentionLayer::finalize(const std::vector<Mat *> &input, std::vector<Mat *> &output)
@@ -71,6 +82,7 @@ Mat softmax(Mat inp)
  * forward contain start_pos and sequence len, how to set the sequence len to the forward?
  * */
 // TODO take into account the kv_head is different with head_count.
+// TODO try to use bias params
 void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *> &output, int start_pos)
 {
     // shape check
@@ -86,10 +98,10 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     // TODO support multi-type Mat. Current only fp16 is supported.
     M_Assert(input[0]->type() == DT_32F);
 
-    // implementation the rms norm
+    // step0: implementation the rms norm
     // xq shape is [bsz, seq, embed]
     Mat x = *input[0];
-    Mat x_norm = Mat(x.dims, x.size.p, DT_32F); // shape [bsz, seq_len, embed]
+    Mat x_norm = Mat(x.dims - 1, x.size.p + 1, DT_32F); // shape [bsz, seq_len, embed]
 
     float* p = (float *)x_norm.data;
     float* pi = (float *)x.data;
@@ -117,9 +129,17 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     }
 
     // implementation Q K V linear
+
     Mat x_q = gemm(x_norm, wq); // xq shape is [bsz, seq, embed], x_norm shape is [embed, embed], after shape, is the same.
     Mat x_k = gemm(x_norm, wk); // k and v may has different shape with q, use Group-query attention.
     Mat x_v = gemm(x_norm, wv); // wk and wv shape is [embed, embd_dim_kv], x_k = [bsz, seq, embd_dim_kv]
+
+#if ATTEN_DEBUG
+    std::cout<<"print in init xq, xk xv shape and params"<<std::endl;
+    x_q.print(2);
+    x_k.print(2);
+    x_v.print(2);
+#endif
 
     M_Assert(embd_dim_head % 2 == 0);
     int embd_dim_head_complex = embd_dim_head / 2;
@@ -129,7 +149,7 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     // implementation Q K RoPe
     for (int i = 0; i < embd_dim_head_complex; i++)
     {
-        freqs_cis[i] = 1.0f / powf(10000.0f, i / (float)(i * 2));
+        freqs_cis[i] = 1.0f / powf(10000.0f, i*2 / (float)(embd_dim_head));
     }
 
     std::vector<float > freqs_sin_cos(seq_len * embd_dim_head_complex * 2);
@@ -151,23 +171,23 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     for (int i = 0; i < seq_len; i++)
     {
         float* p_data = freqs_sin_cos.data() + i * embd_dim_head_complex * 2;
+        float* p_x_q = (float *)x_q.data + i * embd_dim_head_complex * 2;
         float* p_x_k = (float *)x_k.data + i * embd_dim_head_complex * 2;
-        float* p_x_v = (float *)x_v.data + i * embd_dim_head_complex * 2;
 
         for (int j = 0; j < embd_dim_head_complex; j++)
         {
             float freqs_sin = p_data[j*2];
             float freqs_cos = p_data[j*2 + 1];
 
+            float q_r = p_x_q[j*2];
+            float q_i = p_x_q[j*2+1];
+            p_x_q[j*2]     = q_r * freqs_cos - q_i * freqs_sin;
+            p_x_q[j*2 + 1] = q_r * freqs_sin + q_i * freqs_cos;
+
             float k_r = p_x_k[j*2];
             float k_i = p_x_k[j*2+1];
             p_x_k[j*2]     = k_r * freqs_cos - k_i * freqs_sin;
             p_x_k[j*2 + 1] = k_r * freqs_sin + k_i * freqs_cos;
-
-            float v_r = p_x_v[j*2];
-            float v_i = p_x_v[j*2+1];
-            p_x_v[j*2]     = v_r * freqs_cos - v_i * freqs_sin;
-            p_x_v[j*2 + 1] = v_r * freqs_sin + v_i * freqs_cos;
         }
     }
 
@@ -176,20 +196,79 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     // implementation Q K matmul and mask
     Mat qk = gemm(x_q, x_k, false, true); // qk shape is [bsz, seq_len, seq_len + cache_len]
 
+    int v = 4;
+    uint32_t uy = 0;
+    u_int8_t data[4];
+    float d = 0;
+    uint32_t da = 0;
+    char* dd = (char*)&d;
+    memcpy(&uy, &v, sizeof(float ));
+    memset(&da, uy, sizeof(float ));
+
+    std::cout<<"data = "<<da<<std::endl;
+    da = uy;
+    std::cout<<"data = "<<da<<std::endl;
+
+    Mat b = Mat({2}, qk.type());
+    b.setTo(1);
+    b.print();
+
     // implementation softmax
     Mat qk_sqrt = qk / sqrtf(embd_dim_head);
 
-    // TODO score add mask
+#if ATTEN_DEBUG
+    std::cout<<"print after rope xq, xk, qk, qk_sqrt shape and params"<<std::endl;
+    x_q.print(1);
+    x_k.print(1);
+    qk.print(2);
+    qk_sqrt.print(2);
+    std::cout<<"sqrtf(embd_dim_head) = "<<sqrtf(embd_dim_head)<<std::endl;
+#endif
+
+    // construct Mask Mat
+    int dim_qk = qk_sqrt.size.dims();
+    M_Assert(dim_qk >= 2);
+    std::vector<int> mask_shape(dim_qk, 1);
+    size_t m = qk_sqrt.size.p[dim_qk - 2];
+    size_t n = qk_sqrt.size.p[dim_qk - 1];
+
+    mask_shape[dim_qk - 1] = qk_sqrt.size.p[dim_qk - 1];
+    mask_shape[dim_qk - 2] = qk_sqrt.size.p[dim_qk - 2];
+
+    Mat mask = Mat(mask_shape, DT_32F);
+    float* p_mask = (float*)mask.data;
+    for (int i = 0; i < m; i++)
+    {
+        float* p_mask_i = p_mask + i*n;
+        for (int j = 0; j < n; j++)
+        {
+            p_mask_i[j] = i >= j ? 1 : 0;
+        }
+    }
+
+    Mat mask_1e20 = (mask - 1) * 1e20f;
+
+    qk_sqrt = qk_sqrt * mask - mask_1e20;
 
     // apply the softmax to score
     Mat score = softmax(qk_sqrt);
 
+#if ATTEN_DEBUG
+        std::cout<<"print after mask, print qk_sqrt, score and x_v shape and params"<<std::endl;
+        qk_sqrt.print(2);
+        score.print(2);
+        x_v.print(2);
+#endif
     // implementation matmul V
-    Mat qkv = gemm(score, x_v, false, true); // qk shape is [bsz, seq_len, seq_len + cache_len]
+    Mat qkv = gemm(score, x_v); // qk shape is [bsz, seq_len, seq_len + cache_len]
 
     // implementation out linear.
-    *output[0] = gemm(qkv, wout);
-    *output[0] += *input[0];
+    Mat out = *output[0];
+    Mat x_out = Mat(out.size.dims() - 1, out.size.p+1, out.type(), out.data);
+    gemm(qkv, wout).copyTo(x_out);
+
+    Mat m2 = out + *input[0];
+    m2.copyTo(out);
 }
 
 void precompute_freq_cis(int dim, int end, int rms_eps)

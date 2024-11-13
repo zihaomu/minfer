@@ -16,6 +16,7 @@ def generate_lower_triangular_mask(N):
 
 # set with the maximum number of sequences
 MASK = generate_lower_triangular_mask(256)
+print(MASK)
 
 def printArray(data, name = None):
     d = data.flatten()
@@ -133,6 +134,7 @@ def apply_rotary_emb(xq, xk, freqs_sin, freqs_cos):
     # apply rotation using real numbers
     xq_out_r = xq_r * freqs_cos - xq_i * freqs_sin
     xq_out_i = xq_r * freqs_sin + xq_i * freqs_cos
+
     xk_out_r = xk_r * freqs_cos - xk_i * freqs_sin
     xk_out_i = xk_r * freqs_sin + xk_i * freqs_cos
 
@@ -160,8 +162,14 @@ class Attention:
         self.soft_max = Softmax(dim=-1) # Keep
 
     def forward(self, query, key, value):
-        d_k = query.shape[-1] # d_k是每个头的维度
+        d_k = query.shape[-1] # d_k是每个头的维度 # Keep
         keyT = np.transpose(key, axes=(0, 1, 3, 2))
+
+        '''
+        query: 1 x num_heads x seq_len x d_k
+        keyT: 1 x num_heads x d_k x seq_len
+        np.matmul(query, keyT): 1 x num_heads x seq_len x seq_len
+        '''
         scores = np.matmul(query, keyT) / math.sqrt(d_k)
         mask = MASK[:scores.shape[-2], :scores.shape[-1]]
         scores = scores * mask - 1e20 * (1 - mask)
@@ -198,7 +206,7 @@ class MultiHeadAttention:
         q, k = apply_rotary_emb(q, k, freqs_sin, freqs_cos)
         # printArray(q, "xq")
         # Transpose for attention dot product: (bsz, num_heads, seq_len, d_k)
-        v = np.transpose(v, axes=(0, 2, 1, 3))
+        v = np.transpose(v, axes=(0, 2, 1, 3)) # 1 x num_heads x seq_len x d_k
         q = np.transpose(q, axes=(0, 2, 1, 3))
         k = np.transpose(k, axes=(0, 2, 1, 3))
 
@@ -230,15 +238,63 @@ class FeedForward:
 
     def forward(self, x):
         data1 = self.linear2.forward(self.silu(self.linear1.forward(x)) * self.linear3.forward(x))
+        data2 = x + data1
         # data2 = self.linear3.forward(x)
         # print("data 1 shape = ", data1.shape)
         # print("data 2 shape = ", data2.shape)
         # return data1 * data2
         printArray(data1, "ff out")
-        return data1
+        return data2
         # return self.linear2.forward(self.silu(self.linear1.forward(x))) * self.linear3.forward(x)
 
+def Attention_layer_data_generater():
+    # random attention layer
+    d_model = 128
+    num_heads = 8
+    max_len = 256
+    seq_len = 256
+
+    atten_norm = RMSNorm(d_model)
+    atten = MultiHeadAttention(d_model, num_heads)
+
+    # random params
+    params = []
+    params.append(np.random.rand(d_model, d_model))
+    params.append(np.random.rand(d_model, d_model))
+    params.append(np.random.rand(d_model, d_model))
+    params.append(np.random.rand(d_model, d_model))
+
+    atten.load(params)
+
+    params_atten_norm = np.random.rand(d_model)
+    atten_norm.load(params_atten_norm)
+
+    # random input
+    x = np.random.rand(1, seq_len, d_model)
+    printArray(x, "Attention input")
+
+    # precompute freqs_cis
+    freqs_sin, freqs_cos = precompute_freqs_cis(d_model // num_heads, max_len)
+    
+    # forward
+    out = atten.forward(atten_norm.forward(x), freqs_sin, freqs_cos)
+    printArray(out, "Attention output")
+
+    # save input
+    # np.save(ROOT_PATH + "/atten_input.npy", x.astype(np.float32))
+
+    # # save params
+    # np.save(ROOT_PATH + "/atten_params_0.npy", np.array(params[0]).astype(np.float32))
+    # np.save(ROOT_PATH + "/atten_params_1.npy", np.array(params[1]).astype(np.float32))
+    # np.save(ROOT_PATH + "/atten_params_2.npy", np.array(params[2]).astype(np.float32))
+    # np.save(ROOT_PATH + "/atten_params_3.npy", np.array(params[3]).astype(np.float32))
+    # np.save(ROOT_PATH + "/atten_rms_params.npy", np.array(params_atten_norm).astype(np.float32))
+
+    # # save output
+    # np.save(ROOT_PATH + "/atten_output.npy", out.astype(np.float32))
+
 def FeadForward_layer_data_generater():
+
     # random FFN layer
     d_model = 128
     d_ff = 256
@@ -261,7 +317,7 @@ def FeadForward_layer_data_generater():
     printArray(x, "FFN input")
 
     # forward
-    out = ffn.forward(ffn_norm.forward(x))
+    out = ffn.forward(ffn_norm.forward(x)) + x
     # printArray(out, "FFN output")
 
     # check if the output folder is exist
@@ -287,7 +343,9 @@ def generate_random_numpy_npy():
     np.save(ROOT_PATH + "/random10x12.npy", data)
 
 def main():
-    FeadForward_layer_data_generater()
+    # FeadForward_layer_data_generater()
     # generate_random_numpy_npy()
+
+    Attention_layer_data_generater()
 
 main()

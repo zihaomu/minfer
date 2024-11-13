@@ -29,6 +29,7 @@ endif ()
 include_directories(
         ${CMAKE_CURRENT_LIST_DIR}/include/
         ${CMAKE_CURRENT_LIST_DIR}/src/
+        ${CMAKE_CURRENT_LIST_DIR}/src/core
         ${CMAKE_CURRENT_LIST_DIR}/tools/
         ${CMAKE_CURRENT_LIST_DIR}/3rdparty/
 )
