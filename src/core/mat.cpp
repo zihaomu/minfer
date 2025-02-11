@@ -6,8 +6,16 @@
 #include "minfer/system.h"
 #include "minfer/utils.h"
 #include "minfer/saturate.h"
+#include <stdatomic.h>
 
-#define M_XADD(addr, delta) __c11_atomic_fetch_add((_Atomic(int)*)(addr), delta, __ATOMIC_ACQ_REL)
+// If is not Mac or IOS, then include the following code.
+#ifndef __APPLE__
+static inline
+void memset_pattern4(void *data, const void *pattern4, size_t len)
+{
+    std::fill_n(reinterpret_cast<uint8_t*>(data), len, *reinterpret_cast<uint8_t*>(&pattern4));
+}
+#endif
 
 namespace minfer
 {
@@ -551,7 +559,8 @@ void Mat::setTo(float v)
             uint8_t u = saturate_cast<uint8_t>(v);
             uchar* p = (uchar *)&vi;
             p[0] = u; p[1] = u; p[2] = u; p[3] = u;
-            memset_pattern8(data, &vi, total() * sizeof(uint8_t));
+            memset(data, vi, total() * sizeof(int ));
+            memset_pattern4(data, &vi, total() * sizeof(uint8_t));
             break;
         }
         case DT_8S:
@@ -559,7 +568,7 @@ void Mat::setTo(float v)
             int8_t u = saturate_cast<int8_t>(v);
             char* p = (char *)&vi;
             p[0] = u; p[1] = u; p[2] = u; p[3] = u;
-            memset_pattern8(data, &vi, total() * sizeof(uint8_t));
+            memset_pattern4(data, &vi, total() * sizeof(uint8_t));
             break;
         }
         case DT_16U:
@@ -581,12 +590,12 @@ void Mat::setTo(float v)
         case DT_32F:
         {
             memcpy(&vi, &v, sizeof(float ));
-            memset(data, vi, total() * sizeof(int ));
+            memset_pattern4(data, &vi, total() * sizeof(int ));
             break;
         }
         case DT_32S:
         {
-            memset(data, v, total() * sizeof(int ));
+            memset_pattern4(data, &v, total() * sizeof(int ));
             break;
         }
         case DT_32U:
@@ -594,7 +603,7 @@ void Mat::setTo(float v)
             uint uv = saturate_cast<uint>(v);
             memcpy(&vi, &uv, sizeof(int ));
 
-            memset(data, vi, total() * sizeof(int ));
+            memset_pattern4(data, &vi, total() * sizeof(int ));
             break;
         }
         case DT_16F:
@@ -603,7 +612,7 @@ void Mat::setTo(float v)
             ushort u = *(ushort *)hfloat(v).get_ptr();
             ushort * p = (ushort *)&vi;
             p[0] = u; p[1] = u;
-            memset(data, vi, total() * sizeof(ushort));
+            memset_pattern4(data, &vi, total() * sizeof(ushort));
             break;
         }
         default:

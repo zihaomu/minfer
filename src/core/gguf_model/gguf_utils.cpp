@@ -7,6 +7,9 @@
 #include "gguf_utils.h"
 #include "ggml_quant.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
 namespace minfer {
 
 GGUF_context::~GGUF_context() {
@@ -60,9 +63,48 @@ GGUF_context::~GGUF_context() {
     }
 }
 
+#ifdef _WIN32
+    static wchar_t * ggml_mbstowcs(const char * mbs) {
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, mbs, -1, NULL, 0);
+        if (!wlen) {
+            errno = EINVAL;
+            return NULL;
+        }
+
+        wchar_t * wbuf = (wchar_t *)MMemoryAllocAlign(wlen * sizeof(wchar_t));
+        wlen = MultiByteToWideChar(CP_UTF8, 0, mbs, -1, wbuf, wlen);
+        if (!wlen) {
+            MMemoryFreeAlign(wbuf);
+            errno = EINVAL;
+            return NULL;
+        }
+
+        return wbuf;
+    }
+#endif
+
 FILE *gguf_fopen(const char *fname, const char *mode) {
 #ifdef _WIN32
-#error "No implement!"
+    FILE * file = NULL;
+
+    // convert fname (UTF-8)
+    wchar_t * wfname = ggml_mbstowcs(fname);
+    if (wfname) {
+        // convert mode (ANSI)
+        wchar_t * wmode = (wchar_t *)MMemoryAllocAlign((strlen(mode) + 1) * sizeof(wchar_t));
+        wchar_t * wmode_p = wmode;
+        do {
+            *wmode_p++ = (wchar_t)*mode;
+        } while (*mode++);
+
+        // open file
+        file = _wfopen(wfname, wmode);
+
+        MMemoryFreeAlign(wfname);
+        MMemoryFreeAlign(wmode);
+    }
+
+    return file;
 #else
     return fopen(fname, mode);
 #endif
@@ -140,11 +182,13 @@ size_t ggml_row_size(enum GGML_TYPE type, int64_t ne) {
 
 size_t gguf_type_size(enum GGUF_TYPE type) {
     M_Assert(0 <= type && type < GGUF_TYPE_COUNT);
-    return GGUF_TYPE_SIZE[type];
+    auto it = GGUF_TYPE_SIZE.find(type);
+    return it == GGUF_TYPE_SIZE.end() ? 0 : it->second;
 }
 
 const char * GGUF_TYPE_name(enum GGUF_TYPE type) {
-    return GGUF_TYPE_NAME[type];
+    auto it = GGUF_TYPE_NAME.find(type);
+    return it == GGUF_TYPE_NAME.end() ? 0 : it->second;
 }
 
 int gguf_get_version(const struct GGUF_context * ctx) {

@@ -7,6 +7,8 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <cstdint>
+#include <memory>
 
 #define M_PAD(x, n) (((x) + (n) - 1) & ~((n) - 1))
 
@@ -29,6 +31,9 @@
 #define M_VERSION_STATUS   "-dev"
 #define M_VERSION STR(M_VERSION_MAJOR) "." STR(M_VERSION_MINOR) "." STR(M_VERSION_PATCH) M_VERSION_STATUS
 
+#ifdef M_ROOT_PATH
+#define M_ROOT STR(M_ROOT_PATH)
+#endif
 // ERROR CODE
 #ifndef M_PI
 #define M_PI   3.1415926535897932384626433832795
@@ -83,6 +88,35 @@ using int64 = long int;
 #define M_CMP_LT   3
 #define M_CMP_LE   4
 #define M_CMP_NE   5
+
+/****************************************************************************************\
+*          exchange-add operation for atomic operations on reference counters            *
+\****************************************************************************************/
+// take from opencv2/core/cvdef.h Line 706
+#ifdef M_XADD
+// allow to use user-defined macro
+#elif defined __GNUC__ || defined __clang__
+#  if defined __clang__ && __clang_major__ >= 3 && !defined __ANDROID__ && !defined __EMSCRIPTEN__ && !defined(__CUDACC__)  && !defined __INTEL_COMPILER
+#    ifdef __ATOMIC_ACQ_REL
+#      define M_XADD(addr, delta) __c11_atomic_fetch_add((_Atomic(int)*)(addr), delta, __ATOMIC_ACQ_REL)
+#    else
+#      define M_XADD(addr, delta) __atomic_fetch_add((_Atomic(int)*)(addr), delta, 4)
+#    endif
+#  else
+#    if defined __ATOMIC_ACQ_REL && !defined __clang__
+// version for gcc >= 4.7
+#      define M_XADD(addr, delta) (int)__atomic_fetch_add((unsigned*)(addr), (unsigned)(delta), __ATOMIC_ACQ_REL)
+#    else
+#      define M_XADD(addr, delta) (int)__sync_fetch_and_add((unsigned*)(addr), (unsigned)(delta))
+#    endif
+#  endif
+#elif defined _MSC_VER && !defined RC_INVOKED
+#  include <intrin.h>
+#  define M_XADD(addr, delta) (int)_InterlockedExchangeAdd((long volatile*)addr, delta)
+#else
+#error "Atomic operations are not supported"
+#endif
+
 
 /****************************************************************************************\
 *                                  Float16 Define                                        *

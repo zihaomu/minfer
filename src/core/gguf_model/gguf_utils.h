@@ -28,36 +28,36 @@ struct GGUF_str {
     char* data; // point of data.
 };
 
-static const size_t GGUF_TYPE_SIZE[GGUF_TYPE_COUNT] = {
-        [GGUF_TYPE_UINT8]   = sizeof(uint8_t),
-        [GGUF_TYPE_INT8]    = sizeof(int8_t),
-        [GGUF_TYPE_UINT16]  = sizeof(uint16_t),
-        [GGUF_TYPE_INT16]   = sizeof(int16_t),
-        [GGUF_TYPE_UINT32]  = sizeof(uint32_t),
-        [GGUF_TYPE_INT32]   = sizeof(int32_t),
-        [GGUF_TYPE_FLOAT32] = sizeof(float),
-        [GGUF_TYPE_BOOL]    = sizeof(bool),
-        [GGUF_TYPE_STRING]  = sizeof(struct GGUF_str),
-        [GGUF_TYPE_UINT64]  = sizeof(uint64_t),
-        [GGUF_TYPE_INT64]   = sizeof(int64_t),
-        [GGUF_TYPE_FLOAT64] = sizeof(double),
-        [GGUF_TYPE_ARRAY]   = 0, // undefined
+static const std::map<GGUF_TYPE, size_t> GGUF_TYPE_SIZE = {
+        {GGUF_TYPE_UINT8  , sizeof(uint8_t)},
+        {GGUF_TYPE_INT8   , sizeof(int8_t)},
+        {GGUF_TYPE_UINT16 , sizeof(uint16_t)},
+        {GGUF_TYPE_INT16  , sizeof(int16_t)},
+        {GGUF_TYPE_UINT32 , sizeof(uint32_t)},
+        {GGUF_TYPE_INT32  , sizeof(int32_t)},
+        {GGUF_TYPE_FLOAT32, sizeof(float)},
+        {GGUF_TYPE_BOOL   , sizeof(bool)},
+        {GGUF_TYPE_STRING , sizeof(struct GGUF_str)},
+        {GGUF_TYPE_UINT64 , sizeof(uint64_t)},
+        {GGUF_TYPE_INT64  , sizeof(int64_t)},
+        {GGUF_TYPE_FLOAT64, sizeof(double)},
+        {GGUF_TYPE_ARRAY  , 0}, // undefined
 };
 
-static const char * GGUF_TYPE_NAME[GGUF_TYPE_COUNT] = {
-        [GGUF_TYPE_UINT8]   = "u8",
-        [GGUF_TYPE_INT8]    = "i8",
-        [GGUF_TYPE_UINT16]  = "u16",
-        [GGUF_TYPE_INT16]   = "i16",
-        [GGUF_TYPE_UINT32]  = "u32",
-        [GGUF_TYPE_INT32]   = "i32",
-        [GGUF_TYPE_FLOAT32] = "f32",
-        [GGUF_TYPE_BOOL]    = "bool",
-        [GGUF_TYPE_STRING]  = "str",
-        [GGUF_TYPE_ARRAY]   = "arr",
-        [GGUF_TYPE_UINT64]  = "u64",
-        [GGUF_TYPE_INT64]   = "i64",
-        [GGUF_TYPE_FLOAT64] = "f64",
+static const std::map<GGUF_TYPE, const char *> GGUF_TYPE_NAME = {
+        {GGUF_TYPE_UINT8   , "u8"},
+        {GGUF_TYPE_INT8    , "i8"},
+        {GGUF_TYPE_UINT16  , "u16"},
+        {GGUF_TYPE_INT16   , "i16"},
+        {GGUF_TYPE_UINT32  , "u32"},
+        {GGUF_TYPE_INT32   , "i32"},
+        {GGUF_TYPE_FLOAT32 , "f32"},
+        {GGUF_TYPE_BOOL    , "bool"},
+        {GGUF_TYPE_STRING  , "str"},
+        {GGUF_TYPE_ARRAY   , "arr"},
+        {GGUF_TYPE_UINT64  , "u64"},
+        {GGUF_TYPE_INT64   , "i64"},
+        {GGUF_TYPE_FLOAT64 , "f64"},
 };
 
 struct GGUF_header
@@ -71,7 +71,8 @@ struct GGUF_header
 
 static size_t GGUF_TYPE_size(enum GGUF_TYPE type) {
     M_Assert(0 <= type && type < GGUF_TYPE_COUNT);
-    return GGUF_TYPE_SIZE[type];
+    auto it = GGUF_TYPE_SIZE.find(type);
+    return it == GGUF_TYPE_SIZE.end() ? 0 : it->second;
 }
 
 union GGUF_value {

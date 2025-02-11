@@ -5,6 +5,7 @@
 #include "minfer.h"
 #include <ostream>
 #include <sstream>
+#include <stdarg.h>
 
 namespace minfer
 {

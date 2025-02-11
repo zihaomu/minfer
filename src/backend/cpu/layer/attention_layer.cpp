@@ -161,8 +161,8 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
         int cur_seq = i + start_pos;
         for (int j = 0; j < embd_dim_head_complex; j++)
         {
-            p_data[j*2] = std::sinf(cur_seq * freqs_cis[j]);
-            p_data[j*2+1] = std::cosf(cur_seq * freqs_cis[j]);
+            p_data[j*2] = sinf(cur_seq * freqs_cis[j]);
+            p_data[j*2+1] = cosf(cur_seq * freqs_cis[j]);
         }
     }
 
@@ -198,7 +198,7 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
 
     int v = 4;
     uint32_t uy = 0;
-    u_int8_t data[4];
+    uint8_t data[4];
     float d = 0;
     uint32_t da = 0;
     char* dd = (char*)&d;

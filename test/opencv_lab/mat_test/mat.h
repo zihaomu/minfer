@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include "assert.h"
+#include "vector"
 // Task: implement a basic Mat class. It should include some basic function like, create, assignment, some basic computation like sub, add.
 // And Mat should support at least two type: float and int.
 

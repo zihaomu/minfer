@@ -2,6 +2,7 @@
 // Created by mzh on 2024/7/23.
 //
 
+#include <functional>
 #include "feed_forward.h"
 
 namespace minfer

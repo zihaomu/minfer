@@ -10,7 +10,7 @@ using namespace minfer;
 
 TEST(Layer_TEST, feed_forward_test)
 {
-    std::string ROOT_path = "/Users/mzh/work/my_project/minfer/test/layers/test_data/data/";
+    std::string ROOT_path = std::string(M_ROOT_PATH) + "/test/layers/test_data/data/";
     std::string input_path = ROOT_path + "ffn_input.npy";
     std::string param0_path = ROOT_path + "ffn_params_0.npy";
     std::string param1_path = ROOT_path + "ffn_params_1.npy";

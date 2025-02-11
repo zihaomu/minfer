@@ -25,6 +25,8 @@ if(CMAKE_BUILD_TYPE MATCHES Debug)
     add_definitions(-DM_DEBUG)
 endif ()
 
+# Load ROOT path and sent it to C++
+add_definitions(-DM_ROOT_PATH="${CMAKE_CURRENT_LIST_DIR}")
 
 include_directories(
         ${CMAKE_CURRENT_LIST_DIR}/include/

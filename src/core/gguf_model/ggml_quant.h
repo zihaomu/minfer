@@ -123,203 +123,207 @@ typedef struct {
     bool              is_supported;
 } ggml_type_traits_t;
 
-static const ggml_type_traits_t typeTraits[GGML_TYPE_COUNT] = {
-        [GGML_TYPE_I8] = {
-                .type_name                = "i8",
-                .blck_size                = 1,
-                .type_size                = sizeof(int8_t),
-                .is_quantized             = false,
-                .is_supported             = true,
-        },
-        [GGML_TYPE_I16] = {
-                .type_name                = "i16",
-                .blck_size                = 1,
-                .type_size                = sizeof(int16_t),
-                .is_quantized             = false,
-                .is_supported             = true,
-        },
-        [GGML_TYPE_I32] = {
-                .type_name                = "i32",
-                .blck_size                = 1,
-                .type_size                = sizeof(int32_t),
-                .is_quantized             = false,
-                .is_supported             = true,
-        },
-        [GGML_TYPE_I64] = {
-                .type_name                = "i64",
-                .blck_size                = 1,
-                .type_size                = sizeof(int64_t),
-                .is_quantized             = false,
-                .is_supported             = true,
-        },
-        [GGML_TYPE_F64] = {
-                .type_name                = "f64",
-                .blck_size                = 1,
-                .type_size                = sizeof(double),
-                .is_quantized             = false,
-                .nrows                    = 1,
-                .is_supported             = true,
-        },
-        [GGML_TYPE_F32] = {
-                .type_name                = "f32",
-                .blck_size                = 1,
-                .type_size                = sizeof(float ),
-                .is_quantized             = false,
-                .vec_dot_type             = GGML_TYPE_F32,
-                .nrows                    = 1,
-                .is_supported             = true,
-        },
-        [GGML_TYPE_F16] = {
-                .type_name                = "f16",
-                .blck_size                = 1,
-                .type_size                = sizeof(ggml_fp16_t),
-                .is_quantized             = false,
-                .nrows                    = 1,
-                .is_supported             = true,
-        },
-        [GGML_TYPE_Q4_0] = {
-                .type_name                = "q4_0",
-                .blck_size                = QK4_0,
-                .is_quantized             = true,
-                .is_supported             = false,
-#if defined (__ARM_FEATURE_MATMUL_INT8)
-                .nrows                    = 2,
-#else
-                .nrows                    = 1,
-#endif
-        },
-        [GGML_TYPE_Q4_1] = {
-                .type_name                = "q4_1",
-                .blck_size                = QK4_1,
-                .is_quantized             = true,
-                .is_supported             = false,
-#if defined (__ARM_FEATURE_MATMUL_INT8)
-                .nrows                    = 2,
-#else
-                .nrows                    = 1,
-#endif
-        },
-        [4] = { // GGML_TYPE_Q4_2
-                .type_name                = "DEPRECATED",
-                .blck_size                = 0,
-                .is_supported             = false,
-                .is_quantized             = false,
-                .nrows                    = 1,
-        },
-        [5] = { // GGML_TYPE_Q4_3
-                .type_name                = "DEPRECATED",
-                .blck_size                = 0,
-                .is_supported             = false,
-                .is_quantized             = false,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_Q5_0] = {
-                .type_name                = "q5_0",
-                .blck_size                = QK5_0,
-                .is_supported             = false,
-                .is_quantized             = true,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_Q5_1] = {
-                .type_name                = "q5_1",
-                .blck_size                = QK5_1,
-                .is_supported             = false,
-                .is_quantized             = true,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_Q8_0] = {
-                .type_name                = "q8_0",
-                .blck_size                = QK8_0,
-                .is_quantized             = true,
-#if defined (__ARM_FEATURE_MATMUL_INT8)
-                .nrows                    = 2,
-#else
-                .nrows                    = 1,
-#endif
-        },
-        [GGML_TYPE_Q8_1] = {
-                .type_name                = "q8_1",
-                .blck_size                = QK8_1,
-                .is_quantized             = true,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_Q2_K] = {
-                .type_name                = "q2_K",
-                .blck_size                = QK_K,
-                .is_quantized             = true,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_Q3_K] = {
-                .type_name                = "q3_K",
-                .blck_size                = QK_K,
-                .is_quantized             = true,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_Q4_K] = {
-                .type_name                = "q4_K",
-                .blck_size                = QK_K,
-                .is_quantized             = true,
-                .vec_dot_type             = GGML_TYPE_Q8_K,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_Q5_K] = {
-                .type_name                = "q5_K",
-                .blck_size                = QK_K,
-                .is_quantized             = true,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_Q6_K] = {
-                .type_name                = "q6_K",
-                .blck_size                = QK_K,
-                .is_quantized             = true,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_IQ2_XXS] = {
-                .type_name                = "iq2_xxs",
-                .blck_size                = QK_K,
-                .is_quantized             = true,
-                .vec_dot_type             = GGML_TYPE_Q8_K,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_IQ2_XS] = {
-                .type_name                = "iq2_xs",
-                .blck_size                = QK_K,
-                .is_quantized             = true,
-                .vec_dot_type             = GGML_TYPE_Q8_K,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_IQ3_XXS] = {
-                .type_name                = "iq3_xxs",
-                .blck_size                = QK_K,
-                .is_quantized             = true,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_IQ3_S] = {
-                .type_name                = "iq3_s",
-                .blck_size                = QK_K,
-                .is_quantized             = true,
-                .vec_dot_type             = GGML_TYPE_Q8_K,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_IQ2_S] = {
-                .type_name                = "iq2_s",
-                .blck_size                = QK_K,
-                .is_quantized             = true,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_IQ1_S] = {
-                .type_name                = "iq1_s",
-                .blck_size                = QK_K,
-                .is_quantized             = true,
-                .nrows                    = 1,
-        },
-        [GGML_TYPE_IQ1_M] = {
-                .type_name                = "iq1_m",
-                .blck_size                = QK_K,
-                .is_quantized             = true,
-                .vec_dot_type             = GGML_TYPE_Q8_K,
-                .nrows                    = 1,
-        },
+static ggml_type_traits_t typeTraits[GGML_TYPE_COUNT];
+//    static const struct ggml_type_traits_t typeTraits[GGML_TYPE_COUNT];
+//= {
+//        [GGML_TYPE_I8] = {
+//                .type_name                = "i8",
+//                .blck_size                = 1,
+//                .type_size                = sizeof(int8_t),
+//                .is_quantized             = false,
+//                .vec_dot_type             = GGML_TYPE_I8,
+//                .nrows                    = 1,
+//                .is_supported             = true,
+//        },
+//        [GGML_TYPE_I16] = {
+//                .type_name                = "i16",
+//                .blck_size                = 1,
+//                .type_size                = sizeof(int16_t),
+//                .is_quantized             = false,
+//                .is_supported             = true,
+//        },
+//        [GGML_TYPE_I32] = {
+//                .type_name                = "i32",
+//                .blck_size                = 1,
+//                .type_size                = sizeof(int32_t),
+//                .is_quantized             = false,
+//                .is_supported             = true,
+//        },
+//        [GGML_TYPE_I64] = {
+//                .type_name                = "i64",
+//                .blck_size                = 1,
+//                .type_size                = sizeof(int64_t),
+//                .is_quantized             = false,
+//                .is_supported             = true,
+//        },
+//        [GGML_TYPE_F64] = {
+//                .type_name                = "f64",
+//                .blck_size                = 1,
+//                .type_size                = sizeof(double),
+//                .is_quantized             = false,
+//                .nrows                    = 1,
+//                .is_supported             = true,
+//        },
+//        [GGML_TYPE_F32] = {
+//                .type_name                = "f32",
+//                .blck_size                = 1,
+//                .type_size                = sizeof(float ),
+//                .is_quantized             = false,
+//                .vec_dot_type             = GGML_TYPE_F32,
+//                .nrows                    = 1,
+//                .is_supported             = true,
+//        },
+//        [GGML_TYPE_F16] = {
+//                .type_name                = "f16",
+//                .blck_size                = 1,
+//                .type_size                = sizeof(ggml_fp16_t),
+//                .is_quantized             = false,
+//                .nrows                    = 1,
+//                .is_supported             = true,
+//        },
+//        [GGML_TYPE_Q4_0] = {
+//                .type_name                = "q4_0",
+//                .blck_size                = QK4_0,
+//                .is_quantized             = true,
+//                .is_supported             = false,
+//#if defined (__ARM_FEATURE_MATMUL_INT8)
+//                .nrows                    = 2,
+//#else
+//                .nrows                    = 1,
+//#endif
+//        },
+//        [GGML_TYPE_Q4_1] = {
+//                .type_name                = "q4_1",
+//                .blck_size                = QK4_1,
+//                .is_quantized             = true,
+//                .is_supported             = false,
+//#if defined (__ARM_FEATURE_MATMUL_INT8)
+//                .nrows                    = 2,
+//#else
+//                .nrows                    = 1,
+//#endif
+//        },
+//        [4] = { // GGML_TYPE_Q4_2
+//                .type_name                = "DEPRECATED",
+//                .blck_size                = 0,
+//                .is_supported             = false,
+//                .is_quantized             = false,
+//                .nrows                    = 1,
+//        },
+//        [5] = { // GGML_TYPE_Q4_3
+//                .type_name                = "DEPRECATED",
+//                .blck_size                = 0,
+//                .is_supported             = false,
+//                .is_quantized             = false,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_Q5_0] = {
+//                .type_name                = "q5_0",
+//                .blck_size                = QK5_0,
+//                .is_supported             = false,
+//                .is_quantized             = true,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_Q5_1] = {
+//                .type_name                = "q5_1",
+//                .blck_size                = QK5_1,
+//                .is_supported             = false,
+//                .is_quantized             = true,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_Q8_0] = {
+//                .type_name                = "q8_0",
+//                .blck_size                = QK8_0,
+//                .is_quantized             = true,
+//#if defined (__ARM_FEATURE_MATMUL_INT8)
+//                .nrows                    = 2,
+//#else
+//                .nrows                    = 1,
+//#endif
+//        },
+//        [GGML_TYPE_Q8_1] = {
+//                .type_name                = "q8_1",
+//                .blck_size                = QK8_1,
+//                .is_quantized             = true,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_Q2_K] = {
+//                .type_name                = "q2_K",
+//                .blck_size                = QK_K,
+//                .is_quantized             = true,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_Q3_K] = {
+//                .type_name                = "q3_K",
+//                .blck_size                = QK_K,
+//                .is_quantized             = true,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_Q4_K] = {
+//                .type_name                = "q4_K",
+//                .blck_size                = QK_K,
+//                .is_quantized             = true,
+//                .vec_dot_type             = GGML_TYPE_Q8_K,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_Q5_K] = {
+//                .type_name                = "q5_K",
+//                .blck_size                = QK_K,
+//                .is_quantized             = true,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_Q6_K] = {
+//                .type_name                = "q6_K",
+//                .blck_size                = QK_K,
+//                .is_quantized             = true,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_IQ2_XXS] = {
+//                .type_name                = "iq2_xxs",
+//                .blck_size                = QK_K,
+//                .is_quantized             = true,
+//                .vec_dot_type             = GGML_TYPE_Q8_K,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_IQ2_XS] = {
+//                .type_name                = "iq2_xs",
+//                .blck_size                = QK_K,
+//                .is_quantized             = true,
+//                .vec_dot_type             = GGML_TYPE_Q8_K,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_IQ3_XXS] = {
+//                .type_name                = "iq3_xxs",
+//                .blck_size                = QK_K,
+//                .is_quantized             = true,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_IQ3_S] = {
+//                .type_name                = "iq3_s",
+//                .blck_size                = QK_K,
+//                .is_quantized             = true,
+//                .vec_dot_type             = GGML_TYPE_Q8_K,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_IQ2_S] = {
+//                .type_name                = "iq2_s",
+//                .blck_size                = QK_K,
+//                .is_quantized             = true,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_IQ1_S] = {
+//                .type_name                = "iq1_s",
+//                .blck_size                = QK_K,
+//                .is_quantized             = true,
+//                .nrows                    = 1,
+//        },
+//        [GGML_TYPE_IQ1_M] = {
+//                .type_name                = "iq1_m",
+//                .blck_size                = QK_K,
+//                .is_quantized             = true,
+//                .vec_dot_type             = GGML_TYPE_Q8_K,
+//                .nrows                    = 1,
+//        },
 //        [GGML_TYPE_IQ4_NL] = {
 //                .type_name                = "iq4_nl",
 //                .blck_size                = QK4_NL,
@@ -342,12 +346,12 @@ static const ggml_type_traits_t typeTraits[GGML_TYPE_COUNT] = {
 //#endif
 //                .nrows                    = 1,
 //        },
-        [GGML_TYPE_Q8_K] = {
-                .type_name                = "q8_K",
-                .blck_size                = QK_K,
-                .is_quantized             = true,
-        }
-};
+//        [GGML_TYPE_Q8_K] = {
+//                .type_name                = "q8_K",
+//                .blck_size                = QK_K,
+//                .is_quantized             = true,
+//        }
+//};
 
 // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Common function  >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 

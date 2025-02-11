@@ -25,6 +25,18 @@
 #endif
 #endif
 
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#ifndef PATH_MAX
+#define PATH_MAX MAX_PATH
+#endif
+#include <io.h>
+#endif
+
 #include "gguf_loader.h"
 
 #include "../memory_utils.h"
@@ -117,12 +129,19 @@ struct LLama_file {
 struct LLama_mmap {
     void* addr;
     size_t size;
+#if defined(_WIN32)
+    HANDLE fp_win32;
+#endif
 
     LLama_mmap(const LLama_mmap&) = delete;
 
     std::vector<std::pair<size_t, size_t > > mapped_fragments;
+
+    // support numa
     LLama_mmap(struct LLama_file *file, size_t prefetch = (size_t ) - 1)
     {
+
+#ifdef _POSIX_MAPPED_FILES
         size = file->size;
         int fd = fileno(file->fp);
         int flags = MAP_SHARED;
@@ -142,6 +161,29 @@ struct LLama_mmap {
                 std::cout<<"warning: posix_madvise(.., POSIX_MADV_WILLNEED) failed!"<<std::endl;
             }
         }
+#elif defined(_WIN32)
+        size = file->size;
+
+        HANDLE hFile = (HANDLE) _get_osfhandle(_fileno(file->fp));
+
+        HANDLE hMapping = CreateFileMappingA(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+
+        if (hMapping == NULL) {
+            DWORD error = GetLastError();
+            throw std::runtime_error(format("CreateFileMappingA failed: LLama_mmap: format win error!\n"));
+        }
+
+        addr = MapViewOfFile(hMapping, FILE_MAP_READ, 0, 0, 0);
+        DWORD error = GetLastError();
+        CloseHandle(hMapping);
+
+        if (addr == NULL) {
+            throw std::runtime_error(format("MapViewOfFile failed: LLama_mmap: format win error! \n"));
+        }
+
+#else
+        throw std::runtime_error("mmap not supported");
+#endif
 
         mapped_fragments.emplace_back(0, file->size);
     }
@@ -163,11 +205,17 @@ struct LLama_mmap {
 
     ~LLama_mmap()
     {
+#ifdef _POSIX_MAPPED_FILES
         for (const auto & frag : mapped_fragments) {
             if (munmap((char *) addr + frag.first, frag.second - frag.first)) {
                 std::cout<<"warning: munmap failed!"<<std::endl;
             }
         }
+#elif defined(_WIN32)
+        if (!UnmapViewOfFile(addr)) {
+            M_ERROR(NULL, "warning: UnmapViewOfFile failed: llama release error in Windows!\n");
+        }
+#endif
     }
 };
 

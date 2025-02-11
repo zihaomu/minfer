@@ -64,7 +64,12 @@ static std::vector<int> getShape(const std::string& header)
 // TODO current only support the fp32 data
 Mat readMatFromNpy(const std::string& path) {
     std::ifstream ifs(path.c_str(), std::ios::binary);
-    M_Assert(ifs.is_open());
+    if (!ifs.is_open())
+    {
+        M_Error_(NULL, ("Can't open file: %s", path.c_str()));
+        M_Assert(ifs.is_open());
+        return Mat();
+    }
 
     std::string magic(6, '*');
     ifs.read(&magic[0], magic.size());

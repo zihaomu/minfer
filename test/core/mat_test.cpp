@@ -11,7 +11,7 @@ using namespace minfer;
 TEST(Mat_TEST, loadNpy)
 {
     // try to get path from system
-    std::string path = "/Users/mzh/work/my_project/minfer/test/layers/test_data/data/random10x12.npy";
+    std::string path = std::string(M_ROOT_PATH) + "/test/layers/test_data/data/random10x12.npy";
 
     Mat m = readMatFromNpy(path);
 
