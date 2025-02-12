@@ -95,6 +95,7 @@ namespace Error {
         StsNotImplemented=          -9,  //!< the requested function/feature is not implemented
         StsAssert=                 -10,  //!< assertion failed
         StsBadType=                -11,  //!< data type mismatch error.
+        StsOutOfMem=               -12,  //!< Out of memory error
     };
 }
 

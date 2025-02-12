@@ -44,7 +44,7 @@ void gemm_impl_naive(const Mat& a, const Mat& b, Mat& c)
 
     c = Mat(outShape, DT_32F);
 
-    size_t out_loop = len_s > 2 ? total(shape_a, 0, len_s - 3): 1;
+    size_t out_loop = len_s > 2 ? total(shape_a, 0, len_s - 2): 1;
     size_t step_a = M * K;
     size_t step_b = K * N;
     size_t step_c = M * N;
@@ -113,7 +113,7 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
 
     c = Mat(outShape, DT_32F);
 
-    size_t out_loop = len_s > 2 ? total(shape_a, 0, len_s - 3): 1;
+    size_t out_loop = len_s > 2 ? total(shape_a, 0, len_s - 2): 1;
     size_t step_a = M * K;
     size_t step_b = K * N;
     size_t step_c = M * N;
@@ -160,14 +160,18 @@ Mat gemm(const Mat& a, const Mat& b, bool transA, bool transB)
     }
     else
     {
-        Mat aT = a;
-        Mat bT = b;
+        Mat aT;
+        Mat bT;
 
         if (transA)
-            transpose(a, aT);
+            aT = transpose(a);
+        else
+            aT = a;
 
         if (transB)
-            transpose(b, bT);
+            bT = transpose(b);
+        else
+            bT = b;
 
         gemm_impl_naive(aT, bT, out);
     }

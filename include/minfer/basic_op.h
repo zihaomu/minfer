@@ -60,10 +60,24 @@ void divide(const Mat& a, const Mat& b, Mat& c);
 void compare(const Mat& a, const Mat& b, Mat& c, int op);
 
 // Transpose Mat last two dimension, if the Mat is one dimension, add the axis to the shape.
-void transpose(const Mat& input, Mat& out);
+Mat transpose(const Mat& input);
 
 // transpose Mat according to the input mat and the given new order.
-void transposeND(const Mat& input, const std::vector<int>& order, Mat& out);
+Mat transposeND(const Mat& input, const std::vector<int> order);
+
+enum NormType
+{
+    NORM_L1 = 1,
+    NORM_L2 = 2,
+    NORM_INF = 3,
+};
+
+// compute the norm of the Mat.
+double norm(const Mat& a, int normType);
+double norm(const Mat& a, const Mat& b, int normType);
+
+// reshape Mat according to the given shape.
+void reshape(const Mat& input, const std::vector<int>& shape, Mat& out);
 
 #define MAT_AUG_OPERATOR1(op, cvop) \
 

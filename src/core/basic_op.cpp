@@ -244,11 +244,11 @@ void compare(const Mat& a, const Mat& b, Mat& c, int op)
     M_ERROR(NULL, "Un-implemented function at compare!");
 }
 
-void transpose(const Mat& input, Mat& out)
+Mat transpose(const Mat& input)
 {
     M_Assert(!input.empty() && "The transpose function get empty input!");
     MatShape inpShape = input.shape();
-
+    Mat out;
     if (inpShape.size() == 1)
     {
         out = input.clone();
@@ -257,15 +257,27 @@ void transpose(const Mat& input, Mat& out)
     else
     {
         int dim = inpShape.size();
-        MatShape outShape = inpShape;
-        std::swap(outShape[dim - 2], outShape[dim - 1]);
-        transposeND(input, outShape, out);
+        std::vector<int> out_order(dim);
+
+        for (int i = 0; i < dim; i++)
+        {
+            out_order[i] = i;
+        }
+
+        std::swap(out_order[dim - 2], out_order[dim - 1]);
+        out = transposeND(input, out_order);
     }
+
+    return out;
 }
 
-void transposeND(const Mat& input, const std::vector<int>& order, Mat& out)
+Mat transposeND(const Mat& input, const std::vector<int> order)
 {
-    M_Assert(input.dims == order.size() && "Number of dimensions shouldn't change");
+    if (input.dims != order.size())
+    {
+        M_Error_(Error::StsBadSize, ("In transposeND, the input dimension is not equal to the order size! input dim = %d, order size = %d!", input.dims, order.size()));
+    }
+
     auto order_ = order;
     std::sort(order_.begin(), order_.end());
 
@@ -284,37 +296,41 @@ void transposeND(const Mat& input, const std::vector<int>& order, Mat& out)
         newShape[i] = oldShape[order[i]];
     }
 
-    out.create(newShape, input.type());
+    Mat out = Mat(newShape, input.type());
 
-    size_t continuous_size = 1;
-    size_t step_in = 1;
-    size_t step_out = 1;
-    bool is_continuous = true;
-    int continuous_idx = order.size();
-
-    std::vector<size_t> out_steps(order.size());
-    std::vector<size_t> inp_steps(order.size());
+    int continuous_idx = 0;
     for (int i = order.size() - 1; i >= 0; --i)
     {
-        if (i < order.size() - 1)
+        if (order[i] != i)
         {
-            step_in *= newShape[i];
-            step_out *= oldShape[i];
+            continuous_idx = i + 1;
+            break;
         }
+    }
 
+    // minimum continuous size
+    size_t continuous_size = 1;
+    if (continuous_idx != order.size())
+        continuous_size = total(newShape, continuous_idx);
+    if (continuous_idx == 0)
+        continuous_size = total(newShape);
 
-        if (order[i] == i && is_continuous)
-        {
-            continuous_size = step_in;
-            continuous_idx = i;
-        }
-        else
-        {
-            is_continuous = false;
-        }
+    size_t step_in = 1;
+    size_t step_out = 1;
 
-        out_steps[i] = step_in;
-        inp_steps[i] = step_out;
+    std::vector<size_t> inp_steps(order.size());
+    std::vector<size_t> inp_steps_old(order.size());
+
+    for (int i = order.size() - 1; i >= 0; --i)
+    {
+        inp_steps_old[i] = step_in;
+
+        step_in *= oldShape[i];
+    }
+
+    for (int i = order.size() - 1; i >= 0; --i)
+    {
+        inp_steps[i] = inp_steps_old[order[i]];
     }
 
     size_t out_size = input.total() / continuous_size;
@@ -325,31 +341,200 @@ void transposeND(const Mat& input, const std::vector<int>& order, Mat& out)
     size_t src_offset = 0;
     size_t es = DT_ELEM_SIZE(out.type());
     size_t continuous_size_es = es * continuous_size;
+
     for (size_t i = 0; i < out_size; i++)
     {
-        src_offset = 0;
-        size_t src_left = i;
-
-        for (int j = 0; j < continuous_idx; j++)
-        {
-            int k = src_left/oldShape[j];
-            src_left -= k * oldShape[j];
-            src_offset += k * oldShape[j];
-        }
+//        src_offset = 0;
+//        size_t src_left = i;
+//
+//        for (int j = 0; j < continuous_idx; j++)
+//        {
+//            int k = src_left/inp_steps[j];
+//            src_left -= k * inp_steps[j];
+//            src_offset += k * inp_steps[j];
+//        }
 
         std::memcpy(dst, src + es * src_offset, continuous_size_es);
         dst += continuous_size_es;
 
-//        for (int j = continuous_idx - 1; j >= 0; --j)
-//        {
-//            src_offset += inp_steps[j];
-//            if ((src_offset / inp_steps[j]) % out.size[j] != 0)
-//            {
-//                break;
-//            }
-//            src_offset -= inp_steps[j] * out.size[j];
-//        }
+        for (int j = continuous_idx - 1; j >= 0; --j)
+        {
+            src_offset += inp_steps[j];
+            if ((src_offset / inp_steps[j]) % out.size[j] != 0)
+            {
+                break;
+            }
+            src_offset -= inp_steps[j] * out.size[j];
+        }
     }
+
+    return out;
+}
+
+/****************************************************************************************\
+*                                  Mat normalization Implementation                                *
+\****************************************************************************************/
+template<typename _Tp> static double
+norm_(const _Tp* src1, const _Tp* src2, size_t total, int normType, double startval)
+{
+    double result = startval;
+
+    if (normType == NORM_INF)
+    {
+        for (size_t i = 0; i < total; i++)
+        {
+            result = std::max(result, std::abs((double )src1[i] - (double )src2[i]));
+        }
+    }
+    else if (normType == NORM_L1)
+    {
+        for (size_t i = 0; i < total; i++)
+        {
+            result += std::abs((double )src1[i] - (double )src2[i]);
+        }
+    }
+    else if (normType == NORM_L2)
+    {
+        for (size_t i = 0; i < total; i++)
+        {
+            double s = (double )src1[i] - (double )src2[i];
+            result += s * s;
+        }
+    }
+    else
+    {
+        M_Error(Error::StsBadArg, "Unknown/unsupported norm type");
+    }
+
+    return result;
+}
+
+double norm(const Mat& a, const Mat& b, int normType)
+{
+    M_Assert(!a.empty() && !b.empty() && "The input mat can not be empty!");
+
+    M_Assert(a.type() == b.type() && "Input data type is different!");
+
+    M_Assert(a.total() == b.total() && "Input data total is different!");
+
+    size_t total_size = a.total();
+
+    double result = 0;
+    switch (a.type()) 
+    {
+        case DT_8U:
+            result = norm_((const uchar*)a.data, (const uchar*)b.data, total_size, normType, 0);
+            break;
+        case DT_8S:
+            result = norm_((const char*)a.data, (const char*)b.data, total_size, normType, 0);
+            break;
+        case DT_16U:
+            result = norm_((const ushort*)a.data, (const ushort*)b.data, total_size, normType, 0);
+            break;
+        case DT_16S:
+            result = norm_((const short*)a.data, (const short*)b.data, total_size, normType, 0);
+            break;
+        case DT_32S:
+            result = norm_((const int*)a.data, (const int*)b.data, total_size, normType, 0);
+            break;
+        case DT_32F:
+            result = norm_((const float*)a.data, (const float*)b.data, total_size, normType, 0);
+            break;
+        case DT_64F:
+            result = norm_((const double*)a.data, (const double*)b.data, total_size, normType, 0);
+            break;
+        default:
+            M_Error(Error::StsBadArg, "Unknown/unsupported data type");
+    };
+
+    return result;
+}
+
+template<typename _Tp> static double
+norm_(const _Tp* src1, size_t total, int normType, double startval)
+{
+    double result = startval;
+
+    if (normType == NORM_INF)
+    {
+        for (size_t i = 0; i < total; i++)
+        {
+            result = std::max(result, std::abs((double )src1[i]));
+        }
+    }
+    else if (normType == NORM_L1)
+    {
+        for (size_t i = 0; i < total; i++)
+        {
+            result += std::abs((double )src1[i]);
+        }
+    }
+    else if (normType == NORM_L2)
+    {
+        for (size_t i = 0; i < total; i++)
+        {
+            double s = (double )src1[i];
+            result += s * s;
+        }
+    }
+    else
+    {
+        M_Error(Error::StsBadArg, "Unknown/unsupported norm type");
+    }
+}
+
+double norm(const Mat& a, int normType)
+{
+    M_Assert(!a.empty() && "The input mat can not be empty!");
+
+    size_t total_size = a.total();
+
+    double result = 0;
+
+    switch (a.type())
+    {
+        case DT_8U:
+            result = norm_((const uchar*)a.data, total_size, normType, 0);
+            break;
+        case DT_8S:
+            result = norm_((const char*)a.data, total_size, normType, 0);
+            break;
+        case DT_16U:
+            result = norm_((const ushort*)a.data, total_size, normType, 0);
+            break;
+        case DT_16S:
+            result = norm_((const short*)a.data, total_size, normType, 0);
+            break;
+        case DT_32S:
+            result = norm_((const int*)a.data, total_size, normType, 0);
+            break;
+        case DT_32F:
+            result = norm_((const float*)a.data, total_size, normType, 0);
+            break;
+        case DT_64F:
+            result = norm_((const double*)a.data, total_size, normType, 0);
+            break;
+        default:
+            M_Error(Error::StsBadArg, "Unknown/unsupported data type");
+
+    };
+}
+
+/****************************************************************************************\
+*                                  Reshape Implementation                                *
+\****************************************************************************************/
+
+void reshape(const Mat& input, const std::vector<int>& shape, Mat& out)
+{
+    M_Assert(!input.empty() && "The input mat can not be empty!");
+
+    size_t total_size = input.total();
+    size_t new_total = total(shape);
+
+    M_Assert(total_size == new_total && "The total size of input mat is not equal to the new shape!");
+
+    out = input;
+    out.setSize(shape);
 }
 
 /****************************************************************************************\
@@ -406,14 +591,14 @@ public:
                 inp0_shape_align[idx] = shape0[idx_0];
                 inp1_shape_align[idx] = shape0[idx_0];
             }
-            else if (shape0[idx_0] == 1 || idx_0 < 0)
+            else if (idx_0 < 0 || shape0[idx_0] == 1)
             {
-                out_shape[idx] = shape1[idx_1];
+                out_shape[idx] = idx_1 >= 0 ? shape1[idx_1] : 1;
                 inp1_shape_align[idx] = out_shape[idx];
             }
-            else if (shape1[idx_1] == 1 || idx_1 < 0)
+            else if (idx_1 < 0 || shape1[idx_1] == 1)
             {
-                out_shape[idx] = shape0[idx_0];
+                out_shape[idx] = idx_0 >= 0 ? shape0[idx_0] : 1;
                 inp0_shape_align[idx] = out_shape[idx];
             }
             else
@@ -605,6 +790,15 @@ inline void typeDispatch(const int type, Args&&... args)
     {
         case DT_8U:
             opDispatch<uint8_t>(std::forward<Args>(args)...);
+            break;
+        case DT_8S:
+            opDispatch<int8_t>(std::forward<Args>(args)...);
+            break;
+        case DT_16U:
+            opDispatch<uint16_t>(std::forward<Args>(args)...);
+            break;
+        case DT_16S:
+            opDispatch<int16_t>(std::forward<Args>(args)...);
             break;
         case DT_32S:
             opDispatch<int32_t>(std::forward<Args>(args)...);

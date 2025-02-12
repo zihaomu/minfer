@@ -6,7 +6,7 @@ import math
 import sys
 import os
 
-ROOT_PATH = "/Users/mzh/work/my_project/minfer/test/layers/test_data/data"
+ROOT_PATH = "./data"
 # random seed
 np.random.seed(0)
 
@@ -58,6 +58,11 @@ class Linear:
         if self.hasBias:
             return np.matmul(x, self.weight.T) + self.bias
         else:
+            # printArray(x, "Linear input")
+            # printArray(self.weight, "Linear weight")
+            # printArray(self.weight.T, "Linear weight .T")
+            # data = np.matmul(x, self.weight.T)
+            # printArray(data, "Linear output")
             return np.matmul(x, self.weight.T)
 
     def load(self, params):
@@ -142,8 +147,10 @@ def apply_rotary_emb(xq, xk, freqs_sin, freqs_cos):
     printArray(xq_out_i, "xq_out_i")
     # flatten last two dimensions
 
-    xq_out = np.stack((xq_out_r, xq_out_i), axis=-1)
-    xq_out = xq_out.reshape(1, xq_out.shape[1], xq_out.shape[2], xq_out.shape[3] * xq_out.shape[4])
+    xq_out = np.stack((xq_out_r, xq_out_i), axis=-1) # shape: (1, 256, 8, 8, 2)
+    # printArray(xq_out, "xq_out 0")
+    xq_out = xq_out.reshape(1, xq_out.shape[1], xq_out.shape[2], xq_out.shape[3] * xq_out.shape[4]) # shape: (1, 256, 8, 16)
+    # printArray(xq_out, "xq_out 1")
     # stack 之后，维度从 (1, 1, 6, 24)变成(1, 1, 6, 24, 2)，需要将最后两个维度融合。
     xk_out = np.stack((xk_out_r, xk_out_i), axis=-1)
     # 下面输出维度为：(1, 1, 6, 24 * 2)
@@ -170,6 +177,9 @@ class Attention:
         keyT: 1 x num_heads x d_k x seq_len
         np.matmul(query, keyT): 1 x num_heads x seq_len x seq_len
         '''
+        ddata = np.matmul(query, keyT)
+        printArray(ddata, "query keyT")
+        
         scores = np.matmul(query, keyT) / math.sqrt(d_k)
         mask = MASK[:scores.shape[-2], :scores.shape[-1]]
         scores = scores * mask - 1e20 * (1 - mask)
@@ -196,19 +206,28 @@ class MultiHeadAttention:
 
     def forward(self, x, freqs_sin, freqs_cos):
         bsz, seq_len, _ = x.shape
-        # print("seq_len = ", seq_len, ", x shape = ", x.shape)
+        print("seq_len = ", seq_len, ", x shape = ", x.shape, "self.d_k = ", self.d_k, "self.num_heads = ", self.num_heads)
         assert self.q_linear.weight is not None, "multi-head attention not initialized"
 
         q = self.q_linear.forward(x).reshape(1, seq_len, self.num_heads, self.d_k)
         k = self.k_linear.forward(x).reshape(1, seq_len, self.num_heads, self.d_k)
         v = self.v_linear.forward(x).reshape(1, seq_len, self.num_heads, self.d_k)
-
+        
         q, k = apply_rotary_emb(q, k, freqs_sin, freqs_cos)
         # printArray(q, "xq")
         # Transpose for attention dot product: (bsz, num_heads, seq_len, d_k)
         v = np.transpose(v, axes=(0, 2, 1, 3)) # 1 x num_heads x seq_len x d_k
-        q = np.transpose(q, axes=(0, 2, 1, 3))
+        q = np.transpose(q, axes=(0, 2, 1, 3)) # from  shape: (1, 256, 8, 16) to (1, 8, 256, 16)
         k = np.transpose(k, axes=(0, 2, 1, 3))
+
+        q1 = q[:, 1:, :, :]
+        k1 = k[:, 1:, :, :]
+        printArray(q, "q reshape")
+        printArray(k, "k reshape")
+        printArray(v, "v reshape")
+        printArray(q1, "q1 reshape")
+        printArray(k1, "k1 reshape")
+        
 
         # print("xq = ", q.shape)
         # print("xk = ", k.shape)

@@ -121,6 +121,11 @@ public:
     // Create a full copy of the array and the underlying data.
     Mat clone() const;
 
+    // reshape the mat to new shape
+    Mat reshape(int newDims, const int* newSizes) const;
+
+    Mat reshape(const std::vector<int> newSizes) const;
+
     void copyTo(Mat& m) const;
 
     // convert mat to other mat with specific data type.

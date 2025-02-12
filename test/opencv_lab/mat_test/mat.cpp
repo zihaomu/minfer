@@ -3,6 +3,7 @@
 //
 
 #include "mat.h"
+#include "minfer.h"
 #include "iostream"
 
 #define CV_XADD(addr, delta) __c11_atomic_fetch_add((_Atomic(int)*)(addr), delta, __ATOMIC_ACQ_REL)
@@ -24,6 +25,7 @@ void* fastMalloc(size_t size)
     if (!udata)
     {
         std::cerr<<"Out of memory in fastMalloc"<<std::endl;
+        M_Error(minfer::Error::StsOutOfMem, "Out of memory in fastMalloc");
         return nullptr;
     }
 

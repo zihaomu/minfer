@@ -59,7 +59,7 @@ private:
     int head_count_kv; // num_key_value_heads, the flag of Grouped Query Attention(GQA), if head_count_kv == head_count, the model will use Multi Head Attention(QHA), if head_count_kv==1, the model will use Multi Query Attention(MQA)
     float rms_eps;     // norm eps value
     int repeat_kv;     // for Group query attention, need to broadcasting kv tensor.
-    int embd_dim_head;     // embd_dim of each head.
+    int embd_dim_head;     // embd_dim of each head. d_k otherwise.
     int embd_dim_kv;       // embd_dim of kv
 
     AttentionLayer(const std::shared_ptr<AttentionLayerParams> param);

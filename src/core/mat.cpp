@@ -6,6 +6,7 @@
 #include "minfer/system.h"
 #include "minfer/utils.h"
 #include "minfer/saturate.h"
+#include "minfer/define.h"
 #include <stdatomic.h>
 
 // If is not Mac or IOS, then include the following code.
@@ -186,7 +187,7 @@ bool MatSize::operator==(const MatSize &sz) const
 // Setting the dim for mat.
 void _setSize(Mat& m, int _dim, const int* _sz)
 {
-    assert(_dim <= MAT_MAX_DIM && _dim >= 0);
+    M_Assert(_dim <= MAT_MAX_DIM && _dim >= 0);
 
     if (_dim != m.dims)
     {
@@ -204,7 +205,12 @@ void _setSize(Mat& m, int _dim, const int* _sz)
     for (int i = _dim - 1; i >= 0; i--)
     {
         int s = _sz[i];
-        assert(s >=0);
+        if (s <= 0)
+        {
+            m.release();
+            break;
+        }
+        M_Assert(s > 0);
         m.size.p[i] = s;
     }
 }
@@ -335,6 +341,7 @@ Mat& Mat::operator=(const Mat& m)
         data = m.data;
         allocator = m.allocator;
         u = m.u;
+        matType = m.matType;
     }
 
     return *this;
@@ -398,6 +405,32 @@ Mat& Mat::operator=(const int v)
     return *this;
 }
 
+Mat Mat::reshape(const std::vector<int> newSizes) const
+{
+    return this->reshape(newSizes.size(), newSizes.data());
+}
+
+Mat Mat::reshape(int newDims, const int* newSizes) const
+{
+    size_t new_total = 1;
+
+    for (int i = 0; i < newDims; i++)
+    {
+        new_total *= newSizes[i];
+    }
+
+    if (new_total != total())
+    {
+        M_ERROR("The total size of the new Mat is not equal to the original Mat!");
+        return Mat();
+    }
+
+    Mat m;
+    m = *this;
+    m.setSize(newDims, newSizes);
+    return m;
+}
+
 // copy a full Mat, it will re-allocate memory.
 void Mat::copyTo(Mat &dst) const
 {
@@ -406,7 +439,7 @@ void Mat::copyTo(Mat &dst) const
     // TODO 增加常用数据转换下的copyTo函数
     if (t != matType)
     {
-        assert(false && "Unsupported data transform right now!");
+        M_ERROR("Unsupported data transform right now!");
         return;
     }
 
@@ -440,7 +473,7 @@ Mat Mat::clone() const
 void Mat::create(int _dims, const int* _sizes, int _type)
 {
     int i;
-    assert(0 < _dims && _dims <= MAT_MAX_DIM && _sizes);
+    M_Assert(0 < _dims && _dims <= MAT_MAX_DIM && _sizes);
 
     // same Mat
     if (data && (_dims == dims) && type() == _type)
@@ -559,8 +592,13 @@ void Mat::setTo(float v)
             uint8_t u = saturate_cast<uint8_t>(v);
             uchar* p = (uchar *)&vi;
             p[0] = u; p[1] = u; p[2] = u; p[3] = u;
-            memset(data, vi, total() * sizeof(int ));
-            memset_pattern4(data, &vi, total() * sizeof(uint8_t));
+            memset(data, vi, total() * sizeof(uint8_t));
+//#ifdef __APPLE__
+//            memset_pattern4(data, &vi, total() * sizeof(uint8_t));
+//#else
+//            int* data_f = (int*)data;
+//            std::fill(data_f, data_f + total(), vi);
+//#endif
             break;
         }
         case DT_8S:
@@ -568,7 +606,8 @@ void Mat::setTo(float v)
             int8_t u = saturate_cast<int8_t>(v);
             char* p = (char *)&vi;
             p[0] = u; p[1] = u; p[2] = u; p[3] = u;
-            memset_pattern4(data, &vi, total() * sizeof(uint8_t));
+            memset(data, vi, total() * sizeof(int8_t));
+//            memset_pattern4(data, &vi, total() * sizeof(uint8_t));
             break;
         }
         case DT_16U:
@@ -590,7 +629,12 @@ void Mat::setTo(float v)
         case DT_32F:
         {
             memcpy(&vi, &v, sizeof(float ));
+#ifdef __APPLE__
             memset_pattern4(data, &vi, total() * sizeof(int ));
+#else
+            int* data_f = (int*)data;
+            std::fill(data_f, data_f + total(), vi);
+#endif
             break;
         }
         case DT_32S:
@@ -679,6 +723,51 @@ void Mat::print(int len) const
         for (int i = 0; i < printLen; i++)
         {
             std::cout<<p[i]<<",";
+        }
+        std::cout<<std::endl;
+    }
+    else if (type() == DT_32U)
+    {
+        const uint* p = (const uint*)data;
+        for (int i = 0; i < printLen; i++)
+        {
+            std::cout<<p[i]<<",";
+        }
+        std::cout<<std::endl;
+    }
+    else if (type() == DT_8S)
+    {
+        const char* p = (const char*)data;
+        for (int i = 0; i < printLen; i++)
+        {
+            std::cout<<(int)p[i]<<",";
+        }
+        std::cout<<std::endl;
+    }
+    else if (type() == DT_8U)
+    {
+        const uchar* p = (const uchar*)data;
+        for (int i = 0; i < printLen; i++)
+        {
+            std::cout<<(int)p[i]<<",";
+        }
+        std::cout<<std::endl;
+    }
+    else if (type() == DT_16U)
+    {
+        const ushort* p = (const ushort *)data;
+        for (int i = 0; i < printLen; i++)
+        {
+            std::cout<<(int)p[i]<<",";
+        }
+        std::cout<<std::endl;
+    }
+    else if (type() == DT_16S)
+    {
+        const short* p = (const short *)data;
+        for (int i = 0; i < printLen; i++)
+        {
+            std::cout<<(int)p[i]<<",";
         }
         std::cout<<std::endl;
     }

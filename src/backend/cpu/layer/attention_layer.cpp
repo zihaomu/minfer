@@ -130,15 +130,17 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
 
     // implementation Q K V linear
 
-    Mat x_q = gemm(x_norm, wq); // xq shape is [bsz, seq, embed], x_norm shape is [embed, embed], after shape, is the same.
-    Mat x_k = gemm(x_norm, wk); // k and v may has different shape with q, use Group-query attention.
-    Mat x_v = gemm(x_norm, wv); // wk and wv shape is [embed, embd_dim_kv], x_k = [bsz, seq, embd_dim_kv]
+    Mat x_q = gemm(x_norm, wq, false, true); // xq shape is [bsz, seq, embed], x_norm shape is [embed, embed], after shape, is the same.
+    Mat x_k = gemm(x_norm, wk, false, true); // k and v may has different shape with q, use Group-query attention.
+    Mat x_v = gemm(x_norm, wv, false, true); // wk and wv shape is [embed, embd_dim_kv], x_k = [bsz, seq, embd_dim_kv]
 
-#if ATTEN_DEBUG
+#if 0
+    std::cout<<"print x_norm"<<std::endl;
+    x_norm.print(10);
     std::cout<<"print in init xq, xk xv shape and params"<<std::endl;
-    x_q.print(2);
-    x_k.print(2);
-    x_v.print(2);
+    x_q.print(20);
+    x_k.print(20);
+    x_v.print(20);
 #endif
 
     M_Assert(embd_dim_head % 2 == 0);
@@ -152,7 +154,7 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
         freqs_cis[i] = 1.0f / powf(10000.0f, i*2 / (float)(embd_dim_head));
     }
 
-    std::vector<float > freqs_sin_cos(seq_len * embd_dim_head_complex * 2);
+    std::vector<float > freqs_sin_cos(seq_len * embd_dim_head_complex * 2); // [seq_len, embd_dim_head_complex, 2]
 
     for (int i = 0; i < seq_len; i++)
     {
@@ -165,6 +167,24 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
             p_data[j*2+1] = cosf(cur_seq * freqs_cis[j]);
         }
     }
+
+#if 0
+    // debug freqs_sin_cos
+    std::cout<<"freqs sin = ";
+    for (int i = 0; i < 10; i++)
+    {
+        std::cout<<freqs_sin_cos[i*2]<<",";
+    }
+    std::cout<<std::endl;
+
+    std::cout<<"freqs cos = ";
+    for (int i = 0; i < 10; i++)
+    {
+        std::cout<<freqs_sin_cos[i*2 + 1]<<",";
+    }
+    std::cout<<std::endl;
+
+#endif
 
     // freqs_cis = embd_vec_len * 2
     // kv shape is x_k = [bsz, seq, embd_dim_kv]
@@ -193,35 +213,57 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
 
     // TODO repeat kv based on repeat
 
+#if 1
+    std::cout<<"print after RoPE xq, xk, xv shape and params"<<std::endl;
+    x_q.print(10);
+    x_k.print(10);
+#endif
+
+    // because x_q, x_k, x_v are two dim, we need to reshape it to [seq, bsz, embd_dim_head]
+    // TODO check if we should use head_count_kv?
+    std::vector<int> new_shape = {seq_len, head_count, embd_dim_head};
+
+    x_q = x_q.reshape(new_shape);
+    x_k = x_k.reshape(new_shape);
+    x_v = x_v.reshape(new_shape);
+
+    // py code: scores = self.attn.forward(q, k, v)
+    x_q = transposeND(x_q, {1, 0, 2});
+    x_k = transposeND(x_k, {1, 0, 2});
+    x_v = transposeND(x_v, {1, 0, 2});
+
+#if 1
+    std::cout<<"print after transpose xq, xk, xv shape and params"<<std::endl;
+    x_q.print(20);
+    x_k.print(20);
+    x_v.print(20);
+
+    Mat tx = Mat({10}, x_q.type(), (float *)x_k.data + 256*16);
+    Mat tq = Mat({10}, x_q.type(), (float *)x_q.data + 256*16);
+
+    std::cout<<"q1 reshape"<<std::endl;
+    tx.print();
+    tq.print();
+#endif
+
     // implementation Q K matmul and mask
     Mat qk = gemm(x_q, x_k, false, true); // qk shape is [bsz, seq_len, seq_len + cache_len]
 
-    int v = 4;
-    uint32_t uy = 0;
-    uint8_t data[4];
-    float d = 0;
-    uint32_t da = 0;
-    char* dd = (char*)&d;
-    memcpy(&uy, &v, sizeof(float ));
-    memset(&da, uy, sizeof(float ));
-
-    std::cout<<"data = "<<da<<std::endl;
-    da = uy;
-    std::cout<<"data = "<<da<<std::endl;
-
-    Mat b = Mat({2}, qk.type());
-    b.setTo(1);
-    b.print();
+    std::cout<<"print qk shape and params"<<std::endl;
+    qk.print(10);
 
     // implementation softmax
     Mat qk_sqrt = qk / sqrtf(embd_dim_head);
 
+    std::cout<<"print qk_sqrt shape and params"<<std::endl;
+    qk_sqrt.print(10);
+
 #if ATTEN_DEBUG
     std::cout<<"print after rope xq, xk, qk, qk_sqrt shape and params"<<std::endl;
-    x_q.print(1);
-    x_k.print(1);
-    qk.print(2);
-    qk_sqrt.print(2);
+    x_q.print(10);
+    x_k.print(10);
+    qk.print(20);
+    qk_sqrt.print(20);
     std::cout<<"sqrtf(embd_dim_head) = "<<sqrtf(embd_dim_head)<<std::endl;
 #endif
 
@@ -254,10 +296,10 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     Mat score = softmax(qk_sqrt);
 
 #if ATTEN_DEBUG
-        std::cout<<"print after mask, print qk_sqrt, score and x_v shape and params"<<std::endl;
-        qk_sqrt.print(2);
-        score.print(2);
-        x_v.print(2);
+    std::cout<<"print after mask, print qk_sqrt, score and x_v shape and params"<<std::endl;
+    qk_sqrt.print(2);
+    score.print(2);
+    x_v.print(2);
 #endif
     // implementation matmul V
     Mat qkv = gemm(score, x_v); // qk shape is [bsz, seq_len, seq_len + cache_len]

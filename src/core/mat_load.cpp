@@ -66,7 +66,7 @@ Mat readMatFromNpy(const std::string& path) {
     std::ifstream ifs(path.c_str(), std::ios::binary);
     if (!ifs.is_open())
     {
-        M_Error_(NULL, ("Can't open file: %s", path.c_str()));
+        M_Error_(NULL, ("\n Can't open file: %s", path.c_str()));
         M_Assert(ifs.is_open());
         return Mat();
     }
