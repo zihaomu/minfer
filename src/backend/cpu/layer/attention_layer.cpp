@@ -8,6 +8,19 @@
 #define ATTEN_DEBUG 1
 namespace minfer {
 
+#if 1
+void print_mat(const Mat& m, int start, int num)
+{
+    const float* p = (const float*)m.data;
+    for (int i = start; i < start + num; i++)
+    {
+        std::cout<<p[i]<<" ";
+    }
+    std::cout<<std::endl;
+}
+
+#endif
+
 AttentionLayer::AttentionLayer(const std::shared_ptr<AttentionLayerParams> param)
 {
     max_seq_len = param->max_seq_len;
@@ -53,26 +66,34 @@ Mat softmax(Mat inp)
 {
     Mat out = inp.clone();
     M_Assert(inp.type() == DT_32F);
-    size_t total = inp.total();
-    const float* p_i = (const float*)inp.data;
-    float* p_o = (float*)out.data;
 
-    float max_val = p_i[0];
-    for (int i = 1; i < total; i++)
-    {
-        if (p_i[i] > max_val)
-            max_val = p_i[i];
-    }
+    int inp_dim = inp.dims;
 
-    float sum = 0.0f;
-    for (int i = 0; i < total; i++)
+    M_Assert(inp_dim > 1);
+
+    size_t last_len = inp.size[inp_dim - 1];
+    size_t out_loop = inp.total(0, inp_dim - 1);
+
+    for (int l = 0; l < out_loop; l++)
     {
-        p_o[i] = expf(p_i[i] - max_val);
-        sum += p_o[i];
-    }
-    // normalize
-    for (int i = 0; i < total; i++) {
-        p_o[i] /= sum;
+        const float* p_i = (const float*)inp.data + last_len * l;
+        float* p_o = (float*)out.data + last_len * l;
+
+        float max_val = *std::max_element(p_i, p_i + last_len);
+
+        float sum = 0.0f;
+        for (int i = 0; i < last_len; i++)
+        {
+            p_o[i] = expf(p_i[i] - max_val);
+            sum += p_o[i];
+        }
+
+        // normalize
+        float sum_div = 1.f/sum;
+        for (int i = 0; i < last_len; i++)
+        {
+            p_o[i] *= sum_div;
+        }
     }
 
     return out;
@@ -141,6 +162,12 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     x_q.print(20);
     x_k.print(20);
     x_v.print(20);
+
+    std::cout<<"print_mat "<<std::endl;
+    print_mat(x_q, 128, 20);
+    print_mat(x_k, 128, 20);
+    print_mat(x_v, 128, 20);
+
 #endif
 
     M_Assert(embd_dim_head % 2 == 0);
@@ -188,35 +215,46 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
 
     // freqs_cis = embd_vec_len * 2
     // kv shape is x_k = [bsz, seq, embd_dim_kv]
-    for (int i = 0; i < seq_len; i++)
+    // Debug this part code.
+    for (int i = 0; i < seq_len; i++) // seq
     {
         float* p_data = freqs_sin_cos.data() + i * embd_dim_head_complex * 2;
-        float* p_x_q = (float *)x_q.data + i * embd_dim_head_complex * 2;
-        float* p_x_k = (float *)x_k.data + i * embd_dim_head_complex * 2;
+        float* p_x_q = (float *)x_q.data + i * embd_dim_head_complex * 2 * head_count;
+        float* p_x_k = (float *)x_k.data + i * embd_dim_head_complex * 2 * head_count;
 
-        for (int j = 0; j < embd_dim_head_complex; j++)
+        for (int h = 0; h < head_count; h++) // head
         {
-            float freqs_sin = p_data[j*2];
-            float freqs_cos = p_data[j*2 + 1];
+            for (int j = 0; j < embd_dim_head_complex; j++) // internal
+            {
+                float freqs_sin = p_data[j*2];
+                float freqs_cos = p_data[j*2 + 1];
 
-            float q_r = p_x_q[j*2];
-            float q_i = p_x_q[j*2+1];
-            p_x_q[j*2]     = q_r * freqs_cos - q_i * freqs_sin;
-            p_x_q[j*2 + 1] = q_r * freqs_sin + q_i * freqs_cos;
+                float q_r = p_x_q[j*2];
+                float q_i = p_x_q[j*2+1];
+                p_x_q[j*2]     = q_r * freqs_cos - q_i * freqs_sin;
+                p_x_q[j*2 + 1] = q_r * freqs_sin + q_i * freqs_cos;
 
-            float k_r = p_x_k[j*2];
-            float k_i = p_x_k[j*2+1];
-            p_x_k[j*2]     = k_r * freqs_cos - k_i * freqs_sin;
-            p_x_k[j*2 + 1] = k_r * freqs_sin + k_i * freqs_cos;
+                float k_r = p_x_k[j*2];
+                float k_i = p_x_k[j*2+1];
+                p_x_k[j*2]     = k_r * freqs_cos - k_i * freqs_sin;
+                p_x_k[j*2 + 1] = k_r * freqs_sin + k_i * freqs_cos;
+            }
+
+            p_x_q += embd_dim_head_complex * 2;
+            p_x_k += embd_dim_head_complex * 2;
         }
     }
 
     // TODO repeat kv based on repeat
 
-#if 1
+#if 0
     std::cout<<"print after RoPE xq, xk, xv shape and params"<<std::endl;
     x_q.print(10);
     x_k.print(10);
+
+    std::cout<<"print_mat "<<std::endl;
+    print_mat(x_q, 128, 20);
+    print_mat(x_k, 128, 20);
 #endif
 
     // because x_q, x_k, x_v are two dim, we need to reshape it to [seq, bsz, embd_dim_head]
@@ -232,7 +270,7 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     x_k = transposeND(x_k, {1, 0, 2});
     x_v = transposeND(x_v, {1, 0, 2});
 
-#if 1
+#if 0
     std::cout<<"print after transpose xq, xk, xv shape and params"<<std::endl;
     x_q.print(20);
     x_k.print(20);
@@ -249,16 +287,16 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     // implementation Q K matmul and mask
     Mat qk = gemm(x_q, x_k, false, true); // qk shape is [bsz, seq_len, seq_len + cache_len]
 
-    std::cout<<"print qk shape and params"<<std::endl;
-    qk.print(10);
+//    std::cout<<"print qk shape and params"<<std::endl;
+//    qk.print(10);
 
     // implementation softmax
-    Mat qk_sqrt = qk / sqrtf(embd_dim_head);
+    Mat qk_sqrt = qk / sqrtf(embd_dim_head); // score
 
-    std::cout<<"print qk_sqrt shape and params"<<std::endl;
-    qk_sqrt.print(10);
+//    std::cout<<"print qk_sqrt shape and params"<<std::endl;
+//    qk_sqrt.print(10);
 
-#if ATTEN_DEBUG
+#if 0
     std::cout<<"print after rope xq, xk, qk, qk_sqrt shape and params"<<std::endl;
     x_q.print(10);
     x_k.print(10);
@@ -288,14 +326,36 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
         }
     }
 
-    Mat mask_1e20 = (mask - 1) * 1e20f;
+    // std::cout<<"before print_mat mask  mask_1e20"<<std::endl;
+    // mask.print(10);
+    // print_mat(mask, 0, 20);
+    // print_mat(mask, 256, 20);
+    // print_mat(mask, 256 * 2, 20);
 
+    Mat mask_1e20 = (1.f - mask) * 1e20f;
+
+    // std::cout<<"print_mat mask  mask_1e20"<<std::endl;
+    // mask_1e20.print(10);
+    // print_mat(mask_1e20, 0, 20);
+    // print_mat(mask_1e20, 256, 20);
+    // print_mat(mask_1e20, 256 * 2, 20);
+    // qk_sqrt.print(10);
+    // 8 x 256 x 256
     qk_sqrt = qk_sqrt * mask - mask_1e20;
 
+    // std::cout<<"print_mat mask "<<std::endl;
+    // print_mat(qk_sqrt, 0, 20);
+    // print_mat(qk_sqrt, 256*256, 20);
+    // print_mat(qk_sqrt,  256*256*2, 20);
+    //
     // apply the softmax to score
     Mat score = softmax(qk_sqrt);
 
-#if ATTEN_DEBUG
+#if 0
+    score.print(20);
+    print_mat(score, 0, 20);
+    print_mat(score, 256*256, 20);
+
     std::cout<<"print after mask, print qk_sqrt, score and x_v shape and params"<<std::endl;
     qk_sqrt.print(2);
     score.print(2);
@@ -307,10 +367,29 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     // implementation out linear.
     Mat out = *output[0];
     Mat x_out = Mat(out.size.dims() - 1, out.size.p+1, out.type(), out.data);
-    gemm(qkv, wout).copyTo(x_out);
 
-    Mat m2 = out + *input[0];
-    m2.copyTo(out);
+    // Transpose qkv from [head_kv, seq_len, embd_dim_head] to [seq_len, head_kv, embd_dim_head]
+    // and then reshape it to [seq_len, head_kv * embd_dim_head]
+    Mat qkvT= transposeND(qkv, {1, 0, 2});
+    qkvT = qkvT.reshape({seq_len, head_count_kv * embd_dim_head});
+
+    // std::cout<<"qkvT.print("<<std::endl;
+    // qkvT.print(20);
+    // print_mat(qkvT, 128, 20);
+    // print_mat(qkvT, 128*2, 20);
+    // print_mat(qkvT, 128*3, 20);
+    // print_mat(qkvT, 128*4, 20);
+    // wout.print(20);
+    // print_mat(wout, 128, 20);
+    // print_mat(wout, 128*2, 20);
+    gemm(qkvT, wout, false, true).copyTo(x_out);
+    //
+    // std::cout<<"out, 0"<<std::endl;
+    // print_mat(out, 0, 20);
+    // print_mat(out, 128, 20);
+    // print_mat(out, 128 * 2, 20);
+    // print_mat(out, 128 * 3, 20);
+    out = x_out + *input[0];
 }
 
 void precompute_freq_cis(int dim, int end, int rms_eps)

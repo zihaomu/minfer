@@ -58,11 +58,13 @@ class Linear:
         if self.hasBias:
             return np.matmul(x, self.weight.T) + self.bias
         else:
-            # printArray(x, "Linear input")
-            # printArray(self.weight, "Linear weight")
-            # printArray(self.weight.T, "Linear weight .T")
-            # data = np.matmul(x, self.weight.T)
-            # printArray(data, "Linear output")
+            printArray(x, "Linear input")
+            printArray(self.weight, "Linear weight")
+            printArray(self.weight.T, "Linear weight .T")
+            data = np.matmul(x, self.weight.T)
+            
+            # printArray(data[:, 1:, :], "Linear 1 output")
+            # printArray(data[:, 2:, :], "Linear 2 output")
             return np.matmul(x, self.weight.T)
 
     def load(self, params):
@@ -131,6 +133,11 @@ def apply_rotary_emb(xq, xk, freqs_sin, freqs_cos):
     printArray(xq_r, "xq_r")
     # freqs_sin shape = (256, 144)
     # xq_r shape = (1, 6, 24)
+
+    print("before reshape_for_broadcast")
+    printArray(freqs_sin, "freqs_sin")
+    printArray(xq_r, "xq_r")
+
     freqs_sin = reshape_for_broadcast(freqs_sin, xq_r)
     freqs_cos = reshape_for_broadcast(freqs_cos, xq_r)
 
@@ -178,12 +185,22 @@ class Attention:
         np.matmul(query, keyT): 1 x num_heads x seq_len x seq_len
         '''
         ddata = np.matmul(query, keyT)
-        printArray(ddata, "query keyT")
+        # printArray(ddata, "query keyT")
         
         scores = np.matmul(query, keyT) / math.sqrt(d_k)
+        printArray(scores, "scores T")
+        
         mask = MASK[:scores.shape[-2], :scores.shape[-1]]
+        printArray(mask, "mask")
         scores = scores * mask - 1e20 * (1 - mask)
+        printArray(scores, "scores 2")
+        printArray(scores[:, 1:, :, :], "scores 22")
+        printArray(scores[:, 2:, :, :], "scores 22")
+        
         scores = self.soft_max.forward(scores)
+        printArray(scores[:, 1:, :, :], "scores 22")
+        printArray(scores[:, 2:, :, :], "scores 22")
+        printArray(scores[:, 3:, :, :], "scores 22")
         return np.matmul(scores, value)
 
 class MultiHeadAttention:
@@ -214,6 +231,10 @@ class MultiHeadAttention:
         v = self.v_linear.forward(x).reshape(1, seq_len, self.num_heads, self.d_k)
         
         q, k = apply_rotary_emb(q, k, freqs_sin, freqs_cos)
+        
+        printArray(q[:, 1:, :, :], "q0 reshape")
+        printArray(k[:, 1:, :, :], "k0 reshape")
+        
         # printArray(q, "xq")
         # Transpose for attention dot product: (bsz, num_heads, seq_len, d_k)
         v = np.transpose(v, axes=(0, 2, 1, 3)) # 1 x num_heads x seq_len x d_k
@@ -237,6 +258,11 @@ class MultiHeadAttention:
         scores = self.attn.forward(q, k, v)
         printArray(scores, "scores")
         concat = np.transpose(scores, axes=(0, 2, 1, 3)).reshape(1, seq_len, self.d_model)
+        printArray(concat[:, 0:, :], "concat reshape")
+        printArray(concat[:, 1:, :], "concat reshape")
+        printArray(concat[:, 2:, :], "concat reshape")
+        printArray(concat[:, 3:, :], "concat reshape")
+        printArray(concat[:, 4:, :], "concat reshape")
         output = self.out_linear.forward(concat)
         printArray(output, "atten out")
         return output
@@ -298,6 +324,9 @@ def Attention_layer_data_generater():
     # forward
     out = atten.forward(atten_norm.forward(x), freqs_sin, freqs_cos)
     printArray(out, "Attention output")
+    printArray(out[:, 1:, :], "Attention output 1")
+    printArray(out[:, 2:, :], "Attention output 1")
+    printArray(out[:, 3:, :], "Attention output 1")
 
     # save input
     # np.save(ROOT_PATH + "/atten_input.npy", x.astype(np.float32))

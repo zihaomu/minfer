@@ -615,7 +615,10 @@ void Mat::setTo(float v)
             ushort u = saturate_cast<ushort>(v);
             ushort * p = (ushort *)&vi;
             p[0] = u; p[1] = u;
-            memset_pattern4(data, &vi, total() * sizeof(ushort));
+//            memset_pattern4(data, &vi, total() * sizeof(ushort));
+            int* data_f = (int*)data;
+            size_t t = + total()/(sizeof(int)/sizeof(ushort));
+            std::fill(data_f, data_f + t, vi);
             break;
         }
         case DT_16S:
@@ -623,7 +626,10 @@ void Mat::setTo(float v)
             short u = saturate_cast<short>(v);
             short * p = (short *)&vi;
             p[0] = u; p[1] = u;
-            memset_pattern4(data, &vi, total() * sizeof(ushort));
+            int* data_f = (int*)data;
+            size_t t = + total()/(sizeof(int)/sizeof(short));
+            std::fill(data_f, data_f + t, vi);
+//            memset_pattern4(data, &vi, total() * sizeof(ushort));
             break;
         }
         case DT_32F:
@@ -639,7 +645,9 @@ void Mat::setTo(float v)
         }
         case DT_32S:
         {
-            memset_pattern4(data, &v, total() * sizeof(int ));
+            int* data_f = (int*)data;
+            std::fill(data_f, data_f + total(), v);
+//            memset_pattern4(data, &v, total() * sizeof(int ));
             break;
         }
         case DT_32U:
@@ -647,7 +655,9 @@ void Mat::setTo(float v)
             uint uv = saturate_cast<uint>(v);
             memcpy(&vi, &uv, sizeof(int ));
 
-            memset_pattern4(data, &vi, total() * sizeof(int ));
+            int* data_f = (int*)data;
+            std::fill(data_f, data_f + total(), vi);
+//            memset_pattern4(data, &vi, total() * sizeof(int ));
             break;
         }
         case DT_16F:
@@ -656,7 +666,10 @@ void Mat::setTo(float v)
             ushort u = *(ushort *)hfloat(v).get_ptr();
             ushort * p = (ushort *)&vi;
             p[0] = u; p[1] = u;
-            memset_pattern4(data, &vi, total() * sizeof(ushort));
+            size_t t = + total()/(sizeof(int)/sizeof(ushort));
+            int* data_f = (int*)data;
+            std::fill(data_f, data_f + t, vi);
+//            memset_pattern4(data, &vi, total() * sizeof(ushort));
             break;
         }
         default:
@@ -705,7 +718,8 @@ void Mat::print(int len) const
     std::cout<<"]"<<std::endl;
 
     // print value
-    size_t printLen = len == -1 ? total() : len;
+    size_t printLen = len == -1 ? total() :
+            len > total() ? total() : len;
 
     std::cout<<"value = ";
     if (type() == DT_32F)

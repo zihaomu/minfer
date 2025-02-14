@@ -25,7 +25,7 @@ TEST(Layer_TEST, attention_test)
     Mat param2 = readMatFromNpy(param2_path); // v
     Mat param3 = readMatFromNpy(param3_path); // out
     Mat param_rms = readMatFromNpy(param_rms_path);
-    Mat output = readMatFromNpy(output_path);
+    Mat output_checker = readMatFromNpy(output_path);
 
     const float rms_eps = 1e-6f;
     int d_model = 128;
@@ -40,14 +40,18 @@ TEST(Layer_TEST, attention_test)
 
     std::vector<Mat*> inputs = {&input};
 
-    Mat output_check;
-    output_check.create(output.size.dims(), output.size.p, output.type());
-    std::vector<Mat*> outputs = {&output_check};
+    Mat output;
+    output.create(output_checker.size.dims(), output_checker.size.p, output_checker.type());
+    std::vector<Mat*> outputs = {&output};
     layer->forward(inputs, outputs, 0);
 
     std::cout<<"output.print(10) = "<<std::endl;
     output.print(10);
 
-    std::cout<<"output_check.print(10) = "<<std::endl;
-    output_check.print(10);
+    std::cout<<"output_checker.print(10) = "<<std::endl;
+    output_checker.print(10);
+
+    double v = norm(output_checker, output, NORM_L1);
+    // std::cout<<"v = "<<v<<std::endl;
+    M_Assert(v < 12);
 }

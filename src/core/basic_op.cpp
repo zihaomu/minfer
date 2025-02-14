@@ -391,6 +391,10 @@ norm_(const _Tp* src1, const _Tp* src2, size_t total, int normType, double start
         for (size_t i = 0; i < total; i++)
         {
             result += std::abs((double )src1[i] - (double )src2[i]);
+
+            // if (std::abs((double )src1[i] - (double )src2[i]) > 0.001) {
+            //     std::cout<<"src1["<<i<<"] = "<<(double )src1[i]<<", src2["<<i<<"] = "<<(double )src2[i]<<std::endl;
+            // }
         }
     }
     else if (normType == NORM_L2)
@@ -617,11 +621,19 @@ public:
         // set dim steps
         auto get_step_func = [](const MatShape& i_s, MatShape& o_s) {
             o_s.resize(i_s.size(), 1);
-
-            // step skip the block_size dimension.
-            for (int i = o_s.size() - 3; i >= 0; i--)
+            o_s[i_s.size() - 1] = 1;
+            for (int i = o_s.size() - 2; i >= 0; i--)
             {
                 o_s[i] *= i_s[i+1] * o_s[i+1];
+            }
+
+            // from the first dim to the last dim, if pre shape is 1, then step is 0.
+            for (int i = 0; i < i_s.size(); i++)
+            {
+                if (i_s[i] == 1)
+                    o_s[i] = 0;
+                else
+                    break;
             }
         };
 
@@ -635,6 +647,7 @@ public:
     }
 };
 
+// TODO Optimized the following code.
 template<typename T, typename Func>
 void binary_forward(const Func& op, const BinaryOpHelper& helper,  const uchar* inp0, const uchar* inp1, uchar* out)
 {

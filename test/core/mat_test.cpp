@@ -58,6 +58,30 @@ TEST(Mat_TEST, Op_Test)
 //    M_Assert(v < 1e-4);
 }
 
+
+TEST(Mat_TEST, Op_Test2)
+{
+    std::vector<int> test_shape = {1, 4, 5};
+    Mat m3 = Mat(test_shape, DT_32F);
+    m3.setTo(3.0f);
+
+    Mat m4 = m3 - 1.f;
+
+    Mat m2 = Mat(test_shape, DT_32F);
+    m2.setTo(2.0f);
+
+    double v = norm(m4, m2, NORM_L1);
+    M_Assert(v < 1e-4);
+
+    Mat m5 = (1 - m3) * 3;
+    Mat m6 = Mat(test_shape, DT_32F);
+    m6.setTo(-2.0f * 3);
+
+    double v2 = norm(m5, m6, NORM_L1);
+    M_Assert(v2 < 1e-4);
+
+}
+
 TEST(Mat_TEST, transposeND)
 {
     Mat m = readMatFromNpy(std::string(M_ROOT_PATH) + "/test/core/test_data/data/trans_3d_0_i.npy");
