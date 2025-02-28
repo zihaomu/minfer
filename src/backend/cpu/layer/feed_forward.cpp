@@ -111,9 +111,29 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
 
     gemm(x1 * x3, down, false, true).copyTo(x_out);
 
-//    out.print(10);
-    Mat m = out + *input[0];
-    m.copyTo(out);
+    // x_out.print(10);
+    // out = (x_out);
+    std::cout<<"x_out.print(10); = "<<(void*)x_out.data<<std::endl;
+    x_out.print(10);
+    x_out = x_out + 1;
+    std::cout<<"x_out.print(10); = "<<(void*)x_out.data<<std::endl;
+    x_out.print(10);
+    (*input[0]).print(10);
+    x_out = x_out + *input[0];
+
+    std::cout<<"x_out.print(10); = "<<(void*)x_out.data<<std::endl;
+    x_out.print(10);
+    x_out += *input[0];
+    // std::cout<<"x_out.print(10);"<<std::endl;
+    // x_out.print(10);
+    //
+    // std::cout<<"out.print(10);"<<std::endl;
+    // out.print(10);
+    // out = x_out;
+    x_out.copyTo(out);
+    // out.print(10);
+
+    // m.copyTo(out);
 //    out.print(10);
 }
 

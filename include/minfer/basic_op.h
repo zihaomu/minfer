@@ -82,7 +82,10 @@ void reshape(const Mat& input, const std::vector<int>& shape, Mat& out);
 #define MAT_AUG_OPERATOR1(op, cvop) \
 
 #define MAT_AUG_OPERATOR(op, cvop) \
-static inline Mat &operator op (Mat& a, const Mat& b) {cvop; return a;} \
+static inline Mat &operator op (Mat& a, const Mat& b) {cvop; \
+    a.print(10); \
+    b.print(10); \
+    return a;} \
 static inline const Mat &operator op (const Mat& a, const Mat& b) {cvop; return a;}
 
 MAT_AUG_OPERATOR(+=, add(a, b, (Mat &) a))

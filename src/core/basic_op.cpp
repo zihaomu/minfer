@@ -392,9 +392,9 @@ norm_(const _Tp* src1, const _Tp* src2, size_t total, int normType, double start
         {
             result += std::abs((double )src1[i] - (double )src2[i]);
 
-            // if (std::abs((double )src1[i] - (double )src2[i]) > 0.001) {
-            //     std::cout<<"src1["<<i<<"] = "<<(double )src1[i]<<", src2["<<i<<"] = "<<(double )src2[i]<<std::endl;
-            // }
+            if (std::abs((double )src1[i] - (double )src2[i]) > 0.1) {
+                std::cout<<"src1["<<i<<"] = "<<(double )src1[i]<<", src2["<<i<<"] = "<<(double )src2[i]<<std::endl;
+            }
         }
     }
     else if (normType == NORM_L2)
@@ -687,6 +687,7 @@ void binary_forward(const Func& op, const BinaryOpHelper& helper,  const uchar* 
         for (int i = 0; i < block_size; i++, p_o++, p_i0 += inner_0, p_i1 += inner_1)
         {
             *p_o = op(*p_i0, *p_i1);
+            // std::cout<<"p_o["<<i<<"] = "<<*p_i0<<", "<<*p_i1<<", "<<*p_o<<std::endl;
         }
     }
 }
@@ -830,8 +831,26 @@ void binaryFunc(BinaryOp op, const Mat& a, const Mat& b, Mat& c)
     BinaryOpHelper helper = BinaryOpHelper();
     helper.init(a, b);
 
-    c = Mat(helper.out_shape, a.type());
+    // special case: if c is the same as a, then we can directly use a.data as c.data, for example when a += b, or a -= b
+    // TODO 处理当 a += b时的broadcast情况。
+    if (&c == &a)
+    {
+        typeDispatch(a.type(), op, helper, a.data, b.data, c.data);
+    }
+    else
+    {
+        c = Mat(helper.out_shape, a.type());
+        typeDispatch(a.type(), op, helper, a.data, b.data, c.data);
+    }
 
+    // print address of a, b, c
+    // std::cout<<"a.data = "<<()a.data<<", b.data = "<<b.data<<", c.data = "<<c.data<<std::endl;
+    // std::cout<<"a.print(10) = "<<(void *)a.data<<std::endl;
+    // a.print(10);
+    // std::cout<<"b.print(10) = "<<(void *)b.data<<std::endl;
+    // b.print(10);
+    // std::cout<<"c.print(10) = "<<(void *)c.data<<std::endl;
+    // c.print(10);
     typeDispatch(a.type(), op, helper, a.data, b.data, c.data);
 }
 

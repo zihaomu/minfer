@@ -322,24 +322,24 @@ def Attention_layer_data_generater():
     freqs_sin, freqs_cos = precompute_freqs_cis(d_model // num_heads, max_len)
     
     # forward
-    out = atten.forward(atten_norm.forward(x), freqs_sin, freqs_cos)
+    out = atten.forward(atten_norm.forward(x), freqs_sin, freqs_cos) + x
     printArray(out, "Attention output")
     printArray(out[:, 1:, :], "Attention output 1")
     printArray(out[:, 2:, :], "Attention output 1")
     printArray(out[:, 3:, :], "Attention output 1")
 
     # save input
-    # np.save(ROOT_PATH + "/atten_input.npy", x.astype(np.float32))
+    np.save(ROOT_PATH + "/atten_input.npy", x.astype(np.float32))
 
-    # # save params
-    # np.save(ROOT_PATH + "/atten_params_0.npy", np.array(params[0]).astype(np.float32))
-    # np.save(ROOT_PATH + "/atten_params_1.npy", np.array(params[1]).astype(np.float32))
-    # np.save(ROOT_PATH + "/atten_params_2.npy", np.array(params[2]).astype(np.float32))
-    # np.save(ROOT_PATH + "/atten_params_3.npy", np.array(params[3]).astype(np.float32))
-    # np.save(ROOT_PATH + "/atten_rms_params.npy", np.array(params_atten_norm).astype(np.float32))
+    # save params
+    np.save(ROOT_PATH + "/atten_params_0.npy", np.array(params[0]).astype(np.float32))
+    np.save(ROOT_PATH + "/atten_params_1.npy", np.array(params[1]).astype(np.float32))
+    np.save(ROOT_PATH + "/atten_params_2.npy", np.array(params[2]).astype(np.float32))
+    np.save(ROOT_PATH + "/atten_params_3.npy", np.array(params[3]).astype(np.float32))
+    np.save(ROOT_PATH + "/atten_rms_params.npy", np.array(params_atten_norm).astype(np.float32))
 
     # # save output
-    # np.save(ROOT_PATH + "/atten_output.npy", out.astype(np.float32))
+    np.save(ROOT_PATH + "/atten_output.npy", out.astype(np.float32))
 
 def FeadForward_layer_data_generater():
 
@@ -391,9 +391,9 @@ def generate_random_numpy_npy():
     np.save(ROOT_PATH + "/random10x12.npy", data)
 
 def main():
-    # FeadForward_layer_data_generater()
+    FeadForward_layer_data_generater()
     # generate_random_numpy_npy()
 
-    Attention_layer_data_generater()
+    # Attention_layer_data_generater()
 
 main()

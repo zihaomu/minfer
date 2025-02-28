@@ -43,4 +43,8 @@ TEST(Layer_TEST, feed_forward_test)
 
     std::cout<<"output_check.print(10) = "<<std::endl;
     output_check.print(10);
+
+    double v = norm(output, output_check, NORM_L1);
+    std::cout<<"v = "<<v<<std::endl;
+    M_Assert(v < 12);
 }

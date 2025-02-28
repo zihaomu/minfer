@@ -405,6 +405,30 @@ Mat& Mat::operator=(const int v)
     return *this;
 }
 
+// Mat& Mat::operator+=(const Mat& m)
+// {
+//     (*this) = (*this) + m;
+//     return *this;
+// }
+//
+// Mat& Mat::operator-=(const Mat& m)
+// {
+//     (*this) = (*this) - m;
+//     return *this;
+// }
+//
+// Mat& Mat::operator/=(const Mat& m)
+// {
+//     (*this) = (*this) / m;
+//     return *this;
+// }
+//
+// Mat& Mat::operator*=(const Mat& m)
+// {
+//     (*this) = (*this) * m;
+//     return *this;
+// }
+
 Mat Mat::reshape(const std::vector<int> newSizes) const
 {
     return this->reshape(newSizes.size(), newSizes.data());
@@ -713,7 +737,10 @@ void Mat::print(int len) const
     std::cout<<"shape = ["<<size.p[0]<<"x";
     for (int i = 1; i < dims; i++)
     {
-        std::cout<<size.p[i]<<"x";
+        if (i == dims - 1)
+            std::cout<<size.p[i];
+        else
+            std::cout<<size.p[i]<<"x";
     }
     std::cout<<"]"<<std::endl;
 

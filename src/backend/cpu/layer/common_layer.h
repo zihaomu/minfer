@@ -7,5 +7,6 @@
 
 #include "minfer/layer.h"
 #include "minfer/system.h"
+#include "minfer.h"
 
 #endif //MINFER_COMMON_LAYER_H

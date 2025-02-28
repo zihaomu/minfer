@@ -110,6 +110,11 @@ public:
     // No data copy, just add reference counter.
     Mat& operator=(const Mat& m);
 
+    // Mat& operator+=(const Mat& m);
+    // Mat& operator-=(const Mat& m);
+    // Mat& operator/=(const Mat& m);
+    // Mat& operator*=(const Mat& m);
+
     Mat& operator=(const MatExpr& e);
 
     // set all mat value to given value, it will not change the mat type, just assign value according the data type.
