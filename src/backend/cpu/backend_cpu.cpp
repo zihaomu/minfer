@@ -9,6 +9,8 @@
 #include "layer/input_layer.h"
 #include "layer/output_layer.h"
 #include "layer/attention_layer.h"
+#include "layer/feed_forward.h"
+#include "layer/embeding_layer.h"
 
 namespace minfer
 {
@@ -50,12 +52,13 @@ void BackendCPU::LayerFactoryCPU::registerAllLayer()
     M_CPU_REGISTER_LAYER(LayerType::Input, InputLayer);
     M_CPU_REGISTER_LAYER(LayerType::Output, OutputLayer);
     M_CPU_REGISTER_LAYER(LayerType::Attention, AttentionLayer);
+    M_CPU_REGISTER_LAYER(LayerType::FFN, FeedForwardLayer);
+    M_CPU_REGISTER_LAYER(LayerType::Embedding, EmbeddingLayer);
 }
 
 std::shared_ptr<Layer> BackendCPU::createLayer(std::shared_ptr<LayerParams> param)
 {
     M_Assert(checkLayerSupported(param));
-
     return layerFactory->createLayerInstance(param);
 }
 

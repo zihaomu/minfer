@@ -17,10 +17,12 @@ def generate_random_numpy_npy():
 
 def transpose_nd_data():
     data0 = np.random.rand(10, 12, 13).astype(np.float32)
-    data1 = data0.transpose(2, 1, 0)
-    data2 = data0.transpose(0, 2, 1)
-    data3 = data0.transpose(2, 0, 1)
-    data4 = data0.transpose(1, 0, 2)
+
+    data1 = np.array(data0.transpose(2, 1, 0), order='C', copy=True)
+    data2 = np.array(data0.transpose(0, 2, 1), order='C', copy=True)
+    data3 = np.array(data0.transpose(2, 0, 1), order='C', copy=True)
+    data4 = np.array(data0.transpose(1, 0, 2), order='C', copy=True)
+
     print("data 0", data0.flatten()[:30])
     print("data 1", data1.flatten()[:30])
     print("data 2", data2.flatten()[:30])
@@ -78,8 +80,8 @@ def mat_mul_data_generater():
 def main():
     # FeadForward_layer_data_generater()
     # generate_random_numpy_npy()
-    # transpose_nd_data()
+    transpose_nd_data()
     
-    mat_mul_data_generater()
+    # mat_mul_data_generater()
 
 main()

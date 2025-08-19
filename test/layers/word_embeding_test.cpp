@@ -4,39 +4,31 @@
 
 #include "minfer.h"
 #include "gtest/gtest.h"
-#include "../src/backend/cpu/layer/feed_forward.h"
+#include "../src/backend/cpu/layer/embeding_layer.h"
 
 using namespace minfer;
 
-TEST(Layer_TEST, feed_forward_test)
+TEST(Layer_TEST, word_embedding_test)
 {
     std::string ROOT_path = std::string(M_ROOT_PATH) + "/test/layers/test_data/data/";
-    std::string input_path = ROOT_path + "ffn_input.npy";
-    std::string param0_path = ROOT_path + "ffn_params_0.npy";
-    std::string param1_path = ROOT_path + "ffn_params_1.npy";
-    std::string param2_path = ROOT_path + "ffn_params_2.npy";
-    std::string param_rms_path = ROOT_path + "ffn_rms_params.npy";
-    std::string output_path = ROOT_path + "ffn_output.npy";
+    std::string input_path = ROOT_path + "word_emb_input.npy";
+    std::string param0_path = ROOT_path + "word_emb_params_0.npy";
+    std::string output_path = ROOT_path + "word_emb_output.npy";
 
     Mat input = readMatFromNpy(input_path);
     Mat param0 = readMatFromNpy(param0_path); // gate
-    Mat param1 = readMatFromNpy(param1_path); // down
-    Mat param2 = readMatFromNpy(param2_path); // up
-    Mat param_rms = readMatFromNpy(param_rms_path);
     Mat output = readMatFromNpy(output_path);
 
     const float rms_eps = 1e-6f;
-    FeedForwardLayerParams params
-     = {{0}, {1}, ActivateType::SILU, 128, 256, rms_eps, param_rms, param0, param2, param1};
-    std::shared_ptr<FeedForwardLayerParams> layer_params(new FeedForwardLayerParams({0}, {1}, ActivateType::SILU, 128, 256, rms_eps, param_rms, param0, param2, param1));
-    auto layer = FeedForwardLayer::create(layer_params);
+    std::shared_ptr<EmbeddingLayerParams> params(new EmbeddingLayerParams({0}, {1}, 2048, 128, param0));
+    std::shared_ptr<EmbeddingLayer> layer = EmbeddingLayer::create(params);
 
     std::vector<Mat*> inputs = {&input};
 
     Mat output_check;
     output_check.create(output.size.dims(), output.size.p, output.type());
     std::vector<Mat*> outputs = {&output_check};
-    layer->forward(inputs, outputs, 0);
+    layer->forward(inputs, outputs);
 
     std::cout<<"output.print(10) = "<<std::endl;
     output.print(10);

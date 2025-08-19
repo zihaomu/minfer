@@ -22,6 +22,27 @@ convert(const _Ts* src, _Td* dst, size_t length)
     for (size_t i = 0; i < length; i++)
     {
         dst[i] = saturate_cast<_Td>(src[i]);
+        // std::cout<<"convert: src["<<i<<"] = "<<(float)src[i]<<" to dst["<<i<<"] = "<<(float)dst[i]<<std::endl;
+    }
+}
+
+template<> inline
+void convert(const hfloat* src, float* dst, size_t length)
+{
+    for (size_t i = 0; i < length; i++)
+    {
+        dst[i] = (float)(src[i]);
+        // std::cout<<"convert: src["<<i<<"] = "<<(float)src[i]<<" to dst["<<i<<"] = "<<(float)dst[i]<<std::endl;
+    }
+}
+
+template<> inline
+void convert(const float* src, hfloat* dst, size_t length)
+{
+    for (size_t i = 0; i < length; i++)
+    {
+        dst[i] = (hfloat)(src[i]);
+        // std::cout<<"convert: src["<<i<<"] = "<<(float)src[i]<<" to dst["<<i<<"] = "<<(float)dst[i]<<std::endl;
     }
 }
 
@@ -72,6 +93,7 @@ CONVERT_FUNC(32f16u, convert, float, ushort)
 CONVERT_FUNC(32f16s, convert, float, short )
 CONVERT_FUNC(32f32s, convert, float, int   )
 CONVERT_FUNC(32f32u, convert, float, uint  )
+CONVERT_FUNC(32f16f, convert, float, hfloat)
 
 // 32s
 CONVERT_FUNC(32s8s,  convert, int, char  )
@@ -88,6 +110,16 @@ CONVERT_FUNC(32u16u, convert, uint, ushort)
 CONVERT_FUNC(32u16s, convert, uint, short )
 CONVERT_FUNC(32u32s, convert, uint, int   )
 CONVERT_FUNC(32u32f, convert, uint, float )
+
+// 16f
+CONVERT_FUNC(16f8s,  convert, hfloat, char  )
+CONVERT_FUNC(16f8u,  convert, hfloat, uchar )
+CONVERT_FUNC(16f16u, convert, hfloat, ushort)
+CONVERT_FUNC(16f16s, convert, hfloat, short )
+CONVERT_FUNC(16f32s, convert, hfloat, int   )
+CONVERT_FUNC(16f32f, convert, hfloat, float )
+CONVERT_FUNC(16f32u, convert, hfloat, uint )
+
 
 static void convert_8u(const uchar* src_, uchar* dst_, size_t length)
 {
@@ -163,6 +195,7 @@ BinaryFunc getConvertFunc(int stype, int dtype)
             (convert_32u),
             (convert_32f32s),
             (convert_32f32u),
+            (convert_32f16f),
         },
 
         // 32s = 5
@@ -185,6 +218,17 @@ BinaryFunc getConvertFunc(int stype, int dtype)
             (convert_32u32f),
             (convert_32u32s),
             (convert_32u),
+        },
+
+        // 16f = 7
+     {
+            (convert_16f8s),
+            (convert_16f8u),
+            (convert_16f16u),
+            (convert_16f16s),
+            (convert_16f32f),
+            (convert_16f32s),
+            (convert_16f32u),
         }
     };
 
@@ -210,6 +254,8 @@ void Mat::convertTo(minfer::Mat &m, int type_) const
 
     // allocate new memory
     m.create(dims, size.p, dtype);
+
+    auto a = m.total();
 
     BinaryFunc func = getConvertFunc(stype, dtype);
     func(this->data, m.data, m.total());

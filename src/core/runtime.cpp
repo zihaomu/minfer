@@ -6,7 +6,7 @@ namespace minfer
 Runtime::Runtime()
 {
     // TODO: register all backends here.
-     backendCPU = std::make_shared<BackendCPU>();
+    backendCPU = std::make_shared<BackendCPU>();
 }
 
 Runtime::~Runtime()
@@ -42,6 +42,12 @@ std::shared_ptr<Layer> Runtime::createLayer(std::shared_ptr<LayerParams> param)
     if (backendCPU->checkLayerSupported(param))
     {
         layer = backendCPU->createLayer(param);
+    }
+    else
+    {
+        // M_PRINT_DBG("createLayerInstance failed! Layer type %d was not registered! ! ! \n", (int)param->type);
+        // M_Error_(Error::StsBadFunc, ("createLayerInstance failed! Layer type %d was not registered! ! \n", (int)param->type));
+        M_ERROR("createLayerInstance failed! Layer type %d was not registered!", (int)param->type);
     }
 
     return layer;

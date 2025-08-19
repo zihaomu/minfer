@@ -341,7 +341,7 @@ def Attention_layer_data_generater():
     # # save output
     np.save(ROOT_PATH + "/atten_output.npy", out.astype(np.float32))
 
-def FeadForward_layer_data_generater():
+def FeedForward_layer_data_generater():
 
     # random FFN layer
     d_model = 128
@@ -390,10 +390,39 @@ def generate_random_numpy_npy():
     print(data)
     np.save(ROOT_PATH + "/random10x12.npy", data)
 
-def main():
-    FeadForward_layer_data_generater()
-    # generate_random_numpy_npy()
+def WordEmbedding_layer_data_generater():
+    # random word embedding layer
+    d_model = 128
+    vocab_size = 2048
+    word_emb = WordEmbedding(vocab_size, d_model)
 
+    # random numpy array with shape [vocab_size, d_model]
+    params = np.random.rand(vocab_size, d_model)
+
+    printArray(params, "WordEmbedding params")
+    word_emb.load(params)
+
+    # random input
+    x = np.random.randint(0, vocab_size, (1, 10))
+    printArray(x, "WordEmbedding input")
+
+    # forward
+    out = word_emb.forward(x)
+    printArray(out, "WordEmbedding output")
+
+    # save input
+    np.save(ROOT_PATH + "/word_emb_input.npy", x.astype(np.int32))
+
+    # save params
+    np.save(ROOT_PATH + "/word_emb_params_0.npy", params.astype(np.float32))
+
+    # output
+    np.save(ROOT_PATH + "/word_emb_output.npy", out.astype(np.float32))
+
+def main():
+    # FeedForward_layer_data_generater()
+    # generate_random_numpy_npy()
     # Attention_layer_data_generater()
+    WordEmbedding_layer_data_generater()
 
 main()

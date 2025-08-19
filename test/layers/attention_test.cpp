@@ -51,7 +51,21 @@ TEST(Layer_TEST, attention_test)
     std::cout<<"output_checker.print(10) = "<<std::endl;
     output_checker.print(10);
 
-    double v = norm(output_checker, output, NORM_L1);
+    double mean_l1 = norm(output, output_checker, NORM_L1) / output.total();
+    double rel_l2_a  = norm(output, output_checker, NORM_L2);
+    double rel_l2_b = norm(output_checker, NORM_L2) + 1e-12;
+    double rel_l2 = rel_l2_a / rel_l2_b;
+    double max_err = norm(output, output_checker, NORM_INF);
+
+    std::cout << "mean L1 = " << mean_l1
+              << ", relative L2 = " << rel_l2
+              << ", max abs = " << max_err << std::endl;
+
+    M_Assert(mean_l1 < 1);
+    M_Assert(rel_l2  < 1e-5);
+    M_Assert(max_err < 2);
+
+    // double v = norm(output_checker, output, NORM_L1);
     // std::cout<<"v = "<<v<<std::endl;
-    M_Assert(v < 12);
+    // M_Assert(v < 12);
 }

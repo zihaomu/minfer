@@ -70,7 +70,7 @@ private:
 
     // Runtime 相当于全局的资源管理器，其中包含多个。
     // TODO, 一个Net应该包含多个runtime或者backend，互相连接
-    Runtime* runtime; // 这里需要一个Runtime，用来管理所有的Device，以及所有的Tensor。// 是不是用Backend就可以，还是需要再封一层？
+    Runtime* runtime = nullptr; // 这里需要一个Runtime，用来管理所有的Device，以及所有的Tensor。// 是不是用Backend就可以，还是需要再封一层？
     // 需要一个全局单例模式去管理所有Device，然后再指向这个Device。
 };
 

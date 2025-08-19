@@ -144,7 +144,7 @@ TEST(Net_TEST, net_tiny_llama)
 {
     std::cout<<"print test on net_tiny_llama"<<std::endl;
     Net net;
-    net.readNet("/Users/moo/work/models/llm_model/Lite-Oute-1-65M-FP16.gguf");
+    net.readNet(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16.gguf");
 
     // TODO add the forward type.
 }

@@ -4,6 +4,7 @@
 
 #include "attention_layer.h"
 #include "autobuffer.h"
+#include <cstring>  // for memcpy
 
 #define ATTEN_DEBUG 1
 namespace minfer {
@@ -220,8 +221,9 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     {
         float* p_data = freqs_sin_cos.data() + i * embd_dim_head_complex * 2;
         float* p_x_q = (float *)x_q.data + i * embd_dim_head_complex * 2 * head_count;
-        float* p_x_k = (float *)x_k.data + i * embd_dim_head_complex * 2 * head_count;
+        float* p_x_k = (float *)x_k.data + i * embd_dim_head_complex * 2 * head_count_kv;
 
+        // Apply RoPE to Q
         for (int h = 0; h < head_count; h++) // head
         {
             for (int j = 0; j < embd_dim_head_complex; j++) // internal
@@ -233,14 +235,23 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
                 float q_i = p_x_q[j*2+1];
                 p_x_q[j*2]     = q_r * freqs_cos - q_i * freqs_sin;
                 p_x_q[j*2 + 1] = q_r * freqs_sin + q_i * freqs_cos;
+            }
+            p_x_q += embd_dim_head_complex * 2;
+        }
+
+        // Apply RoPE to K (using head_count_kv)
+        for (int h = 0; h < head_count_kv; h++) // head_kv
+        {
+            for (int j = 0; j < embd_dim_head_complex; j++) // internal
+            {
+                float freqs_sin = p_data[j*2];
+                float freqs_cos = p_data[j*2 + 1];
 
                 float k_r = p_x_k[j*2];
                 float k_i = p_x_k[j*2+1];
                 p_x_k[j*2]     = k_r * freqs_cos - k_i * freqs_sin;
                 p_x_k[j*2 + 1] = k_r * freqs_sin + k_i * freqs_cos;
             }
-
-            p_x_q += embd_dim_head_complex * 2;
             p_x_k += embd_dim_head_complex * 2;
         }
     }
@@ -259,11 +270,46 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
 
     // because x_q, x_k, x_v are two dim, we need to reshape it to [seq, bsz, embd_dim_head]
     // TODO check if we should use head_count_kv?
-    std::vector<int> new_shape = {seq_len, head_count, embd_dim_head};
+    std::vector<int> new_shape_q = {seq_len, head_count, embd_dim_head};
+    std::vector<int> new_shape_kv = {seq_len, head_count_kv, embd_dim_head};
 
-    x_q = x_q.reshape(new_shape);
-    x_k = x_k.reshape(new_shape);
-    x_v = x_v.reshape(new_shape);
+    x_q = x_q.reshape(new_shape_q);
+    x_k = x_k.reshape(new_shape_kv);
+    x_v = x_v.reshape(new_shape_kv);
+
+    // Repeat K and V to match Q's head count for Grouped Query Attention
+    if (repeat_kv > 1) {
+        // Need to repeat K and V along the head dimension
+        // x_k shape: [seq_len, head_count_kv, embd_dim_head] -> [seq_len, head_count, embd_dim_head]
+        // x_v shape: [seq_len, head_count_kv, embd_dim_head] -> [seq_len, head_count, embd_dim_head]
+        
+        Mat x_k_repeated = Mat({seq_len, head_count, embd_dim_head}, x_k.type());
+        Mat x_v_repeated = Mat({seq_len, head_count, embd_dim_head}, x_v.type());
+        
+        float* k_src = (float*)x_k.data;
+        float* v_src = (float*)x_v.data;
+        float* k_dst = (float*)x_k_repeated.data;
+        float* v_dst = (float*)x_v_repeated.data;
+        
+        for (int s = 0; s < seq_len; s++) {
+            for (int h = 0; h < head_count; h++) {
+                int kv_head = h / repeat_kv; // Which kv head to copy from
+                
+                // Copy K
+                memcpy(k_dst + (s * head_count + h) * embd_dim_head,
+                       k_src + (s * head_count_kv + kv_head) * embd_dim_head,
+                       embd_dim_head * sizeof(float));
+                
+                // Copy V
+                memcpy(v_dst + (s * head_count + h) * embd_dim_head,
+                       v_src + (s * head_count_kv + kv_head) * embd_dim_head,
+                       embd_dim_head * sizeof(float));
+            }
+        }
+        
+        x_k = x_k_repeated;
+        x_v = x_v_repeated;
+    }
 
     // py code: scores = self.attn.forward(q, k, v)
     x_q = transposeND(x_q, {1, 0, 2});
@@ -368,10 +414,10 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     Mat out = *output[0];
     Mat x_out = Mat(out.size.dims() - 1, out.size.p+1, out.type(), out.data);
 
-    // Transpose qkv from [head_kv, seq_len, embd_dim_head] to [seq_len, head_kv, embd_dim_head]
-    // and then reshape it to [seq_len, head_kv * embd_dim_head]
+    // Transpose qkv from [head_count, seq_len, embd_dim_head] to [seq_len, head_count, embd_dim_head]
+    // and then reshape it to [seq_len, head_count * embd_dim_head]
     Mat qkvT= transposeND(qkv, {1, 0, 2});
-    qkvT = qkvT.reshape({seq_len, head_count_kv * embd_dim_head});
+    qkvT = qkvT.reshape({seq_len, head_count * embd_dim_head});
 
     // std::cout<<"qkvT.print("<<std::endl;
     // qkvT.print(20);

@@ -36,28 +36,24 @@ static std::string getFortranOrder(const std::string& header)
 static std::vector<int> getShape(const std::string& header)
 {
     std::string field = "'shape':";
-    int idx = header.find(field);
-    M_Assert(idx != -1);
+    size_t idx = header.find(field);
+    if (idx == std::string::npos) return {1};
 
-    int from = header.find('(', idx + field.size()) + 1;
-    int to = header.find(')', from);
-
+    size_t from = header.find('(', idx) + 1;
+    size_t to   = header.find(')', from);
     std::string shapeStr = header.substr(from, to - from);
-    if (shapeStr.empty())
-        return std::vector<int>(1, 1);
-
-    // Remove all commas.
-    shapeStr.erase(std::remove(shapeStr.begin(), shapeStr.end(), ','),
-                   shapeStr.end());
-
-    std::istringstream ss(shapeStr);
-    int value;
 
     std::vector<int> shape;
-    while (ss >> value)
+    std::istringstream ss(shapeStr);
+    std::string token;
+    while (std::getline(ss, token, ','))  // 用逗号分隔
     {
-        shape.push_back(value);
+        // 去掉空格
+        token.erase(std::remove_if(token.begin(), token.end(), ::isspace), token.end());
+        if (!token.empty())
+            shape.push_back(std::stoi(token));
     }
+    if (shape.empty()) shape.push_back(1);
     return shape;
 }
 
@@ -85,12 +81,13 @@ Mat readMatFromNpy(const std::string& path) {
     ifs.read(&header[0], header.size());
 
     // Extract data type.
-    M_Assert(getType(header) == "<f4");
+    M_Assert(getType(header) == "<f4" || getType(header) == "<i4");
+    auto data_type = getType(header) == "<f4" ? DT_32F : DT_32S;
     M_Assert(getFortranOrder(header) == "False");
     std::vector<int> shape = getShape(header);
 
-    size_t typeSize = DT_ELEM_SIZE(DT_32F);
-    Mat blob(shape, DT_32F);
+    size_t typeSize = DT_ELEM_SIZE(data_type);
+    Mat blob(shape, data_type);
     ifs.read((char *) blob.data, blob.total() * typeSize);
     M_Assert((size_t) ifs.gcount() == blob.total() * typeSize);
 

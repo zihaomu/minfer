@@ -393,7 +393,9 @@ norm_(const _Tp* src1, const _Tp* src2, size_t total, int normType, double start
             result += std::abs((double )src1[i] - (double )src2[i]);
 
             if (std::abs((double )src1[i] - (double )src2[i]) > 0.1) {
-                std::cout<<"src1["<<i<<"] = "<<(double )src1[i]<<", src2["<<i<<"] = "<<(double )src2[i]<<std::endl;
+
+                // Debug code
+                // std::cout<<"src1["<<i<<"] = "<<(double )src1[i]<<", src2["<<i<<"] = "<<(double )src2[i]<<std::endl;
             }
         }
     }
@@ -485,6 +487,8 @@ norm_(const _Tp* src1, size_t total, int normType, double startval)
     {
         M_Error(Error::StsBadArg, "Unknown/unsupported norm type");
     }
+
+    return result;
 }
 
 double norm(const Mat& a, int normType)
@@ -522,6 +526,8 @@ double norm(const Mat& a, int normType)
             M_Error(Error::StsBadArg, "Unknown/unsupported data type");
 
     };
+
+    return result;
 }
 
 /****************************************************************************************\

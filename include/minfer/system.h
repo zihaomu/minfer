@@ -48,7 +48,8 @@
 #define M_ERROR(format, ...) syslog(LOG_WARNING, format, ##__VA_ARGS__); fprintf(stderr, format, ##__VA_ARGS__)
 #else
 #define M_PRINT(format, ...) printf(format, ##__VA_ARGS__)
-#define M_ERROR(format, ...) printf(format, ##__VA_ARGS__)
+// #define M_ERROR(format, ...) printf(format, ##__VA_ARGS__)
+#define M_ERROR(format, ...) do { printf(format, ##__VA_ARGS__); exit(1); } while(0)
 #endif
 
 #ifdef M_DEBUG

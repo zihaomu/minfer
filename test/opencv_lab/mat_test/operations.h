@@ -2,8 +2,8 @@
 // Created by mzh on 2024/2/22.
 //
 
-#ifndef MINFER_OPERATIONS_H
-#define MINFER_OPERATIONS_H
+#ifndef MINFER_OPERATIONS_H_TEST
+#define MINFER_OPERATIONS_H_TEST
 
 #include "mat.h"
 
@@ -41,4 +41,4 @@ MAT_AUG_OPERATOR(/=, divide(a, b, (Mat &) a))
 
 }
 
-#endif //MINFER_OPERATIONS_H
+#endif //MINFER_OPERATIONS_H_TEST

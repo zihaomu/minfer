@@ -136,7 +136,7 @@ void MatAllocator::unmap(MatData* u) const
 inline
 MatSize::MatSize(int *_p):p0(_p)
 {
-    if (p0)
+    if (_p)
         p = _p + 1;
     else
         p = nullptr;
@@ -703,6 +703,8 @@ void Mat::setTo(float v)
 
 size_t Mat::total() const
 {
+    if (size.p == 0 || dims == 0)
+        return 0;
     size_t p = 1;
 
     for (int i = dims-1; i >= 0; i--)

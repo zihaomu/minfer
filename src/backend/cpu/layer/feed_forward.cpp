@@ -54,14 +54,14 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
 
     // relu act
     std::function<float(const float )> act_func;
-    if (activateType == ActivateType::SILU)
+    if (activateType == ActivateType::RELU)
     {
         act_func = [&](const float v)
         {
             return std::max(0.f, v);
         };
     }
-    else if (activateType == ActivateType::RELU)
+    else if (activateType == ActivateType::SILU)
     {
         act_func = [&](const float v)
         {
@@ -96,8 +96,10 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     // x1 = silu(self.linear1.forward(x))
     Mat x1 = gemm(x_norm, gate, false, true);
 
+    // Apply activation function to all elements
     float* p_x1 = (float *)x1.data;
-    for (int i = 0; i < seq_len; i++)
+    size_t total_elements = x1.total();
+    for (size_t i = 0; i < total_elements; i++)
     {
         p_x1[i] = act_func(p_x1[i]);
     }

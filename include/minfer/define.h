@@ -122,6 +122,15 @@ using int64 = long int;
 *                                  Float16 Define                                        *
 \****************************************************************************************/
 #ifdef __cplusplus
+
+typedef union Cv32suf
+{
+    int i;
+    unsigned u;
+    float f;
+}
+Cv32suf;
+
 class hfloat
 {
 public:
@@ -138,57 +147,52 @@ protected:
     hfloat() : w(0) {}
     explicit hfloat(float x)
     {
-        // taken from https://gist.github.com/zhuker/b4bd1fb306c7b04975b712c37c4c4075
-        uint32_t inu = *((uint32_t * ) & x);
-        uint32_t t1;
-        uint32_t t2;
-        uint32_t t3;
+#if CV_FP16 && CV_AVX2
+        __m128 v = _mm_load_ss(&x);
+        w = (ushort)_mm_cvtsi128_si32(_mm_cvtps_ph(v, 0));
+#else
+        Cv32suf in;
+        in.f = x;
+        unsigned sign = in.u & 0x80000000;
+        in.u ^= sign;
 
-        t1 = inu & 0x7fffffffu;                 // Non-sign bits
-        t2 = inu & 0x80000000u;                 // Sign bit
-        t3 = inu & 0x7f800000u;                 // Exponent
+        if( in.u >= 0x47800000 )
+            w = (ushort)(in.u > 0x7f800000 ? 0x7e00 : 0x7c00);
+        else
+        {
+            if (in.u < 0x38800000)
+            {
+                in.f += 0.5f;
+                w = (ushort)(in.u - 0x3f000000);
+            }
+            else
+            {
+                unsigned t = in.u + 0xc8000fff;
+                w = (ushort)((t + ((in.u >> 13) & 1)) >> 13);
+            }
+        }
 
-        t1 >>= 13u;                             // Align mantissa on MSB
-        t2 >>= 16u;                             // Shift sign bit into position
-
-        t1 -= 0x1c000;                         // Adjust bias
-
-        t1 = (t3 < 0x38800000u) ? 0 : t1;       // Flush-to-zero
-        t1 = (t3 > 0x8e000000u) ? 0x7bff : t1;  // Clamp-to-max
-        t1 = (t3 == 0 ? 0 : t1);               // Denormals-as-zero
-
-        t1 |= t2;                              // Re-insert sign bit
-
-        *((ushort *)&w) = t1;
+        w = (ushort)(w | (sign >> 16));
+#endif
     }
 
     operator float() const
     {
-#if M_WITH_AVX2 // TODO Add AVX support
+#if CV_FP16 && CV_AVX2
         float f;
         _mm_store_ss(&f, _mm_cvtph_ps(_mm_cvtsi32_si128(w)));
         return f;
 #else
-        float f;
-        uint32_t t1;
-        uint32_t t2;
-        uint32_t t3;
+        Cv32suf out;
 
-        t1 = w & 0x7fffu;                       // Non-sign bits
-        t2 = w & 0x8000u;                       // Sign bit
-        t3 = w & 0x7c00u;                       // Exponent
+        unsigned t = ((w & 0x7fff) << 13) + 0x38000000;
+        unsigned sign = (w & 0x8000) << 16;
+        unsigned e = w & 0x7c00;
 
-        t1 <<= 13u;                              // Align mantissa on MSB
-        t2 <<= 16u;                              // Shift sign bit into position
-
-        t1 += 0x38000000;                       // Adjust bias
-
-        t1 = (t3 == 0 ? 0 : t1);                // Denormals-as-zero
-
-        t1 |= t2;                               // Re-insert sign bit
-
-        *(uint32_t* )(&f) = t1;
-        return f;
+        out.u = t + (1 << 23);
+        out.u = (e >= 0x7c00 ? t + 0x38000000 :
+                 e == 0 ? (static_cast<void>(out.f -= 6.103515625e-05f), out.u) : t) | sign;
+        return out.f;
 #endif
     }
 

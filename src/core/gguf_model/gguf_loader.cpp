@@ -471,7 +471,8 @@ std::shared_ptr<GGUF_context> gguf_init_from_file(const char* fname)
                         (int64_t) info->ne[2] * (int64_t) info->ne[3];
 
                 // need every data type
-                if (ne % ggml_blck_size(info->type) != 0)
+                int aa = ggml_blck_size(info->type);
+                if (ne % aa != 0)
                 {
                     fprintf(stderr, "%s: tensor '%s' of type %d (%s) number of elements (%" PRId64 ") is not a multiple of block size (%d)\n",
                             __func__, info->name.data, (int)info->type, ggml_type_name(info->type), ne, ggml_blck_size(info->type));
@@ -836,7 +837,7 @@ void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >
 
         netParams.push_back(
                 std::shared_ptr<LayerParams>(
-                new EmbdLayerParams({1}, {2}, p.n_vocab, p.n_embd, embdMat)));
+                new EmbeddingLayerParams({1}, {2}, p.n_vocab, p.n_embd, embdMat)));
 
         int layer_id = 2;
         // handle multi attention layer
@@ -904,7 +905,7 @@ void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >
 
             // create output out-embedding
             netParams.push_back(std::shared_ptr<LayerParams>(
-                    new EmbdLayerParams({layer_id}, {layer_id + 1}, p.n_vocab, p.n_embd, outEmbd)));
+                    new EmbeddingLayerParams({layer_id}, {layer_id + 1}, p.n_vocab, p.n_embd, outEmbd)));
             layer_id++;
         }
 

@@ -83,10 +83,10 @@ public:
     Mat w;        // Embedding layer params
 };
 
-class EmbdLayerParams: public LayerParams
+class EmbeddingLayerParams: public LayerParams
 {
 public:
-    EmbdLayerParams(std::vector<int> _inputIndex, std::vector<int> _outputIndex, int _vocab_dim, int _embd_dim, Mat _w)
+    EmbeddingLayerParams(std::vector<int> _inputIndex, std::vector<int> _outputIndex, int _vocab_dim, int _embd_dim, Mat _w)
     :vocab_dim(_vocab_dim), embd_dim(_embd_dim), w(_w)
     {
         type = LayerType::Embedding;

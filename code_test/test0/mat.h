@@ -2,8 +2,8 @@
 // Created by mzh on 2024/1/30.
 //
 
-#ifndef MINFER_MAT_H
-#define MINFER_MAT_H
+#ifndef MINFER_MAT_H_TEST
+#define MINFER_MAT_H_TEST
 
 #include <iostream>
 #include "assert.h"
@@ -235,4 +235,4 @@ MatExpr operator / (const MatExpr& e1, const MatExpr& e2);
 
 #include "./mat_test.inl.h"
 
-#endif //MINFER_MAT_H
+#endif //MINFER_MAT_H_TEST

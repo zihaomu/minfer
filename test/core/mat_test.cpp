@@ -111,15 +111,10 @@ TEST(Mat_TEST, transposeND)
     double v2 = norm(out2, m_cheker_3, NORM_L1);
     double v3 = norm(out3, m_cheker_4, NORM_L1);
 
-//    M_Assert(v0 < 1e-4); // m_cheker_1 is empty, TODO, check why this happen.
+    M_Assert(v0 < 1e-4);
     M_Assert(v1 < 1e-4);
     M_Assert(v2 < 1e-4);
     M_Assert(v3 < 1e-4);
-
-//    std::cout<<"norm 0= "<<v0<<std::endl;
-//    std::cout<<"norm 1= "<<v1<<std::endl;
-//    std::cout<<"norm 2= "<<v2<<std::endl;
-//    std::cout<<"norm 3= "<<v3<<std::endl;
 }
 
 
@@ -155,5 +150,21 @@ TEST(Mat_TEST, mat_mul)
     M_Assert(v1 < 1e-3);
     M_Assert(v2 < 1e-3);
     M_Assert(v3 < 1e-3);
+}
+
+TEST(Mat_TEST, data_convert_fp16_to_fp32)
+{
+    std::vector<int> test_shape = {1, 4, 5};
+    Mat m0 = Mat(test_shape, DT_32F);
+    m0.setTo(3.0f);
+
+    Mat m16;
+    m0.convertTo(m16, DT_16F);
+
+    Mat m32;
+    m16.convertTo(m32, DT_32F);
+
+    double v0 = norm(m32, m0, NORM_L1);
+    M_Assert(v0 < 1e-3);
 }
 
