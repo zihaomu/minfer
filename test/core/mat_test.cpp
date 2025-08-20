@@ -141,10 +141,44 @@ TEST(Mat_TEST, mat_mul)
     double v2 = norm(out2, mo_checker_2, NORM_L1);
     double v3 = norm(out3, mo_checker_3, NORM_L1);
 
-//    std::cout<<"norm 0= "<<v0<<std::endl;
-//    std::cout<<"norm 1= "<<v1<<std::endl;
-//    std::cout<<"norm 2= "<<v2<<std::endl;
-//    std::cout<<"norm 3= "<<v3<<std::endl;
+    std::cout<<"norm 0= "<<v0<<std::endl;
+    std::cout<<"norm 1= "<<v1<<std::endl;
+    std::cout<<"norm 2= "<<v2<<std::endl;
+    std::cout<<"norm 3= "<<v3<<std::endl;
+
+    M_Assert(v0 < 1e-3); // m_cheker_1 is empty, TODO, check why this happen.
+    M_Assert(v1 < 1e-3);
+    M_Assert(v2 < 1e-3);
+    M_Assert(v3 < 1e-3);
+}
+
+TEST(Mat_TEST, mat_mul_broad_cast)
+{
+    Mat mi_0 = readMatFromNpy(std::string(M_ROOT_PATH) + "/test/core/test_data/data/matmul_0_i.npy");
+    Mat mi_1 = readMatFromNpy(std::string(M_ROOT_PATH) + "/test/core/test_data/data/matmul_1_i.npy");
+    Mat mi_2 = readMatFromNpy(std::string(M_ROOT_PATH) + "/test/core/test_data/data/matmul_2_i.npy");
+    Mat mi_3 = readMatFromNpy(std::string(M_ROOT_PATH) + "/test/core/test_data/data/matmul_3_i.npy");
+    Mat mi_4 = readMatFromNpy(std::string(M_ROOT_PATH) + "/test/core/test_data/data/matmul_4_i.npy");
+    Mat mo_checker_0 = readMatFromNpy(std::string(M_ROOT_PATH) + "/test/core/test_data/data/matmul_1_o.npy");
+    Mat mo_checker_1 = readMatFromNpy(std::string(M_ROOT_PATH) + "/test/core/test_data/data/matmul_2_o.npy");
+    Mat mo_checker_2 = readMatFromNpy(std::string(M_ROOT_PATH) + "/test/core/test_data/data/matmul_3_o.npy");
+    Mat mo_checker_3 = readMatFromNpy(std::string(M_ROOT_PATH) + "/test/core/test_data/data/matmul_4_o.npy");
+
+
+    Mat out0 = gemm(mi_0, mi_1);
+    Mat out1 = gemm(mi_0, mi_2, false, true);
+    Mat out2 = gemm(mi_0, mi_3, true, false);
+    Mat out3 = gemm(mi_0, mi_4, true, true);
+
+    double v0 = norm(out0, mo_checker_0, NORM_L1);
+    double v1 = norm(out1, mo_checker_1, NORM_L1);
+    double v2 = norm(out2, mo_checker_2, NORM_L1);
+    double v3 = norm(out3, mo_checker_3, NORM_L1);
+
+    std::cout<<"norm 0= "<<v0<<std::endl;
+    std::cout<<"norm 1= "<<v1<<std::endl;
+    std::cout<<"norm 2= "<<v2<<std::endl;
+    std::cout<<"norm 3= "<<v3<<std::endl;
 
     M_Assert(v0 < 1e-3); // m_cheker_1 is empty, TODO, check why this happen.
     M_Assert(v1 < 1e-3);
