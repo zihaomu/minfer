@@ -99,6 +99,23 @@ public:
     Mat w;          // Embedding layer params
 };
 
+class LinearLayerParams: public LayerParams
+{
+public:
+    LinearLayerParams(std::vector<int> _inputIndex, std::vector<int> _outputIndex, int _in_features, int _out_features, Mat _w, Mat _b={})
+    :in_features(_in_features), out_features(_out_features), w(_w), b(_b)
+    {
+        type = LayerType::Linear;
+        inputIndex = _inputIndex;
+        outputIndex = _outputIndex;
+    }
+
+    int in_features;  // input, the number of input features
+    int out_features; // output, the number of output features
+    Mat w;           // weight matrix
+    Mat b;           // bias vector
+};
+
 // TODO
 class ConvLayerParams : public LayerParams
 {

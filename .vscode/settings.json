@@ -74,6 +74,20 @@
         "random": "cpp",
         "type_traits": "cpp",
         "utility": "cpp",
-        "cinttypes": "cpp"
+        "cinttypes": "cpp",
+        "deque": "cpp",
+        "forward_list": "cpp",
+        "list": "cpp",
+        "map": "cpp",
+        "set": "cpp",
+        "stack": "cpp",
+        "unordered_set": "cpp",
+        "__tree": "cpp",
+        "any": "cpp",
+        "execution": "cpp",
+        "fstream": "cpp",
+        "iostream": "cpp",
+        "print": "cpp",
+        "typeindex": "cpp"
     }
 }

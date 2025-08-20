@@ -11,6 +11,8 @@
 #include "layer/attention_layer.h"
 #include "layer/feed_forward.h"
 #include "layer/embeding_layer.h"
+#include "layer/linear_layer.h"
+#include "layer/rms_norm_layer.h"
 
 namespace minfer
 {
@@ -54,6 +56,8 @@ void BackendCPU::LayerFactoryCPU::registerAllLayer()
     M_CPU_REGISTER_LAYER(LayerType::Attention, AttentionLayer);
     M_CPU_REGISTER_LAYER(LayerType::FFN, FeedForwardLayer);
     M_CPU_REGISTER_LAYER(LayerType::Embedding, EmbeddingLayer);
+    M_CPU_REGISTER_LAYER(LayerType::Linear, LinearLayer);
+    M_CPU_REGISTER_LAYER(LayerType::RMSNorm, RMSNormLayer);
 }
 
 std::shared_ptr<Layer> BackendCPU::createLayer(std::shared_ptr<LayerParams> param)

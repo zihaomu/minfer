@@ -68,13 +68,17 @@ class Linear:
             return np.matmul(x, self.weight.T)
 
     def load(self, params):
-        self.weight = params.reshape(self.out_features, self.in_features)
-
-        if self.hasBias:
-            self.bias = params.reshape(self.out_features)
+        # if params is a list, then it's [weight, bias]
+        if isinstance(params, list):
+            self.weight = params[0].reshape(self.out_features, self.in_features)
+            if self.hasBias:
+                self.bias = params[1].reshape(self.out_features)
+        else:
+            assert not self.hasBias, "linear with bias should have two params"
+            self.weight = params.reshape(self.out_features, self.in_features)
 
     def parameters(self):
-        return [self.weight, self.bias]
+        return [self.weight, self.bias] if self.hasBias else [self.weight]
 
 # softmax implementation
 class Softmax:
@@ -419,10 +423,71 @@ def WordEmbedding_layer_data_generater():
     # output
     np.save(ROOT_PATH + "/word_emb_output.npy", out.astype(np.float32))
 
+def RMSNorm_layer_data_generater():
+    # random RMSNorm layer
+    d_model = 128
+    rms_norm = RMSNorm(d_model)
+
+    # random params
+    params = np.random.rand(d_model)
+
+    printArray(params, "RMSNorm params")
+    rms_norm.load(params)
+
+    # random input
+    x = np.random.rand(1, 6, d_model)
+    printArray(x, "RMSNorm input")
+
+    # forward
+    out = rms_norm.forward(x)
+    printArray(out, "RMSNorm output")
+
+    # save input
+    np.save(ROOT_PATH + "/rms_norm_input.npy", x.astype(np.float32))
+
+    # save params
+    np.save(ROOT_PATH + "/rms_norm_params.npy", params.astype(np.float32))
+
+    # output
+    np.save(ROOT_PATH + "/rms_norm_output.npy", out.astype(np.float32))
+
+def Linear_layer_data_generater():
+    # random Linear layer
+    input_feature = 128
+    output_feature = 256
+    linear = Linear(input_feature, output_feature, hasBias=True)
+
+    # random params
+    params = []
+    params.append(np.random.rand(input_feature, output_feature))
+    params.append(np.random.rand(output_feature))
+
+    linear.load(params)
+
+    # random input
+    x = np.random.rand(1, 6, input_feature)
+    printArray(x, "Linear input")
+
+    # forward
+    out = linear.forward(x)
+    printArray(out, "Linear output")
+
+    # save input
+    np.save(ROOT_PATH + "/linear_input.npy", x.astype(np.float32))
+
+    # save params
+    np.save(ROOT_PATH + "/linear_params_0.npy", params[0].astype(np.float32))
+    np.save(ROOT_PATH + "/linear_params_1.npy", params[1].astype(np.float32))
+
+    # output
+    np.save(ROOT_PATH + "/linear_output.npy", out.astype(np.float32))
+
 def main():
     # FeedForward_layer_data_generater()
     # generate_random_numpy_npy()
     # Attention_layer_data_generater()
-    WordEmbedding_layer_data_generater()
+    # WordEmbedding_layer_data_generater()
+    # RMSNorm_layer_data_generater()
+    Linear_layer_data_generater()
 
 main()

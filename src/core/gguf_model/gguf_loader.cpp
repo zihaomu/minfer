@@ -895,17 +895,17 @@ void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >
 
             layer_id++;
 
-            Mat outEmbd = loader.create_mat(getTensorName(LLM_TENSOR_OUTPUT, "weight"), false);
+            Mat outWeight = loader.create_mat(getTensorName(LLM_TENSOR_OUTPUT, "weight"), false);
 
             // if output is NULL, init from the input tok embed
-            if (outEmbd.empty())
+            if (outWeight.empty())
             {
-                outEmbd = loader.create_mat(getTensorName(LLM_TENSOR_TOKEN_EMBD, "weight"));
+                outWeight = loader.create_mat(getTensorName(LLM_TENSOR_TOKEN_EMBD, "weight"));
             }
 
             // create output out-embedding
             netParams.push_back(std::shared_ptr<LayerParams>(
-                    new EmbeddingLayerParams({layer_id}, {layer_id + 1}, p.n_vocab, p.n_embd, outEmbd)));
+                    new LinearLayerParams({layer_id}, {layer_id + 1}, p.n_embd, p.n_vocab, outWeight)));
             layer_id++;
         }
 
