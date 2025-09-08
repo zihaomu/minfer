@@ -45,11 +45,11 @@
 // on iOS, stderr prints to XCode debug area and syslog prints Console. You need both.
 #include <syslog.h>
 #define M_PRINT(format, ...) syslog(LOG_WARNING, format, ##__VA_ARGS__); fprintf(stderr, format, ##__VA_ARGS__)
-#define M_ERROR(format, ...) syslog(LOG_WARNING, format, ##__VA_ARGS__); fprintf(stderr, format, ##__VA_ARGS__)
+// #define M_ERROR(format, ...) syslog(LOG_WARNING, format, ##__VA_ARGS__); fprintf(stderr, format, ##__VA_ARGS__)
 #else
 #define M_PRINT(format, ...) printf(format, ##__VA_ARGS__)
 // #define M_ERROR(format, ...) printf(format, ##__VA_ARGS__)
-#define M_ERROR(format, ...) do { printf(format, ##__VA_ARGS__); exit(1); } while(0)
+// #define M_ERROR(format, ...) do { printf(format, ##__VA_ARGS__); exit(1); } while(0)
 #endif
 
 #ifdef M_DEBUG
@@ -173,6 +173,15 @@ The macros M_Assert evaluate the specified expression. If it is 0, the macros
 raise an error (see minfer::error). The macro M_Assert checks the condition in both Debug and Release.
 */
 #define M_Assert( expr ) do { if(!!(expr)) ; else minfer::error( minfer::Error::StsAssert, #expr, M_Func, __FILE__, __LINE__ ); } while(0)
+
+#ifdef _DEBUG
+#include <cstdio>
+#define DEBUG_PRINT(fmt, ...) \
+do { std::printf("[DEBUG] " fmt "\n", ##__VA_ARGS__); } while(0)
+#else
+#define DEBUG_PRINT(fmt, ...) do {} while(0)
+#endif
+
 }
 
 #endif //MINFER_SYSTEM_H

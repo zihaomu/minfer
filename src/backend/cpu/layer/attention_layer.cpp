@@ -105,7 +105,7 @@ Mat softmax(Mat inp)
  * */
 // TODO take into account the kv_head is different with head_count.
 // TODO try to use bias params
-void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *> &output, int start_pos)
+void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *> &output)
 {
     // shape check
     M_Assert(input.size() == 1 && input[0]);
@@ -153,8 +153,8 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     // implementation Q K V linear
 
     Mat x_q = gemm(x_norm, wq, false, true); // xq shape is [bsz, seq, embed], x_norm shape is [embed, embed], after shape, is the same.
-    Mat x_k = gemm(x_norm, wk, false, true); // k and v may has different shape with q, use Group-query attention.
-    Mat x_v = gemm(x_norm, wv, false, true); // wk and wv shape is [embed, embd_dim_kv], x_k = [bsz, seq, embd_dim_kv]
+    Mat x_k = gemm(x_norm, wk, false, false); // k and v may has different shape with q, use Group-query attention.
+    Mat x_v = gemm(x_norm, wv, false, false); // wk and wv shape is [embed, embd_dim_kv], x_k = [bsz, seq, embd_dim_kv]
 
 #if 0
     std::cout<<"print x_norm"<<std::endl;
@@ -436,6 +436,9 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     // print_mat(out, 128 * 2, 20);
     // print_mat(out, 128 * 3, 20);
     out = x_out + *input[0];
+
+    // 最后加上这次的seq len
+    start_pos += seq_len;
 }
 
 void precompute_freq_cis(int dim, int end, int rms_eps)
@@ -445,7 +448,14 @@ void precompute_freq_cis(int dim, int end, int rms_eps)
 
 void AttentionLayer::init(const std::vector<Mat *> &input, std::vector<Mat *> &output)
 {
+    // pre check
+    int input_num = input.size();
 
+    M_Assert(input_num == 1);
+    M_Assert(output.size() == 1);
+
+    // 设置同样的shape
+    output[0]->setSize(*input[0]);
 }
 
 AttentionLayer::~AttentionLayer()

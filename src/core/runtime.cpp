@@ -45,9 +45,7 @@ std::shared_ptr<Layer> Runtime::createLayer(std::shared_ptr<LayerParams> param)
     }
     else
     {
-        // M_PRINT_DBG("createLayerInstance failed! Layer type %d was not registered! ! ! \n", (int)param->type);
-        // M_Error_(Error::StsBadFunc, ("createLayerInstance failed! Layer type %d was not registered! ! \n", (int)param->type));
-        M_ERROR("createLayerInstance failed! Layer type %d was not registered!", (int)param->type);
+        M_Error_(Error::StsBadFunc, ("createLayerInstance failed! Layer type %d was not registered! ! \n", (int)param->type));
     }
 
     return layer;

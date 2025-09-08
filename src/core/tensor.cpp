@@ -104,12 +104,12 @@ Tensor::~Tensor()
 
 void Tensor::copyDeviceToHost()
 {
-    M_ERROR("Not implemented!");
+    M_Error(Error::Code::StsNotImplemented, "Not implemented in Tensor::copyDeviceToHost!");
 }
 
 void Tensor::copyHostToDevice()
 {
-    M_ERROR("Not implemented!");
+    M_Error(Error::Code::StsNotImplemented, "Not implemented in Tensor::copyHostToDevice!");
 }
 
 }

@@ -127,7 +127,7 @@ bool gguf_fread_str(FILE *file, GGUF_str *p, size_t *offset) {
 
     // early exit if string length is invalid, prevents from integer overflow
     if (p->n == SIZE_MAX) {
-        M_ERROR("alloc memory error %s: invalid string length %d!", __func__, (int) p->n);
+        M_Error_(Error::Code::StsNoMem, ("alloc memory error %s: invalid string length %d!", __func__, (int) p->n));
         return false;
     }
 

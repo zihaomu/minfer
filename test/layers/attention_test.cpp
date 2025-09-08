@@ -43,7 +43,7 @@ TEST(Layer_TEST, attention_test)
     Mat output;
     output.create(output_checker.size.dims(), output_checker.size.p, output_checker.type());
     std::vector<Mat*> outputs = {&output};
-    layer->forward(inputs, outputs, 0);
+    layer->forward(inputs, outputs);
 
     std::cout<<"output.print(10) = "<<std::endl;
     output.print(10);

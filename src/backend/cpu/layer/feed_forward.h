@@ -19,7 +19,7 @@ public:
 
     void init(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
-    void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output, int start_pos) override;
+    void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
     void finalize(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 

@@ -57,6 +57,7 @@ private:
     Mat* getMat(const int matIdx);
     void getMats(const std::vector<int> matsIdx, std::vector<Mat*>& mats);
 
+    bool hasInit = false;           // 是否被初始化
     Mutex mutex;
     std::vector<LayerData> lds;     // contains all layer data inform
     std::map<int, Mat*> mats;       // Mat是用于层之间的数据传输的，这里建立MatId和Mat的对应关系

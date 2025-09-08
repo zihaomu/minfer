@@ -65,6 +65,10 @@ void Net::NetImpl::setInput(const Mat input, const int _mIndx)
 
 void Net::NetImpl::forward(Mat& out)
 {
+    if (hasInit)
+    {
+
+    }
     out = this->forward();
 }
 
@@ -160,11 +164,7 @@ void Net::NetImpl::init()
         for (int i = 0; i < it->outputsIdx.size(); i++)
         {
             runtime->allocMat(it->outputs[i]);
-        }
 
-        // 释放不用的资源，查找释放flag，确定是否在当前layerId释放
-        for (int i = 0; i < it->outputsIdx.size(); i++)
-        {
             int outId = it->outputsIdx[i];
             auto it2 = matReleaseAtLayer.find(outId);
 
@@ -175,6 +175,20 @@ void Net::NetImpl::init()
                 runtime->deallocMat(it->outputs[i]); // 回收当前资源
             }
         }
+        //
+        // // 释放不用的资源，查找释放flag，确定是否在当前layerId释放
+        // for (int i = 0; i < it->outputsIdx.size(); i++)
+        // {
+        //     int outId = it->outputsIdx[i];
+        //     auto it2 = matReleaseAtLayer.find(outId);
+        //
+        //     M_Assert(it2 != matReleaseAtLayer.end());
+        //
+        //     if (it2->second == it->layerId)
+        //     {
+        //         runtime->deallocMat(it->outputs[i]); // 回收当前资源
+        //     }
+        // }
     }
 }
 
@@ -260,7 +274,7 @@ int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
 
     if (!layer)
     {
-        M_ERROR("Fail to create layer instance with type = %d!", (int)param->type);
+        M_Error_(Error::Code::StsBadType, ("Fail to create layer instance with type = %d!", (int)param->type));
     }
 
     // 对输入输出对特殊处理

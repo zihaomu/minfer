@@ -21,7 +21,7 @@ public:
     static Runtime* getRuntime();
 
     // Runtime is a singleton class.
-    // This function will release all the Tensor that keeped in net.
+    // This function will release all the Tensor that keeped in nets.
     static void release();
 
     // Create layer, and return layerId.

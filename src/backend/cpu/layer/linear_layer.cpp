@@ -38,7 +38,13 @@ LinearLayer::~LinearLayer()
 
 void LinearLayer::init(const std::vector<Mat*> &input, std::vector<Mat*> &output)
 {
+    M_Assert(input.size() == output.size() && input.size() == 1);
 
+    MatShape in_shape = input[0]->shape();
+    MatShape w_shape = w.shape();
+    MatShape output_shape = get_gemm_shape(in_shape, w_shape);
+
+    output[0]->setSize(output_shape);
 }
 
 void LinearLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &output)
@@ -58,10 +64,16 @@ void LinearLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &out
     M_Assert(in_shape[2] == in_features);
 
     // gemm: y = alpha * A * B + beta * C
+    Mat out_tmp;
     gemm(x, w, false, transposeW).copyTo(out);
 
+    // std::cout<<"out"<<std::endl;
+    // out.print(10);
     if (!b.empty())
-        out += b;
+        out = out + b;
+    // out.print(10);
+
+    // out_tmp.copyTo(out);
 }
 
 std::shared_ptr<LinearLayer> LinearLayer::create(const std::shared_ptr<LayerParams> param)

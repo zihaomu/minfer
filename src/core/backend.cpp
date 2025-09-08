@@ -16,7 +16,7 @@ Backend::LayerFactory::~LayerFactory()
 
 void Backend::LayerFactory::registerAllLayer()
 {
-    M_ERROR("registerAllLayer is empty, please override it!");
+    M_Error(NULL, "registerAllLayer is empty, please override it!");
 }
 
 void Backend::LayerFactory::registerLayer(LayerType type, Backend::LayerFactory::Constructor constructor)
@@ -28,7 +28,7 @@ void Backend::LayerFactory::registerLayer(LayerType type, Backend::LayerFactory:
 
     if (it != layerMap.end())
     {
-        M_ERROR("registerLayer failed! Layer type %d already was registered!", (int)type);
+        M_Error_(NULL, ("registerLayer failed! Layer type %d already was registered!", (int)type));
     }
 
     layerMap.insert(std::make_pair(type, constructor));
@@ -42,7 +42,7 @@ std::shared_ptr<Layer> Backend::LayerFactory::createLayerInstance(std::shared_pt
 
     if (it == layerMap.end())
     {
-        M_ERROR("createLayerInstance failed! Layer type %d was not registered!", (int)param->type);
+        M_Error_(NULL, ("createLayerInstance failed! Layer type %d was not registered!", (int)param->type));
         return std::shared_ptr<Layer>();
     }
 

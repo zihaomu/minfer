@@ -24,11 +24,14 @@ FeedForwardLayer::FeedForwardLayer(const std::shared_ptr<FeedForwardLayerParams>
 
 void FeedForwardLayer::init(const std::vector<Mat *> &input, std::vector<Mat *> &output)
 {
+    M_Assert(input.size() == output.size() && input.size() == 1);
 
+    // 设置同样的shape
+    output[0]->setSize(*input[0]);
 }
 
 // TODO: add support start_pos
-void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *> &output, int start_pos)
+void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *> &output)
 {
     M_Assert(input.size() == 1 && input[0]);
     M_Assert(output.size() == 1 && output[0]);
@@ -45,7 +48,7 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     // size_t pos_stripe = start_pos * total(in_shape, 1) * DT_ELEM_SIZE(input[0]->type());
 
     Mat x = *input[0];
-    Mat x_norm = Mat(x.dims-1, x.size.p+1, DT_32F); // shape [bsz, seq_len, embed]
+    Mat x_norm = Mat(x.dims, x.size.p, DT_32F); // shape [bsz, seq_len, embed]
     float* p = (float *)x_norm.data;
     float* pi = (float *)(x.data);
     float * p_norm = (float *)norm.data;
@@ -94,7 +97,7 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     }
 
     // x1 = silu(self.linear1.forward(x))
-    Mat x1 = gemm(x_norm, gate, false, true);
+    Mat x1 = gemm(x_norm, gate, false, false);
 
     // Apply activation function to all elements
     float* p_x1 = (float *)x1.data;
@@ -105,38 +108,19 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     }
 
     // x3 = self.linear3.forward(x)
-    Mat x3 = gemm(x_norm, up, false, true);
+    Mat x3 = gemm(x_norm, up, false, false);
 
     // x_out = self.linear2.forward(x1 * x3)
     Mat out = *output[0];
-    Mat x_out = Mat(out.size.dims() - 1, out.size.p+1, out.type(), out.data);
+    Mat x_out = Mat(out.size.dims(), out.size.p, out.type(), out.data);
 
-    gemm(x1 * x3, down, false, true).copyTo(x_out);
+    gemm(x1 * x3, down, false, false).copyTo(out);
 
-    // x_out.print(10);
-    // out = (x_out);
-    std::cout<<"x_out.print(10); = "<<(void*)x_out.data<<std::endl;
-    x_out.print(10);
-    x_out = x_out + 1;
-    std::cout<<"x_out.print(10); = "<<(void*)x_out.data<<std::endl;
-    x_out.print(10);
-    (*input[0]).print(10);
-    x_out = x_out + *input[0];
-
-    std::cout<<"x_out.print(10); = "<<(void*)x_out.data<<std::endl;
-    x_out.print(10);
-    x_out += *input[0];
-    // std::cout<<"x_out.print(10);"<<std::endl;
-    // x_out.print(10);
-    //
-    // std::cout<<"out.print(10);"<<std::endl;
-    // out.print(10);
-    // out = x_out;
-    x_out.copyTo(out);
+    // std::cout<<"out gemm"<<std::endl;
     // out.print(10);
 
-    // m.copyTo(out);
-//    out.print(10);
+    // std::cout<<"out +="<<std::endl;
+    out += *input[0];
 }
 
 void FeedForwardLayer::finalize(const std::vector<Mat*>& input, std::vector<Mat*>& output)

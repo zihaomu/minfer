@@ -62,6 +62,7 @@ void BackendCPU::LayerFactoryCPU::registerAllLayer()
 
 std::shared_ptr<Layer> BackendCPU::createLayer(std::shared_ptr<LayerParams> param)
 {
+    M_PRINT_DBG("Creating Layer \n");
     M_Assert(checkLayerSupported(param));
     return layerFactory->createLayerInstance(param);
 }

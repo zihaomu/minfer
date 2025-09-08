@@ -38,7 +38,7 @@ public:
 
     void finalize(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
-    void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output, int start_pos) override;
+    void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
 private:
     Mat norm;
@@ -62,6 +62,7 @@ private:
     int embd_dim_head;     // embd_dim of each head. d_k otherwise.
     int embd_dim_kv;       // embd_dim of kv
 
+    int start_pos = 0;     // 标志从哪里开始开始推理
     AttentionLayer(const std::shared_ptr<AttentionLayerParams> param);
 };
 

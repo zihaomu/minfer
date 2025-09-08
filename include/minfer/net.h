@@ -10,15 +10,15 @@ namespace minfer
 
 /// Net 类别
 /* 例子代码：
- * Net net = readNet("llama.gguf");
+ * Net nets = readNet("llama.gguf");
  * Mat input = toknizer_input("I have a pen for", 2048);
- * net.setInput(input);
- * net.init();
+ * nets.setInput(input);
+ * nets.init();
  * Mat out;
  * while(true)
  * {
- *  net.setInput(input);
- *  out = net.forward();
+ *  nets.setInput(input);
+ *  out = nets.forward();
  *
  *  bool ifStop = false;
  *  std::string chat_out = tokizer_output(out, ifStop);
@@ -46,7 +46,7 @@ public:
 
     /// set input data with given mat index
     /// \param input
-    /// \param mIndx defaule is -1, if the net is single input.
+    /// \param mIndx defaule is -1, if the nets is single input.
     void setInput(const Mat input, const int mIndx = -1);
 
     void init();

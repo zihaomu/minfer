@@ -371,7 +371,7 @@ Mat& Mat::operator=(const float v)
         }
     }
     else
-        M_ERROR(NULL, "Unsupported format at function \"Mat::operator= \" type = %d!", type());
+        M_Error_(NULL, ("Unsupported format at function \"Mat::operator= \" type = %d!", type()));
 
     return *this;
 }
@@ -400,7 +400,7 @@ Mat& Mat::operator=(const int v)
         }
     }
     else
-        M_ERROR(NULL, "Unsupported format at function \"Mat::operator= \" type = %d!", type());
+        M_Error_(NULL, ("Unsupported format at function \"Mat::operator= \" type = %d!", type()));
 
     return *this;
 }
@@ -445,7 +445,7 @@ Mat Mat::reshape(int newDims, const int* newSizes) const
 
     if (new_total != total())
     {
-        M_ERROR("The total size of the new Mat is not equal to the original Mat!");
+        M_Error(NULL, "The total size of the new Mat is not equal to the original Mat!");
         return Mat();
     }
 
@@ -463,7 +463,7 @@ void Mat::copyTo(Mat &dst) const
     // TODO 增加常用数据转换下的copyTo函数
     if (t != matType)
     {
-        M_ERROR("Unsupported data transform right now!");
+        M_Error(Error::Code::StsBadType, "Unsupported data transform right now!");
         return;
     }
 
@@ -490,6 +490,7 @@ void Mat::copyTo(Mat &dst) const
 Mat Mat::clone() const
 {
     Mat m;
+    m.matType = this->type();
     copyTo(m);
     return m;
 }
@@ -815,7 +816,7 @@ void Mat::print(int len) const
         std::cout<<std::endl;
     }
     else
-        M_ERROR(NULL, "Unsupported format at function \" Mat::print \" type = %d!", type());
+        M_Error_(Error::Code::StsBadType, ("Unsupported format at function \" Mat::print \" type = %d!", type()));
 }
 
 MatShape Mat::shape() const

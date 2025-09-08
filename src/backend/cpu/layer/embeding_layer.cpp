@@ -44,17 +44,28 @@ EmbeddingLayer::~EmbeddingLayer()
 {
 
 }
-
+/* ebeding shape
+ * 输入：token ids
+ * 输出：[B, L, H]
+ *
+ * 其中，prefill阶段，token ids为多个，= [B, L, H]
+ * decode 阶段 token id为1个，输出shape = [B, 1, H]
+ *
+ */
 void EmbeddingLayer::init(const std::vector<Mat*> &input, std::vector<Mat*> &output)
 {
     // pre check
     inputNum = input.size();
 
-    M_Assert(inputNum == 2);
+    M_Assert(inputNum == 1);
     M_Assert(output.size() == 1);
 
+    MatShape in_shape = input[0]->shape();
+    M_Assert(in_shape.size() == 2); // [batch, seq_len]
+
     // 设置同样的shape
-    output[0]->setSize(*input[0]);
+    MatShape out_shape = {in_shape[0], in_shape[1], embd_dim};
+    output[0]->setSize(out_shape);
 }
 
 void EmbeddingLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &output)
@@ -83,7 +94,7 @@ void EmbeddingLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &
     int* index = (int*)input[0]->data;
     float* w_ptr = (float*)w.data;
     float* output_ptr = (float*)output[0]->data;
-    
+
     for (int i = 0; i < seq_len; i++)
     {
         int word_id = index[i];

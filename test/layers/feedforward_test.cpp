@@ -36,7 +36,7 @@ TEST(Layer_TEST, feed_forward_test)
     Mat output_check;
     output_check.create(output.size.dims(), output.size.p, output.type());
     std::vector<Mat*> outputs = {&output_check};
-    layer->forward(inputs, outputs, 0);
+    layer->forward(inputs, outputs);
 
     std::cout<<"output.print(10) = "<<std::endl;
     output.print(10);
@@ -54,9 +54,9 @@ TEST(Layer_TEST, feed_forward_test)
               << ", relative L2 = " << rel_l2
               << ", max abs = " << max_err << std::endl;
 
-    M_Assert(mean_l1 < 2);
-    M_Assert(rel_l2  < 1e-5);
-    M_Assert(max_err < 3);
+    M_Assert(mean_l1 < 0.45);
+    M_Assert(rel_l2  < 1e-9);
+    M_Assert(max_err < 2);
 
     // double v = norm(output, output_check, NORM_L1);
     // std::cout<<"v = "<<v<<std::endl;

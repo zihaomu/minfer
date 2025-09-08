@@ -246,7 +246,7 @@ std::shared_ptr<GGUF_context> gguf_init_from_file(const char* fname)
 
         if (!file)
         {
-            M_ERROR("Error to load file %s!\n", fname);
+            M_Error_(Error::Code::StsBadArg, ("Error to load file %s!\n", fname));
             return nullptr;
         }
 
@@ -262,7 +262,7 @@ std::shared_ptr<GGUF_context> gguf_init_from_file(const char* fname)
             {
                 if (magic[i] != GGUF_MAGIC[i])
                 {
-                    M_ERROR("%s: invalid magic characters '%c%c%c%c'\n", __func__, magic[0], magic[1], magic[2], magic[3]);
+                    M_Error_(Error::Code::StsBadArg, ("%s: invalid magic characters '%c%c%c%c'\n", __func__, magic[0], magic[1], magic[2], magic[3]));
                     fclose(file);
                     return nullptr;
                 }
@@ -286,7 +286,7 @@ std::shared_ptr<GGUF_context> gguf_init_from_file(const char* fname)
             // Add code is compatible with version 1.
             if (ctx->header.version == 1)
             {
-                M_ERROR("%s: GGUFv1 is no longer supported. please use a more up-to-date version\n", __func__);
+                M_Error_(Error::Code::StsBadArg, ("%s: GGUFv1 is no longer supported. please use a more up-to-date version\n", __func__));
                 fclose(file);
                 return nullptr;
             }
@@ -350,7 +350,7 @@ std::shared_ptr<GGUF_context> gguf_init_from_file(const char* fname)
                             {
                                 // prevent from integer overflow in the malloc below
                                 if (kv->value.arr.n >= SIZE_MAX/gguf_type_size(kv->value.arr.type)) {
-                                    M_ERROR("%s: GGUFv1 is no longer supported. please use a more up-to-date version\n", __func__);
+                                    M_Error_(Error::Code::StsError, ("%s: GGUFv1 is no longer supported. please use a more up-to-date version\n", __func__));
                                     fclose(file);
                                     return NULL;
                                 }
@@ -363,7 +363,7 @@ std::shared_ptr<GGUF_context> gguf_init_from_file(const char* fname)
                             {
                                 // prevent from integer overflow in the malloc below
                                 if (kv->value.arr.n >= SIZE_MAX/sizeof(struct GGUF_str)) {
-                                    M_ERROR("%s: array size is too large %d ! \n", __func__, (int)kv->value.arr.n);
+                                    M_Error_(Error::Code::StsNoMem, ("%s: array size is too large %d ! \n", __func__, (int)kv->value.arr.n));
                                     fclose(file);
                                     return NULL;
                                 }
@@ -692,7 +692,7 @@ struct LLama_loader
                 m = Mat(dims, DT_8U, const_cast<void *>(t->data));
                 break;
             default:
-                M_ERROR("Fail to create mat with type = %d !!", (int )t->type);
+                M_Error_(Error::Code::StsNullPtr, ("Fail to create mat with type = %d !!", (int )t->type));
         }
         return m;
     }

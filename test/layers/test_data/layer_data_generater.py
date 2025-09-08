@@ -476,7 +476,9 @@ def Linear_layer_data_generater():
     np.save(ROOT_PATH + "/linear_input.npy", x.astype(np.float32))
 
     # save params
-    np.save(ROOT_PATH + "/linear_params_0.npy", params[0].astype(np.float32))
+    # transpose the params[0]
+    weight = params[0].reshape(output_feature, input_feature)
+    np.save(ROOT_PATH + "/linear_params_0.npy", weight.astype(np.float32))
     np.save(ROOT_PATH + "/linear_params_1.npy", params[1].astype(np.float32))
 
     # output

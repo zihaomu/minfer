@@ -202,3 +202,33 @@ TEST(Mat_TEST, data_convert_fp16_to_fp32)
     M_Assert(v0 < 1e-3);
 }
 
+TEST(Mat_TEST, test_mat_brodcast)
+{
+    float f20 = 20.f;
+    float f30 = 30.f;
+    float f50 = 50.f;
+    Mat inpM1 = Mat({4}, DT_32F, reinterpret_cast<int&>(f20));
+    Mat inpM2 = Mat({2, 3, 4}, DT_32F, reinterpret_cast<int&>(f30));
+
+    Mat outM  = Mat({2, 3, 4}, DT_32F, reinterpret_cast<int&>(f50));
+
+    Mat out;
+    add(inpM1, inpM2, out);
+
+    out.print();
+    outM.print();
+}
+
+TEST(Mat_TEST, test_mat_trans)
+{
+    float f20 = 20.f;
+    float f30 = 30.f;
+    float f50 = 50.f;
+    Mat inpM1 = Mat({4}, DT_32F, reinterpret_cast<int&>(f20));
+    Mat inpM2 = Mat({2, 3, 4, 2}, DT_32F, reinterpret_cast<int&>(f30));
+
+    Mat inpM3 = transposeND(inpM2, {0, 2, 1, 3});
+
+    inpM2.print();
+    inpM3.print();
+}

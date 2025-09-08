@@ -25,8 +25,14 @@ RMSNormLayer::~RMSNormLayer()
 
 void RMSNormLayer::init(const std::vector<Mat*> &input, std::vector<Mat*> &output)
 {
+    // pre check
+    int input_num = input.size();
 
+    M_Assert(input_num == 1);
+    M_Assert(output.size() == 1);
 
+    // 设置同样的shape
+    output[0]->setSize(*input[0]);
 }
 
 void RMSNormLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &output)

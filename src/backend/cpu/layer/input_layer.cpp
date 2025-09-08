@@ -24,10 +24,10 @@ void InputLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *> &ou
     M_Assert(input.size() == output.size() && input.size() == 1);
 
     (*input[0]).print();
-    if (output[0]->data != input[0]->data)
+    if (output[0]->data != input[0]->data || output[0]->empty())
     {
-        size_t totalSize = input[0]->total() * DT_ELEM_SIZE(input[0]->type());
-        memcpy(output[0]->data, input[0]->data, totalSize);
+        // size_t totalSize = input[0]->total() * DT_ELEM_SIZE(input[0]->type());
+        *output[0] = input[0]->clone();
     }
     else
     {

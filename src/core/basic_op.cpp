@@ -43,34 +43,6 @@ void preProcessAndCheck(const Mat& a, Mat& c)
 void add(const Mat& a, const Mat& b, Mat& c)
 {
     binaryFunc(BinaryOp::ADD, a, b, c);
-//    preProcessAndCheck(a, b, c);
-//
-//    int type = a.type();
-//
-//    size_t totalSize = a.total();
-//    if (type == DT_32F)
-//    {
-//        const float* ap = (const float*)a.data;
-//        const float* bp = (const float*)b.data;
-//        float* cp = (float*)c.data;
-//
-//        for (size_t i = 0; i < totalSize; i++)
-//        {
-//            cp[i] = ap[i] + bp[i];
-//        }
-//    }
-//    else if (type == DT_32S)
-//    {
-//        const int* ap = (const int*)a.data;
-//        const int* bp = (const int*)b.data;
-//        int* cp = (int*)c.data;
-//        for (size_t i = 0; i < totalSize; i++)
-//        {
-//            cp[i] = ap[i] + bp[i];
-//        }
-//    }
-//    else
-//        M_ERROR(NULL, "Unsupported format at function \" add \" type = %d!", type);
 }
 
 void addWeighted(const Mat& a, double alpha, const Mat& b, double beta, Mat& c)
@@ -101,7 +73,7 @@ void addWeighted(const Mat& a, double alpha, const Mat& b, double beta, Mat& c)
         }
     }
     else
-        M_ERROR(NULL, "Unsupported format at function \" addWeighted \" type = %d!", type);
+        M_Error_(Error::Code::StsBadType, ("Unsupported format at function \" addWeighted \" type = %d!", type));
 }
 
 void subtract(const Mat& a, const Mat& b, Mat& c)
@@ -113,34 +85,6 @@ void subtract(const Mat& a, const Mat& b, Mat& c)
     }
 
     binaryFunc(BinaryOp::SUB, a, b, c);
-//
-//    preProcessAndCheck(a, b, c);
-//
-//    int type = a.type();
-//
-//    size_t totalSize = a.total();
-//    if (type == DT_32F)
-//    {
-//        const float* ap = (const float*)a.data;
-//        const float* bp = (const float*)b.data;
-//        float* cp = (float*)c.data;
-//        for (size_t i = 0; i < totalSize; i++)
-//        {
-//            cp[i] = ap[i] - bp[i];
-//        }
-//    }
-//    else if (type == DT_32S)
-//    {
-//        const int* ap = (const int*)a.data;
-//        const int* bp = (const int*)b.data;
-//        int* cp = (int*)c.data;
-//        for (size_t i = 0; i < totalSize; i++)
-//        {
-//            cp[i] = ap[i] - bp[i];
-//        }
-//    }
-//    else
-//        M_ERROR(NULL, "Unsupported format at function \" subtract \" type = %d!", type);
 }
 
 void subtract(const Mat& a, Mat& c)
@@ -169,79 +113,23 @@ void subtract(const Mat& a, Mat& c)
         }
     }
     else
-        M_ERROR(NULL, "Unsupported format at function \" subtract \" type = %d!", type);
+        M_Error_(Error::Code::StsBadType, ("Unsupported format at function \" subtract \" type = %d!", type));
 }
 
 void multiply(const Mat& a, const Mat& b, Mat& c)
 {
     binaryFunc(BinaryOp::MUL, a, b, c);
-//
-//    preProcessAndCheck(a, b, c);
-//
-//    int type = a.type();
-//
-//    size_t totalSize = a.total();
-//    if (type == DT_32F)
-//    {
-//        const float* ap = (const float*)a.data;
-//        const float* bp = (const float*)b.data;
-//        float* cp = (float*)c.data;
-//        for (size_t i = 0; i < totalSize; i++)
-//        {
-//            cp[i] = ap[i] * bp[i];
-//        }
-//    }
-//    else if (type == DT_32S)
-//    {
-//        const int* ap = (const int*)a.data;
-//        const int* bp = (const int*)b.data;
-//        int* cp = (int*)c.data;
-//        for (size_t i = 0; i < totalSize; i++)
-//        {
-//            cp[i] = ap[i] * bp[i];
-//        }
-//    }
-//    else
-//        M_ERROR(NULL, "Unsupported format at function \" multiply \" type = %d!", type);
 }
 
 void divide(const Mat& a, const Mat& b, Mat& c)
 {
     binaryFunc(BinaryOp::DIV, a, b, c);
-
-//    preProcessAndCheck(a, b, c);
-//
-//    int type = a.type();
-//
-//    size_t totalSize = a.total();
-//    if (type == DT_32F)
-//    {
-//        const float* ap = (const float*)a.data;
-//        const float* bp = (const float*)b.data;
-//        float* cp = (float*)c.data;
-//        for (size_t i = 0; i < totalSize; i++)
-//        {
-//            cp[i] = ap[i] / bp[i];
-//        }
-//    }
-//    else if (type == DT_32S)
-//    {
-//        const int* ap = (const int*)a.data;
-//        const int* bp = (const int*)b.data;
-//        int* cp = (int*)c.data;
-//        for (size_t i = 0; i < totalSize; i++)
-//        {
-//            cp[i] = ap[i] / bp[i];
-//        }
-//    }
-//    else
-//        M_ERROR(NULL, "Unsupported format at function \" divide \" type = %d!", type);
 }
 
 void compare(const Mat& a, const Mat& b, Mat& c, int op)
 {
     // TODO add implementation!
-    M_ERROR(NULL, "Un-implemented function at compare!");
+    M_Error(NULL, "Un-implemented function at compare!");
 }
 
 Mat transpose(const Mat& input)
@@ -394,8 +282,8 @@ norm_(const _Tp* src1, const _Tp* src2, size_t total, int normType, double start
 
             if (std::abs((double )src1[i] - (double )src2[i]) > 0.1) {
 
-                // Debug code
-                // std::cout<<"src1["<<i<<"] = "<<(double )src1[i]<<", src2["<<i<<"] = "<<(double )src2[i]<<std::endl;
+            // Debug code
+            // std::cout<<"src1["<<i<<"] = "<<(double )src1[i]<<", src2["<<i<<"] = "<<(double )src2[i]<<std::endl;
             }
         }
     }
@@ -837,27 +725,16 @@ void binaryFunc(BinaryOp op, const Mat& a, const Mat& b, Mat& c)
     BinaryOpHelper helper = BinaryOpHelper();
     helper.init(a, b);
 
-    // special case: if c is the same as a, then we can directly use a.data as c.data, for example when a += b, or a -= b
-    // TODO 处理当 a += b时的broadcast情况。
-    if (&c == &a)
-    {
-        typeDispatch(a.type(), op, helper, a.data, b.data, c.data);
-    }
-    else
+    if (c.empty())
     {
         c = Mat(helper.out_shape, a.type());
         typeDispatch(a.type(), op, helper, a.data, b.data, c.data);
     }
-
-    // print address of a, b, c
-    // std::cout<<"a.data = "<<()a.data<<", b.data = "<<b.data<<", c.data = "<<c.data<<std::endl;
-    // std::cout<<"a.print(10) = "<<(void *)a.data<<std::endl;
-    // a.print(10);
-    // std::cout<<"b.print(10) = "<<(void *)b.data<<std::endl;
-    // b.print(10);
-    // std::cout<<"c.print(10) = "<<(void *)c.data<<std::endl;
-    // c.print(10);
-    typeDispatch(a.type(), op, helper, a.data, b.data, c.data);
+    else
+    {
+        M_Assert(c.shape() == helper.out_shape);
+        typeDispatch(a.type(), op, helper, a.data, b.data, c.data);
+    }
 }
 
 }

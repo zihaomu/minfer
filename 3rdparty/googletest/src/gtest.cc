@@ -298,7 +298,7 @@ GTEST_DEFINE_bool_(
 
 GTEST_DEFINE_bool_(list_tests, false, "List all tests without running them.");
 
-// The net priority order after flag processing is thus:
+// The nets priority order after flag processing is thus:
 //   --gtest_output command line flag
 //   GTEST_OUTPUT environment variable
 //   XML_OUTPUT_FILE environment variable
