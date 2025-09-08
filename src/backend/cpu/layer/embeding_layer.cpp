@@ -17,6 +17,10 @@ EmbeddingLayer::EmbeddingLayer(const std::shared_ptr<EmbeddingLayerParams> param
     MatShape w_shape = param->w.shape();
     M_Assert(w_shape.size() == 2);
 
+
+    auto tt = param->w.total();
+    auto t = param->w.type();
+
     Mat wFp32;
     param->w.convertTo(wFp32, DT_32F);
 

@@ -37,6 +37,8 @@ AttentionLayer::AttentionLayer(const std::shared_ptr<AttentionLayerParams> param
     embd_dim_head = embd_dim / head_count;
     embd_dim_kv = embd_dim_head * head_count_kv;
 
+    auto param_t = param->norm.total();
+    auto t = param->norm.type();
     param->norm.convertTo(norm, DT_32F);
 
     param->wq.convertTo(wq, DT_32F);

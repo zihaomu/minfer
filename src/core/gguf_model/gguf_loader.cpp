@@ -213,7 +213,7 @@ struct LLama_mmap {
         }
 #elif defined(_WIN32)
         if (!UnmapViewOfFile(addr)) {
-            M_ERROR(NULL, "warning: UnmapViewOfFile failed: llama release error in Windows!\n");
+            M_Error(NULL, "warning: UnmapViewOfFile failed: llama release error in Windows!\n");
         }
 #endif
     }
@@ -681,6 +681,7 @@ struct LLama_loader
             dims[i] = t->ne[i];
         }
 
+        M_Assert(t->data && "tensor data is empty!!");
         switch (t->type) {
             case GGML_TYPE_F32:
                 m = Mat(dims, DT_32F, const_cast<void *>(t->data));

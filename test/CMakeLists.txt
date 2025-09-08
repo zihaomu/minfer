@@ -29,10 +29,10 @@ target_link_libraries(minfer_test gtest gtest_main)
 target_link_libraries(minfer_test ${M_TARGETS})
 
 # Link sentencepiece_DIR
-set(sentencepiece_DIR "/Users/moo/workssd/github/sentencepiece/build/src")
+add_subdirectory("${CMAKE_SOURCE_DIR}/3rdparty/sentencepiece")
 #find_package(sentencepiece REQUIRED)
-include_directories("/Users/moo/workssd/github/sentencepiece/src")
-target_link_libraries(minfer_test "${sentencepiece_DIR}/libsentencepiece.dylib")
+include_directories("${CMAKE_SOURCE_DIR}/3rdparty/sentencepiece/src")
+target_link_libraries(minfer_test sentencepiece)
 
 # This is so you can do 'make test' to see all your tests run, instead of
 # manually running the executable runUnitTests to see those specific tests.
