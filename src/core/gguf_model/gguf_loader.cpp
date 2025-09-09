@@ -812,10 +812,23 @@ void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >
     // different platform has different structure?
     // how to construct the model from context
 
-    LLama_loader loader = LLama_loader(path, false, nullptr);
+    // TODO: 目前会通过loader去持有内存，从而让内存在create net的阶段可读。
+    static LLama_loader loader = LLama_loader(path, false, nullptr);
     LLM_ARCH arch = loader.get_arch();
 
     std::cout<<"Arch = "<<LLM_ARCH_NAMES.at(arch)<<std::endl;
+    // print base info of llm model
+    std::cout<<"n_vocab = "<<loader.params.n_vocab<<std::endl;
+    std::cout<<"n_ctx_length = "<<loader.params.n_ctx_length<<std::endl;
+    std::cout<<"n_embd = "<<loader.params.n_embd<<std::endl;
+    std::cout<<"n_ff = "<<loader.params.n_ff<<std::endl;
+    std::cout<<"n_head = "<<loader.params.n_head<<std::endl;
+    std::cout<<"n_head_kv = "<<loader.params.n_head_kv<<std::endl;
+    std::cout<<"n_layer = "<<loader.params.n_layer<<std::endl;
+    std::cout<<"n_rope_dim_count = "<<loader.params.n_rope_dim_count<<std::endl;
+    std::cout<<"rope_freq_base_train = "<<loader.params.rope_freq_base_train<<std::endl;
+    std::cout<<"f_norm_rms_eps = "<<loader.params.f_norm_rms_eps<<std::endl;
+
 
     const auto getTensorName = LLM_TN(arch);
     // construct llama by loader to netParams

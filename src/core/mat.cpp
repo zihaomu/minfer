@@ -484,12 +484,6 @@ void Mat::copyTo(Mat &dst) const
         // TODO handle the sub mat.
         int esz = DT_ELEM_SIZE(type());
         size_t total_size = total() * esz;
-        size_t tt = dst.total() * esz;
-
-        std::cout << "dst.data=" << static_cast<void*>(dst.data)
-          << " data=" << static_cast<void*>(data)
-          << " total_size=" << total_size << std::endl;
-
         memcpy(dst.data, data, total_size);
     }
 }

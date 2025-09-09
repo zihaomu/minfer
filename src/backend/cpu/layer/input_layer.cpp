@@ -14,7 +14,8 @@ InputLayer::~InputLayer()
 void InputLayer::init(const std::vector<Mat *> &input, std::vector<Mat *> &output)
 {
     M_Assert(input.size() == output.size() && input.size() == 1);
-
+    if (input[0]->empty())
+        M_Error(Error::Code::StsBadArg, "The input Mat at InputLayer::init is empty! Please set input data before call init()!");
     // 设置同样的shape
     output[0]->setSize(*input[0]);
 }

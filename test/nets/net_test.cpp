@@ -110,6 +110,50 @@ TEST(Net_TEST, simple_net_test)
 //     outM.print();
 // }
 
+static std::vector<int> argmax_tokens(const float* logits, int batch, int seq_len, int vocab_size) {
+    std::vector<int> token_ids(seq_len, -1);
+
+    // 只取 batch=0 的情况
+    for (int t = 0; t < seq_len; t++) {
+        const float* row = logits + t * vocab_size;
+        int best_id = 0;
+        float best_val = -std::numeric_limits<float>::infinity();
+
+        for (int v = 0; v < vocab_size; v++) {
+            float val = row[v];
+            if (val > best_val) {
+                best_val = val;
+                best_id = v;
+            }
+        }
+        token_ids[t] = best_id;
+    }
+    return token_ids;
+}
+
+static std::string SafeDecodeTokens(
+    sentencepiece::SentencePieceProcessor& sp,
+    const std::vector<int>& tokens
+) {
+    int vocab_size = sp.GetPieceSize();
+    std::string decoded;
+
+    for (int t : tokens) {
+        if (t >= 0 && t < vocab_size) {
+            // 合法 token，用 SentencePiece 解码
+            decoded += sp.IdToPiece(t);
+        } else if (t >= vocab_size) {
+            // 超出 vocab 的 token，标记为 <unused>
+            decoded += "<unused_" + std::to_string(t) + ">";
+        } else {
+            // 不合法 token，负值
+            decoded += "<invalid_" + std::to_string(t) + ">";
+        }
+    }
+
+    return decoded;
+}
+
 TEST(Net_TEST, net_tiny_llama)
 {
     std::cout<<"print test on net_tiny_llama"<<std::endl;
@@ -119,8 +163,11 @@ TEST(Net_TEST, net_tiny_llama)
     sentencepiece::SentencePieceProcessor sp;
     auto status = sp.Load(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16_tokenizer.model");
     if (!status.ok()) {
-        std::cerr << "Failed to load tokenizer.model: " << status.ToString() << std::endl;
+        std::cerr << "Failed to load Lite-Oute-1-65M-FP16_tokenizer.model: " << status.ToString() << std::endl;
     }
+    // 获取 vocab 大小
+    int vocab_size = sp.GetPieceSize();
+    std::cout << "Vocabulary size: " << vocab_size << std::endl;
 
     std::string text = "Hello, how are you?";
     std::vector<int> ids;
@@ -141,9 +188,24 @@ TEST(Net_TEST, net_tiny_llama)
     Mat output = net.forward();
     net.forward(output);
 
-    output.print();
+    output.print(10);
 
+    std::vector<int> out_idx = argmax_tokens((float*)output.data, 1, output.size[1], output.size[2]);
 
+    std::cout << "Out Token IDs: ";
+    for (int id : out_idx) std::cout << id << " ";
+    std::cout << std::endl;
+
+    std::string out_text;
+    out_text = SafeDecodeTokens(sp, out_idx);
+
+    for (int t : out_idx) {
+        if (t < 0 || t >= sp.GetPieceSize()) {
+            std::cerr << "Invalid token ID: " << t << std::endl;
+        }
+    }
+
+    std::cout << "Output Text: " << out_text << std::endl;
 
     // TODO add the forward type.
 }

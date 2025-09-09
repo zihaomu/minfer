@@ -33,10 +33,10 @@ void AddLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &output
 {
     // TODO finish the following code!
 
-    (*input[0]).print();
-    (*input[1]).print();
+    // (*input[0]).print();
+    // (*input[1]).print();
     *output[0] = *input[0] + *input[1];
-    (*output[0]).print();
+    // (*output[0]).print();
 }
 
 std::shared_ptr<AddLayer> AddLayer::create(const std::shared_ptr<LayerParams> param)

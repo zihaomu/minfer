@@ -20,6 +20,12 @@ FeedForwardLayer::FeedForwardLayer(const std::shared_ptr<FeedForwardLayerParams>
     param->down.convertTo(down, DT_32F);
 
     activateType = param->actType;
+
+    std::cout<<"print in init norm up gate down shape and params"<<std::endl;
+    norm.print(2);
+    up.print(2);
+    gate.print(2);
+    down.print(2);
 }
 
 void FeedForwardLayer::init(const std::vector<Mat *> &input, std::vector<Mat *> &output)

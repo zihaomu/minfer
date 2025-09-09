@@ -154,7 +154,7 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
 
     // implementation Q K V linear
 
-    Mat x_q = gemm(x_norm, wq, false, true); // xq shape is [bsz, seq, embed], x_norm shape is [embed, embed], after shape, is the same.
+    Mat x_q = gemm(x_norm, wq, false, false); // xq shape is [bsz, seq, embed], x_norm shape is [embed, embed], after shape, is the same.
     Mat x_k = gemm(x_norm, wk, false, false); // k and v may has different shape with q, use Group-query attention.
     Mat x_v = gemm(x_norm, wv, false, false); // wk and wv shape is [embed, embd_dim_kv], x_k = [bsz, seq, embd_dim_kv]
 
