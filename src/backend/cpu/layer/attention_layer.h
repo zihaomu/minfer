@@ -63,6 +63,7 @@ private:
     int embd_dim_kv;       // embd_dim of kv
 
     int start_pos = 0;     // 标志从哪里开始开始推理
+
     AttentionLayer(const std::shared_ptr<AttentionLayerParams> param);
 };
 

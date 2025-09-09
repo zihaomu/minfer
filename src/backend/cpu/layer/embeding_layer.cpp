@@ -8,6 +8,7 @@ namespace minfer {
 
 EmbeddingLayer::EmbeddingLayer(const std::shared_ptr<EmbeddingLayerParams> param)
 {
+    layerNamePrefix = "EmbeddingLayer_";
     M_Assert(param->type == LayerType::Embedding);
     getBasicInfo(param);
 
@@ -59,7 +60,7 @@ EmbeddingLayer::~EmbeddingLayer()
 void EmbeddingLayer::init(const std::vector<Mat*> &input, std::vector<Mat*> &output)
 {
     // pre check
-    inputNum = input.size();
+    int inputNum = input.size();
 
     M_Assert(inputNum == 1);
     M_Assert(output.size() == 1);

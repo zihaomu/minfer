@@ -31,13 +31,13 @@ public:
     void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
 private:
+    EmbeddingLayer(const std::shared_ptr<EmbeddingLayerParams> param);
+
     int vocab_dim;  // input, the length of vocabulary
     int embd_dim;   // output, embedding feature length.
     Mat w;          // Embedding layer params
 
     Mode model = LOOKUP; // 目前仅支持 loopup模式，projection 情况目前是用 linear层实现。
-    EmbeddingLayer(const std::shared_ptr<EmbeddingLayerParams> param);
-    int inputNum = -1;
 };
 
 }

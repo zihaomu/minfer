@@ -133,7 +133,6 @@ void MatAllocator::unmap(MatData* u) const
 }
 
 // <<<<<<<<<<<<<<<<<<<<<   MatSize   >>>>>>>>>>>>
-inline
 MatSize::MatSize(int *_p):p0(_p)
 {
     if (_p)
@@ -142,25 +141,21 @@ MatSize::MatSize(int *_p):p0(_p)
         p = nullptr;
 }
 
-inline
 int MatSize::dims() const
 {
     return p0[0];
 }
 
-inline
 const int& MatSize::operator[](int i) const
 {
     return p[i];
 }
 
-inline
 int& MatSize::operator[](int i)
 {
     return p[i];
 }
 
-inline
 bool MatSize::operator!=(const MatSize &sz) const
 {
     return !(*this == sz);
@@ -477,7 +472,6 @@ void Mat::copyTo(Mat &dst) const
     if (data == dst.data) // the two mat are the same.
         return;
 
-    dst.print(10);
     // if the data ptr is not the same,
     if (total() != 0)
     {

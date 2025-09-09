@@ -4,12 +4,13 @@
 
 #include <functional>
 #include "feed_forward.h"
-
+#define FFN_DEBUG 0
 namespace minfer
 {
 
 FeedForwardLayer::FeedForwardLayer(const std::shared_ptr<FeedForwardLayerParams> param)
 {
+    layerNamePrefix = "FeedForwardLayer_";
     embd_dim = param->embd_dim;
     ffn_dim = param->ffn_dim;
     rms_eps = param->rms_eps;
@@ -20,12 +21,13 @@ FeedForwardLayer::FeedForwardLayer(const std::shared_ptr<FeedForwardLayerParams>
     param->down.convertTo(down, DT_32F);
 
     activateType = param->actType;
-
+#if ATTEN_DEBUG
     std::cout<<"print in init norm up gate down shape and params"<<std::endl;
     norm.print(2);
     up.print(2);
     gate.print(2);
     down.print(2);
+#endif
 }
 
 void FeedForwardLayer::init(const std::vector<Mat *> &input, std::vector<Mat *> &output)

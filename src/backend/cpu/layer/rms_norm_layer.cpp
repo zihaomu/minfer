@@ -8,6 +8,7 @@ namespace minfer {
 
 RMSNormLayer::RMSNormLayer(const std::shared_ptr<RMSNormLayerParams> param)
 {
+    layerNamePrefix = "RMSNormLayer_";
     M_Assert(param->type == LayerType::RMSNorm);
     getBasicInfo(param);
 

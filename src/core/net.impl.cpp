@@ -43,6 +43,17 @@ void Net::NetImpl::setInput(const Mat input, const int _mIndx)
 
     auto it = std::find(inputMatId.begin(), inputMatId.end(), mIndx);
     const int index = it - inputMatId.begin();
+
+    if (hasInit)
+    {
+        M_Assert(!inputMatClone[index].empty() && "Input Mat has not been set!");
+
+        if (inputMatClone[index].size != input.size || inputMatClone[index].type() != input.type())
+        {
+            // 输入的Mat和之前的Mat不一样，需要重新初始化，重新分配内存
+            hasInit = false;
+        }
+    }
     inputMatClone[index] = input.clone();
 
     // Update input Mat pointer.
@@ -65,9 +76,10 @@ void Net::NetImpl::setInput(const Mat input, const int _mIndx)
 
 void Net::NetImpl::forward(Mat& out)
 {
-    if (hasInit)
+    if (!hasInit)
     {
-
+        this->init();
+        hasInit = true;
     }
     out = this->forward();
 }
@@ -190,6 +202,7 @@ void Net::NetImpl::init()
         //     }
         // }
     }
+    hasInit = true;
 }
 
 void Net::NetImpl::createLayerRecurve(int layerIdx, std::vector<int>& isLayerCreated, const std::map<int,
@@ -306,7 +319,7 @@ int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
     }
 
     layer->setId(layerId);
-
+    M_PRINT_DBG("Creating Layer %s \n", layer->getName().c_str());
     std::vector<Mat*> outs(outputSize, nullptr);
     for (int i = 0; i < outputSize; ++i)
     {

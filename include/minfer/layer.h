@@ -168,6 +168,7 @@ public:
         outputIndex = _outputIndex;
     }
 
+    std::string layerNamePrefix = "FFN_"; // Layer name prefix
     ActivateType actType;
     int embd_dim; // input embedding feature length
     int ffn_dim;  // ffn feature length
@@ -214,7 +215,8 @@ public:
 protected:
     void getBasicInfo(const std::shared_ptr<LayerParams> param);
     int layerId; // layer id 是layer在Net中前后顺序的序号，保存在Net的layerList中
-    std::string layerName;
+    std::string layerNamePrefix = "";          // Layer name prefix
+    std::string layerName;                     // layer prefix + layerId
     LayerType layerType; // layerType是层类型
 };
 

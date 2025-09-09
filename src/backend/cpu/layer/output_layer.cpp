@@ -36,6 +36,7 @@ OutputLayer::~OutputLayer()
 
 OutputLayer::OutputLayer(const std::shared_ptr<LayerParams> param)
 {
+    layerNamePrefix = "OutputLayer_";
     M_Assert(param->type == LayerType::Output);
     getBasicInfo(param);
 }

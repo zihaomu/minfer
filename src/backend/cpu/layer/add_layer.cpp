@@ -8,6 +8,7 @@ namespace minfer {
 
 AddLayer::AddLayer(const std::shared_ptr<LayerParams> param)
 {
+    layerNamePrefix = "AddLayer_";
     M_Assert(param->type == LayerType::Add);
     getBasicInfo(param);
 }

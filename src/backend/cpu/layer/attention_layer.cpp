@@ -6,7 +6,7 @@
 #include "autobuffer.h"
 #include <cstring>  // for memcpy
 
-#define ATTEN_DEBUG 1
+#define ATTEN_DEBUG 0
 namespace minfer {
 
 #if 1
@@ -24,6 +24,7 @@ void print_mat(const Mat& m, int start, int num)
 
 AttentionLayer::AttentionLayer(const std::shared_ptr<AttentionLayerParams> param)
 {
+    layerNamePrefix = "AttentionLayer_";
     max_seq_len = param->max_seq_len;
     embd_dim = param->embd_dim;
     head_count = param->head_count;
@@ -37,8 +38,6 @@ AttentionLayer::AttentionLayer(const std::shared_ptr<AttentionLayerParams> param
     embd_dim_head = embd_dim / head_count;
     embd_dim_kv = embd_dim_head * head_count_kv;
 
-    auto param_t = param->norm.total();
-    auto t = param->norm.type();
     param->norm.convertTo(norm, DT_32F);
 
     param->wq.convertTo(wq, DT_32F);

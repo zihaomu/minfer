@@ -64,6 +64,8 @@ LayerType Layer::getType()
 void Layer::setId(int id)
 {
     layerId = id;
+    // set id and name
+    layerName = layerNamePrefix + std::to_string(id);
 }
 
 void Layer::getBasicInfo(const std::shared_ptr<LayerParams> param)

@@ -8,6 +8,7 @@ namespace minfer {
 
 LinearLayer::LinearLayer(const std::shared_ptr<LinearLayerParams> param)
 {
+    layerNamePrefix = "LinearLayer_";
     M_Assert(param->type == LayerType::Linear);
     getBasicInfo(param);
 
@@ -72,7 +73,6 @@ void LinearLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &out
     if (!b.empty())
         out = out + b;
     // out.print(10);
-
     // out_tmp.copyTo(out);
 }
 
