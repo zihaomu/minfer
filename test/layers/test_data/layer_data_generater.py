@@ -487,9 +487,9 @@ def Linear_layer_data_generater():
 def main():
     # FeedForward_layer_data_generater()
     # generate_random_numpy_npy()
-    # Attention_layer_data_generater()
+    Attention_layer_data_generater()
     # WordEmbedding_layer_data_generater()
     # RMSNorm_layer_data_generater()
-    Linear_layer_data_generater()
+    # Linear_layer_data_generater()
 
 main()
