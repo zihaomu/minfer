@@ -51,6 +51,11 @@ public:
 
     void init();
 
+    // 输入一个文本，输出token ids
+    void encode(const std::string text, std::vector<int> &out_ids);
+
+    void decode(const std::vector<int> &out_ids, std::string& out_text);
+
     void forward(Mat& out);
 
     // 生成模式

@@ -10,6 +10,7 @@ namespace minfer
 
 Net::NetImpl::NetImpl()
 {
+    gguf_vocab = std::shared_ptr<GGUF_Vocab>(new GGUF_Vocab());
     if (runtime == nullptr)
     {
         runtime = Runtime::getRuntime();
@@ -27,7 +28,7 @@ void Net::NetImpl::readNet(const std::string path, const std::string modelType)
     std::vector<std::shared_ptr<LayerParams> > netParams;
     M_Assert(modelType == "gguf" && "Only GGUF model has been supported!");
 
-    readGGUF(path, netParams);
+    readGGUF(path, netParams, gguf_vocab);
 
     createNet(netParams);
 }
@@ -364,6 +365,18 @@ void Net::NetImpl::getMats(const std::vector<int> matsIdx, std::vector<Mat *> &m
     {
         mats[i] = getMat(matsIdx[i]);
     }
+}
+
+void Net::NetImpl::decode(const std::vector<int> &out_ids, std::string &out_text)
+{
+    M_Assert(gguf_vocab && "gguf_vocab is empty, can not decode!");
+    gguf_vocab->decode(out_ids, out_text);
+}
+
+void Net::NetImpl::encode(const std::string text, std::vector<int> &out_ids)
+{
+    M_Assert(gguf_vocab && "gguf_vocab is empty, can not encode!");
+    gguf_vocab->encode(text, out_ids);
 }
 
 }

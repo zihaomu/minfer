@@ -353,13 +353,6 @@ static const std::map<LLM_ARCH, std::map<LLM_TENSOR, std::string>> LLM_TENSOR_NA
 };
 
 
-enum llama_vocab_type {
-    LLAMA_VOCAB_TYPE_NONE = 0, // For models without vocab
-    LLAMA_VOCAB_TYPE_SPM  = 1, // LLaMA tokenizer based on byte-level BPE with byte fallback
-    LLAMA_VOCAB_TYPE_BPE  = 2, // GPT-2 tokenizer based on byte-level BPE
-    LLAMA_VOCAB_TYPE_WPM  = 3, // BERT tokenizer based on WordPiece
-};
-
 // note: these values should be synchronized with ggml_rope
 // TODO: maybe move this enum to ggml.h (ggml_rope_type)
 enum llama_rope_type {
@@ -367,16 +360,6 @@ enum llama_rope_type {
     LLAMA_ROPE_TYPE_NORM =  0,
     LLAMA_ROPE_TYPE_NEOX =  2,
     LLAMA_ROPE_TYPE_GLM  =  4,
-};
-
-enum llama_token_type {
-    LLAMA_TOKEN_TYPE_UNDEFINED    = 0,
-    LLAMA_TOKEN_TYPE_NORMAL       = 1,
-    LLAMA_TOKEN_TYPE_UNKNOWN      = 2,
-    LLAMA_TOKEN_TYPE_CONTROL      = 3,
-    LLAMA_TOKEN_TYPE_USER_DEFINED = 4,
-    LLAMA_TOKEN_TYPE_UNUSED       = 5,
-    LLAMA_TOKEN_TYPE_BYTE         = 6,
 };
 
 // model file types
@@ -438,10 +421,12 @@ enum llama_split_mode {
     LLAMA_SPLIT_MODE_ROW     = 2, // split rows across GPUs
 };
 
+class  GGUF_Vocab;
+
 /// 创建gguf net params
 /// \param path gguf 模型路径
 /// \param allLayerParams
-void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >& netParams);
+void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >& netParams, std::shared_ptr<GGUF_Vocab>& gguf_vocab);
 
 }
 #endif //MINFER_GGUF_LOADER_H

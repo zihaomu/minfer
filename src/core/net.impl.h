@@ -17,6 +17,8 @@
 namespace minfer
 {
 
+class GGUF_Vocab;
+
 struct LayerData
 {
     int layerId = -1;
@@ -50,6 +52,10 @@ public:
 
     void init(); // 初始化之后，调用系统中已经注册好的全局Backend变量。
 
+    void decode(const std::vector<int> &out_ids, std::string &out_text);
+
+    void encode(const std::string text, std::vector<int> &out_ids);
+
 private:
     void createLayerRecurve(int layerIdx, std::vector<int>& isLayerCreated, const std::map<int,
             std::vector<int> >& layer2Parent, const std::vector<std::shared_ptr<LayerParams> >& allLayerParams);
@@ -73,6 +79,8 @@ private:
     // TODO, 一个Net应该包含多个runtime或者backend，互相连接
     Runtime* runtime = nullptr; // 这里需要一个Runtime，用来管理所有的Device，以及所有的Tensor。// 是不是用Backend就可以，还是需要再封一层？
     // 需要一个全局单例模式去管理所有Device，然后再指向这个Device。
+
+    std::shared_ptr<GGUF_Vocab> gguf_vocab = nullptr; // 用于存储gguf模型的vocab
 };
 
 }

@@ -38,7 +38,7 @@
 #endif
 
 #include "gguf_loader.h"
-
+#include "gguf_vocab.h"
 #include "../memory_utils.h"
 #include "ggml_quant.h"
 #include "gguf_utils.h"
@@ -805,7 +805,7 @@ struct LLM_TN {
     }
 };
 
-void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >& netParams)
+void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >& netParams, std::shared_ptr<GGUF_Vocab>& gguf_vocab)
 {
     netParams.clear();
 
@@ -829,6 +829,7 @@ void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >
     std::cout<<"rope_freq_base_train = "<<loader.params.rope_freq_base_train<<std::endl;
     std::cout<<"f_norm_rms_eps = "<<loader.params.f_norm_rms_eps<<std::endl;
 
+    gguf_vocab->loadFromGGUF(loader);
 
     const auto getTensorName = LLM_TN(arch);
     // construct llama by loader to netParams

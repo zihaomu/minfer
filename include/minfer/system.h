@@ -151,7 +151,7 @@ std::string format(const char* fmt, ...) M_FORMAT_PRINTF(1, 2);
 
 /* This function is made for report error.
  * */
-#define M_Error(code, msg) minfer::error(code, msg, M_Func, __FILE__, __LINE__)
+#define M_Error(...) minfer::error(__VA_ARGS__, M_Func, __FILE__, __LINE__)
 
 /**  @brief Call the error handler.
 
@@ -165,7 +165,7 @@ for example:
 @param code one of Error::Code
 @param args printf-like formatted error message in parentheses
 */
-#define M_Error_( code, args ) minfer::error( code, minfer::format args, M_Func, __FILE__, __LINE__ )
+#define M_Error_( code, args ) minfer::error(code, minfer::format args, M_Func, __FILE__, __LINE__ )
 
 /** @brief Checks a condition at runtime and throws exception if it fails
 
@@ -174,13 +174,12 @@ raise an error (see minfer::error). The macro M_Assert checks the condition in b
 */
 #define M_Assert( expr ) do { if(!!(expr)) ; else minfer::error( minfer::Error::StsAssert, #expr, M_Func, __FILE__, __LINE__ ); } while(0)
 
-#ifdef _DEBUG
-#include <cstdio>
-#define DEBUG_PRINT(fmt, ...) \
-do { std::printf("[DEBUG] " fmt "\n", ##__VA_ARGS__); } while(0)
-#else
-#define DEBUG_PRINT(fmt, ...) do {} while(0)
-#endif
+/**
+ * @brief Call the warning handler.
+ * 
+ * This function is made for report warning.
+ */
+#define M_Warning(...) minfer::warning(__VA_ARGS__, M_Func, __FILE__, __LINE__)
 
 }
 

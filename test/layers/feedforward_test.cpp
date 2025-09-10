@@ -19,16 +19,14 @@ TEST(Layer_TEST, feed_forward_test)
     std::string output_path = ROOT_path + "ffn_output.npy";
 
     Mat input = readMatFromNpy(input_path);
-    Mat param0 = readMatFromNpy(param0_path); // gate
-    Mat param1 = readMatFromNpy(param1_path); // down
-    Mat param2 = readMatFromNpy(param2_path); // up
+    Mat up = readMatFromNpy(param0_path); // gate
+    Mat gate = readMatFromNpy(param1_path); // down
+    Mat down = readMatFromNpy(param2_path); // up
     Mat param_rms = readMatFromNpy(param_rms_path);
     Mat output = readMatFromNpy(output_path);
 
     const float rms_eps = 1e-6f;
-    FeedForwardLayerParams params
-     = {{0}, {1}, ActivateType::SILU, 128, 256, rms_eps, param_rms, param0, param2, param1};
-    std::shared_ptr<FeedForwardLayerParams> layer_params(new FeedForwardLayerParams({0}, {1}, ActivateType::SILU, 128, 256, rms_eps, param_rms, param0, param2, param1));
+    std::shared_ptr<FeedForwardLayerParams> layer_params(new FeedForwardLayerParams({0}, {1}, ActivateType::SILU, 128, 256, rms_eps, param_rms, gate, up, down));
     auto layer = FeedForwardLayer::create(layer_params);
 
     std::vector<Mat*> inputs = {&input};

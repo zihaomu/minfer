@@ -56,26 +56,27 @@ class Linear:
     def forward(self, x):
         assert self.weight is not None, "linear not initialized"
         if self.hasBias:
-            return np.matmul(x, self.weight.T) + self.bias
+            return np.matmul(x, self.weight) + self.bias
         else:
             printArray(x, "Linear input")
             printArray(self.weight, "Linear weight")
-            printArray(self.weight.T, "Linear weight .T")
-            data = np.matmul(x, self.weight.T)
+            printArray(self.weight, "Linear weight .T")
+            data = np.matmul(x, self.weight)
             
             # printArray(data[:, 1:, :], "Linear 1 output")
             # printArray(data[:, 2:, :], "Linear 2 output")
-            return np.matmul(x, self.weight.T)
+            return np.matmul(x, self.weight)
 
     def load(self, params):
         # if params is a list, then it's [weight, bias]
         if isinstance(params, list):
-            self.weight = params[0].reshape(self.out_features, self.in_features)
+            assert self.hasBias == True and len(params) == 2, "linear with bias should have two params"
+            self.weight = params[0].reshape(self.in_features, self.out_features)
             if self.hasBias:
                 self.bias = params[1].reshape(self.out_features)
         else:
             assert not self.hasBias, "linear with bias should have two params"
-            self.weight = params.reshape(self.out_features, self.in_features)
+            self.weight = params.reshape(self.in_features, self.out_features)
 
     def parameters(self):
         return [self.weight, self.bias] if self.hasBias else [self.weight]
@@ -271,29 +272,35 @@ class MultiHeadAttention:
         printArray(output, "atten out")
         return output
 
+
+# FFN
+
 class FeedForward:
     def __init__(self, d_model, d_ff):
-        self.linear1 = Linear(d_model, d_ff, hasBias=False)
-        self.linear2 = Linear(d_ff, d_model, hasBias=False)
-        self.linear3 = Linear(d_model, d_ff, hasBias=False)
+        self.up = Linear(d_model, d_ff, hasBias=False)
+        self.gate = Linear(d_model, d_ff, hasBias=False)
+        self.down = Linear(d_ff, d_model, hasBias=False)
         self.relu = lambda x : np.maximum(0, x)
         self.silu = lambda x : x / (1 + np.exp(-x))
         # self.relu = np.vectorize(lambda x: max(0, x))
 
     def load(self, params):
-        self.linear1.load(params[0])
-        self.linear2.load(params[1])
-        self.linear3.load(params[2])
+        self.up.load(params[0])
+        self.gate.load(params[1])
+        self.down.load(params[2])
 
     def forward(self, x):
-        data1 = self.linear2.forward(self.silu(self.linear1.forward(x)) * self.linear3.forward(x))
-        data2 = x + data1
+        g = self.gate.forward(x)
+        u = self.up.forward(x)
+        sg = self.silu(g)
+        data1 = self.down.forward(sg * u)
+        # data2 = x + data1
         # data2 = self.linear3.forward(x)
         # print("data 1 shape = ", data1.shape)
         # print("data 2 shape = ", data2.shape)
         # return data1 * data2
         printArray(data1, "ff out")
-        return data2
+        return data1
         # return self.linear2.forward(self.silu(self.linear1.forward(x))) * self.linear3.forward(x)
 
 def Attention_layer_data_generater():
@@ -355,7 +362,7 @@ def FeedForward_layer_data_generater():
 
     # random params
     params = []
-    params.append(np.random.rand(d_ff, d_model))
+    params.append(np.random.rand(d_model, d_ff))
     params.append(np.random.rand(d_model, d_ff))
     params.append(np.random.rand(d_ff, d_model))
 
@@ -485,9 +492,9 @@ def Linear_layer_data_generater():
     np.save(ROOT_PATH + "/linear_output.npy", out.astype(np.float32))
 
 def main():
-    # FeedForward_layer_data_generater()
+    FeedForward_layer_data_generater()
     # generate_random_numpy_npy()
-    Attention_layer_data_generater()
+    # Attention_layer_data_generater()
     # WordEmbedding_layer_data_generater()
     # RMSNorm_layer_data_generater()
     # Linear_layer_data_generater()

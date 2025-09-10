@@ -193,4 +193,30 @@ void error(int code, const std::string& err, const std::string func, const std::
 #endif
 }
 
+void error(const std::string& err, const std::string func, const std::string& file, int line)
+{
+    int code = Error::StsError;
+    error(minfer::Exception(code, err, func, file, line));
+}
+
+void warning(int code, const std::string& msg,
+                    const std::string& func,
+                    const std::string& file,
+                    int line)
+{
+    std::cerr << "[WARNING][" << file << ":" << line
+              << "][" << func << "] Code=" << code
+              << ": " << msg << std::endl;
+}
+
+// Warning 版本：使用默认 code
+void warning(const std::string& msg,
+                    const std::string& func,
+                    const std::string& file,
+                    int line)
+{
+    const int DEFAULT_CODE = 0;  // 或者你自定义一个 Warning 默认 code
+    warning(DEFAULT_CODE, msg, func, file, line);
+}
+
 }

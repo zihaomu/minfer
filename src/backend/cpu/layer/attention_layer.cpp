@@ -429,7 +429,7 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     // wout.print(20);
     // print_mat(wout, 128, 20);
     // print_mat(wout, 128*2, 20);
-    gemm(qkvT, wout, false, true).copyTo(x_out);
+    gemm(qkvT, wout, false, false).copyTo(x_out);
     //
     // std::cout<<"out, 0"<<std::endl;
     // print_mat(out, 0, 20);

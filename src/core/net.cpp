@@ -65,6 +65,20 @@ void Net::generate(minfer::Mat &out)
     return impl->forward(out);
 }
 
+void Net::encode(const std::string text, std::vector<int> &out_ids)
+{
+    M_Assert(impl != nullptr);
+    return impl->encode(text, out_ids);
+}
+
+
+void Net::decode(const std::vector<int> &out_ids, std::string &out_text)
+{
+    M_Assert(impl != nullptr);
+    return impl->decode(out_ids, out_text);
+}
+
+
 //void Net::forward(std::vector<Mat>& outs, const std::vector<std::string> names)
 //{
 //    M_Assert(impl != nullptr);
