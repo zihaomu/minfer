@@ -135,11 +135,18 @@ TEST(Net_TEST, tokenizer)
     Net net;
     net.readNet(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16.gguf");
 
+    std::vector<int> ids_ground_truth = {1, 22557, 1526, 28808, 523, 28713, 28767};
+
     std::string text = "Hello world! <s>";
     std::vector<int> ids;
 
     // tokenizer
     net.encode(text, ids);
+
+    for (int i = 0; i < ids_ground_truth.size(); i++)
+    {
+        M_Assert(ids[i] == ids_ground_truth[i]);
+    }
 
     std::cout << "Token IDs: ";
     for (int id : ids) std::cout << id << " ";
