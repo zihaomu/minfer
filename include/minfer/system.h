@@ -52,10 +52,12 @@
 // #define M_ERROR(format, ...) do { printf(format, ##__VA_ARGS__); exit(1); } while(0)
 #endif
 
-#ifdef M_DEBUG
-#define M_PRINT_DBG(format, ...) printf(format, ##__VA_ARGS__)
+#ifdef NDEBUG
+    // Release mode
+    #define M_DEBUG 0
 #else
-#define M_PRINT_DBG(format, ...)
+    // Debug mode
+    #define M_DEBUG 1
 #endif
 
 #ifdef M_Func
@@ -123,7 +125,14 @@ public:
 
 void error(const Exception& exc);
 
+void error(const std::string& _err, const std::string _func, const std::string& _file, int _line);
 void error(int _code, const std::string& _err, const std::string _func, const std::string& _file, int _line);
+
+void warning(int code, const std::string& msg, const std::string& func, const std::string& file, int line);
+void warning(const std::string& msg, const std::string& func, const std::string& file, int line);
+
+void debug(int code, const std::string& msg, const std::string& func, const std::string& file, int line);
+void debug(const std::string& msg, const std::string& func, const std::string& file, int line);
 
 void mprintf(const char* fmt, ...);
 
@@ -180,6 +189,16 @@ raise an error (see minfer::error). The macro M_Assert checks the condition in b
  * This function is made for report warning.
  */
 #define M_Warning(...) minfer::warning(__VA_ARGS__, M_Func, __FILE__, __LINE__)
+#define M_Warning_(code, args ) minfer::warning(code, minfer::format args, M_Func, __FILE__, __LINE__)
+
+
+/**
+ * @brief Call the debug print handler.
+ *
+ * This function is made for debug print.
+ */
+#define M_PRINT_DBG(...) minfer::debug(__VA_ARGS__, M_Func, __FILE__, __LINE__)
+#define M_PRINT_DBG_(code, args) minfer::debug(code, minfer::format args, M_Func, __FILE__, __LINE__)
 
 }
 

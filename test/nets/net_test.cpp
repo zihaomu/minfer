@@ -4,7 +4,6 @@
 
 #include "minfer.h"
 #include "gtest/gtest.h"
-#include "sentencepiece_processor.h"
 
 using namespace minfer;
 
@@ -131,27 +130,26 @@ static std::vector<int> argmax_tokens(const float* logits, int batch, int seq_le
     return token_ids;
 }
 
-static std::string SafeDecodeTokens(
-    sentencepiece::SentencePieceProcessor& sp,
-    const std::vector<int>& tokens
-) {
-    int vocab_size = sp.GetPieceSize();
-    std::string decoded;
+TEST(Net_TEST, tokenizer)
+{
+    Net net;
+    net.readNet(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16.gguf");
 
-    for (int t : tokens) {
-        if (t >= 0 && t < vocab_size) {
-            // 合法 token，用 SentencePiece 解码
-            decoded += sp.IdToPiece(t);
-        } else if (t >= vocab_size) {
-            // 超出 vocab 的 token，标记为 <unused>
-            decoded += "<unused_" + std::to_string(t) + ">";
-        } else {
-            // 不合法 token，负值
-            decoded += "<invalid_" + std::to_string(t) + ">";
-        }
-    }
+    std::string text = "Hello world! <s>";
+    std::vector<int> ids;
 
-    return decoded;
+    // tokenizer
+    net.encode(text, ids);
+
+    std::cout << "Token IDs: ";
+    for (int id : ids) std::cout << id << " ";
+    std::cout << std::endl;
+
+    std::string out_text;
+    net.decode(ids, out_text);
+
+    std::cout << "Decoded Text: " << out_text << std::endl;
+
 }
 
 TEST(Net_TEST, net_tiny_llama)
@@ -160,18 +158,19 @@ TEST(Net_TEST, net_tiny_llama)
     Net net;
     net.readNet(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16.gguf");
 
-    sentencepiece::SentencePieceProcessor sp;
-    auto status = sp.Load(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16_tokenizer.model");
-    if (!status.ok()) {
-        std::cerr << "Failed to load Lite-Oute-1-65M-FP16_tokenizer.model: " << status.ToString() << std::endl;
-    }
-    // 获取 vocab 大小
-    int vocab_size = sp.GetPieceSize();
-    std::cout << "Vocabulary size: " << vocab_size << std::endl;
+    // sentencepiece::SentencePieceProcessor sp;
+    // auto status = sp.Load(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16_tokenizer.model");
+    // if (!status.ok()) {
+    //     std::cerr << "Failed to load Lite-Oute-1-65M-FP16_tokenizer.model: " << status.ToString() << std::endl;
+    // }
+    // // 获取 vocab 大小
+    // int vocab_size = sp.GetPieceSize();
+    // std::cout << "Vocabulary size: " << vocab_size << std::endl;
 
     std::string text = "Hello, how are you?";
     std::vector<int> ids;
-    sp.Encode(text, &ids);
+    net.encode(text, ids);
+    // sp.Encode(text, &ids);
 
     std::cout << "Token IDs: ";
     for (int id : ids) std::cout << id << " ";
@@ -197,13 +196,8 @@ TEST(Net_TEST, net_tiny_llama)
     std::cout << std::endl;
 
     std::string out_text;
-    out_text = SafeDecodeTokens(sp, out_idx);
-
-    for (int t : out_idx) {
-        if (t < 0 || t >= sp.GetPieceSize()) {
-            std::cerr << "Invalid token ID: " << t << std::endl;
-        }
-    }
+    // out_text = SafeDecodeTokens(sp, out_idx);
+    net.decode(out_idx, out_text);
 
     std::cout << "Output Text: " << out_text << std::endl;
 

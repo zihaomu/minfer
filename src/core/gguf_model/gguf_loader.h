@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <set>
 #include "minfer/net.h"
 
 namespace minfer
@@ -421,12 +422,178 @@ enum llama_split_mode {
     LLAMA_SPLIT_MODE_ROW     = 2, // split rows across GPUs
 };
 
-class  GGUF_Vocab;
-
+class GGUF_Vocab;
 /// 创建gguf net params
 /// \param path gguf 模型路径
 /// \param allLayerParams
 void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >& netParams, std::shared_ptr<GGUF_Vocab>& gguf_vocab);
+
+/* *********************************************************************************************************************
+ *                                                >>>   Tokenizer   <<<
+ * *********************************************************************************************************************
+ */
+typedef int32_t llama_pos;
+typedef int32_t llama_token;
+typedef int32_t llama_seq_id;
+#define LLAMA_TOKEN_NULL -1
+
+typedef enum llama_token_type {
+    LLAMA_TOKEN_TYPE_UNDEFINED    = 0,
+    LLAMA_TOKEN_TYPE_NORMAL       = 1,
+    LLAMA_TOKEN_TYPE_UNKNOWN      = 2,
+    LLAMA_TOKEN_TYPE_CONTROL      = 3,
+    LLAMA_TOKEN_TYPE_USER_DEFINED = 4,
+    LLAMA_TOKEN_TYPE_UNUSED       = 5,
+    LLAMA_TOKEN_TYPE_BYTE         = 6,
+} llama_token_type;
+
+enum llama_token_attr {
+    LLAMA_TOKEN_ATTR_UNDEFINED    = 0,
+    LLAMA_TOKEN_ATTR_UNKNOWN      = 1 << 0,
+    LLAMA_TOKEN_ATTR_UNUSED       = 1 << 1,
+    LLAMA_TOKEN_ATTR_NORMAL       = 1 << 2,
+    LLAMA_TOKEN_ATTR_CONTROL      = 1 << 3,  // SPECIAL?
+    LLAMA_TOKEN_ATTR_USER_DEFINED = 1 << 4,
+    LLAMA_TOKEN_ATTR_BYTE         = 1 << 5,
+    LLAMA_TOKEN_ATTR_NORMALIZED   = 1 << 6,
+    LLAMA_TOKEN_ATTR_LSTRIP       = 1 << 7,
+    LLAMA_TOKEN_ATTR_RSTRIP       = 1 << 8,
+    LLAMA_TOKEN_ATTR_SINGLE_WORD  = 1 << 9,
+};
+
+typedef enum llama_vocab_type {
+    LLAMA_VOCAB_TYPE_NONE = 0, // For models without vocab
+    LLAMA_VOCAB_TYPE_SPM  = 1, // LLaMA tokenizer based on byte-level BPE with byte fallback
+    LLAMA_VOCAB_TYPE_BPE  = 2, // GPT-2 tokenizer based on byte-level BPE
+    LLAMA_VOCAB_TYPE_WPM  = 3, // BERT tokenizer based on WordPiece
+} llama_vocab_type;
+
+// pre-tokenization types
+typedef enum llama_vocab_pre_type {
+    LLAMA_VOCAB_PRE_TYPE_DEFAULT        = 0,
+    LLAMA_VOCAB_PRE_TYPE_LLAMA3         = 1,
+    LLAMA_VOCAB_PRE_TYPE_DEEPSEEK_LLM   = 2,
+    LLAMA_VOCAB_PRE_TYPE_DEEPSEEK_CODER = 3,
+    LLAMA_VOCAB_PRE_TYPE_FALCON         = 4,
+    LLAMA_VOCAB_PRE_TYPE_MPT            = 5,
+    LLAMA_VOCAB_PRE_TYPE_STARCODER      = 6,
+    LLAMA_VOCAB_PRE_TYPE_GPT2           = 7,
+    LLAMA_VOCAB_PRE_TYPE_REFACT         = 8,
+    LLAMA_VOCAB_PRE_TYPE_COMMAND_R      = 9,
+    LLAMA_VOCAB_PRE_TYPE_STABLELM2      = 10,
+    LLAMA_VOCAB_PRE_TYPE_QWEN2          = 11,
+    LLAMA_VOCAB_PRE_TYPE_OLMO           = 12,
+    LLAMA_VOCAB_PRE_TYPE_DBRX           = 13,
+    LLAMA_VOCAB_PRE_TYPE_SMAUG          = 14,
+    LLAMA_VOCAB_PRE_TYPE_PORO           = 15,
+    LLAMA_VOCAB_PRE_TYPE_CHATGLM3       = 16,
+    LLAMA_VOCAB_PRE_TYPE_CHATGLM4       = 17,
+    LLAMA_VOCAB_PRE_TYPE_VIKING         = 18,
+    LLAMA_VOCAB_PRE_TYPE_JAIS           = 19,
+    LLAMA_VOCAB_PRE_TYPE_TEKKEN         = 20,
+    LLAMA_VOCAB_PRE_TYPE_SMOLLM         = 21,
+    LLAMA_VOCAB_PRE_TYPE_CODESHELL      = 22,
+    LLAMA_VOCAB_PRE_TYPE_BLOOM          = 23,
+    LLAMA_VOCAB_PRE_TYPE_GPT3_FINNISH   = 24,
+    LLAMA_VOCAB_PRE_TYPE_EXAONE         = 25,
+    LLAMA_VOCAB_PRE_TYPE_CHAMELEON      = 26,
+    LLAMA_VOCAB_PRE_TYPE_MINERVA        = 27,
+    LLAMA_VOCAB_PRE_TYPE_DEEPSEEK3_LLM  = 28,
+} llama_vocab_pre_type;
+
+// only support spm right now
+// TODO support bpe
+struct token_data {
+    std::string      text;
+    float            score;
+    llama_token_attr attr;
+};
+
+class GGUF_Vocab
+{
+public:
+
+    GGUF_Vocab();
+    ~GGUF_Vocab();
+
+    bool loadFromGGUF(void* loader);
+
+    // int32_t getTokenId(const std::string& token) const;
+    // std::string getTokenString(int32_t tokenId) const;
+    //
+    //
+    // size_t size() const { return tokenToIdMap.size(); }
+
+    // 调用接口
+    void decode(const std::vector<int> &out_ids, std::string &out_text);
+
+    void encode(const std::string text, std::vector<int> &out_ids);
+
+private:
+    uint32_t n_token_types = 0; // for BERT-style token types
+
+    llama_vocab_type     type     = LLAMA_VOCAB_TYPE_SPM;
+    llama_vocab_pre_type pre_type = LLAMA_VOCAB_PRE_TYPE_DEFAULT;
+
+    int max_token_len = 0; // used for optimizing longest token search
+
+    // default LLaMA special tokens
+    // TODO: should we set all of these to LLAMA_TOKEN_NULL?
+    llama_token special_bos_id  = 1;
+    llama_token special_eos_id  = 2;
+    llama_token special_eot_id  = LLAMA_TOKEN_NULL;
+    llama_token special_eom_id  = LLAMA_TOKEN_NULL;
+    llama_token special_unk_id  = 0;
+    llama_token special_sep_id  = LLAMA_TOKEN_NULL;
+    llama_token special_pad_id  = LLAMA_TOKEN_NULL;
+    llama_token special_mask_id = LLAMA_TOKEN_NULL;
+
+    llama_token linefeed_id = 13;
+
+    // fim tokens
+    llama_token special_fim_pre_id = LLAMA_TOKEN_NULL;
+    llama_token special_fim_suf_id = LLAMA_TOKEN_NULL;
+    llama_token special_fim_mid_id = LLAMA_TOKEN_NULL;
+    llama_token special_fim_pad_id = LLAMA_TOKEN_NULL;
+    llama_token special_fim_rep_id = LLAMA_TOKEN_NULL; // repo
+    llama_token special_fim_sep_id = LLAMA_TOKEN_NULL; // file separator
+
+    // tokenizer flags
+    bool add_space_prefix           = false;
+    bool add_bos                    = false;
+    bool add_eos                    = false;
+    bool ignore_merges              = false;
+    bool clean_spaces               = false;  // clean_up_tokenization_spaces
+    bool remove_extra_whitespaces   = false;
+    bool escape_whitespaces         = true;
+    bool treat_whitespace_as_suffix = false;
+
+    std::unordered_map<std::string, llama_token> token_to_id;
+    std::vector<token_data>                      id_to_token;
+
+    std::vector<llama_token> cache_special_tokens;
+    std::vector<std::string> cache_token_to_piece; // llama_token_to_piece(special = true);
+    struct pair_hash {
+        size_t operator()(const std::pair<std::string, std::string> & p) const {
+            return std::hash<std::string>{}(p.first) ^  //create some hash for pair
+                   (std::hash<std::string>{}(p.second) << 1);
+        }
+    };
+    std::unordered_map<std::pair<std::string, std::string>, int, pair_hash> bpe_ranks;
+
+    // set of all tokens that cause "end of generation"
+    std::set<llama_token> special_eog_ids;
+
+    // std::unique_ptr<llm_tokenizer> tokenizer;
+
+    std::vector<char> precompiled_charsmap;
+
+    /* 需要添加额外元素，用于编码和解码
+     *
+     *
+     */
+};
+
 
 }
 #endif //MINFER_GGUF_LOADER_H

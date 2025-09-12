@@ -320,7 +320,7 @@ int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
     }
 
     layer->setId(layerId);
-    M_PRINT_DBG("Creating Layer %s \n", layer->getName().c_str());
+    M_PRINT_DBG_(NULL, ("Creating Layer %s \n", layer->getName().c_str()));
     std::vector<Mat*> outs(outputSize, nullptr);
     for (int i = 0; i < outputSize; ++i)
     {

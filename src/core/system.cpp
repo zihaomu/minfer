@@ -219,4 +219,28 @@ void warning(const std::string& msg,
     warning(DEFAULT_CODE, msg, func, file, line);
 }
 
+// Debug 打印，带 code
+void debug(int code,
+                  const std::string& msg,
+                  const std::string& func,
+                  const std::string& file,
+                  int line)
+{
+#if M_DEBUG
+    std::cout << "[DEBUG][" << file << ":" << line
+              << "][" << func << "] Code=" << code
+              << ": " << msg << std::endl;
+#endif
+}
+
+// Debug 打印，不带 code
+void debug(const std::string& msg,
+                  const std::string& func,
+                  const std::string& file,
+                  int line)
+{
+    constexpr int DEFAULT_CODE = 0; // 默认 code
+    debug(DEFAULT_CODE, msg, func, file, line);
+}
+
 }
