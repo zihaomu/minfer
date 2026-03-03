@@ -165,4 +165,25 @@ MatShape get_gemm_shape(const MatShape& shape_a, const MatShape& shape_b)
     return shape_c;
 }
 
+std::vector<int> argmax_tokens(const float* logits, int batch, int seq_len, int vocab_size) {
+    std::vector<int> token_ids(seq_len, -1);
+
+    // 只取 batch=0 的情况
+    for (int t = 0; t < seq_len; t++) {
+        const float* row = logits + t * vocab_size;
+        int best_id = 0;
+        float best_val = -std::numeric_limits<float>::infinity();
+
+        for (int v = 0; v < vocab_size; v++) {
+            float val = row[v];
+            if (val > best_val) {
+                best_val = val;
+                best_id = v;
+            }
+        }
+        token_ids[t] = best_id;
+    }
+    return token_ids;
+}
+
 }

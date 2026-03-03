@@ -43,6 +43,12 @@ void LinearLayer::init(const std::vector<Mat*> &input, std::vector<Mat*> &output
 
     MatShape in_shape = input[0]->shape();
     MatShape w_shape = w.shape();
+    
+    if (transposeW)
+    {
+        std::swap(w_shape[w_shape.size() - 1], w_shape[w_shape.size() - 2]);
+    }
+
     MatShape output_shape = get_gemm_shape(in_shape, w_shape);
 
     output[0]->setSize(output_shape);

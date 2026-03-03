@@ -2,8 +2,8 @@ from llama_cpp import Llama
 
 # 1. 加载 GGUF 模型
 llm = Llama(
-    model_path=r"E:\\my_project\\minfer\\test\\big_models\\Lite-Oute-1-65M-FP16.gguf",  # 改成你本地模型路径
-    vocab_only=True,   # 只加载 tokenizer 和 vocab，不加载权重
+    model_path="/home/moo/work/my_lab/minfer/test/big_models/Lite-Oute-1-65M-FP16.gguf",
+    vocab_only=True,
 )
 
 # 2. tokenizer 示例

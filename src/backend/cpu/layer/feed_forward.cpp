@@ -105,7 +105,7 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     }
 
     // x1 = silu(self.linear1.forward(x))
-    Mat x1 = gemm(x_norm, gate, false, false);
+    Mat x1 = gemm(x_norm, gate, false, true);
 
     // Apply activation function to all elements
     float* p_x1 = (float *)x1.data;
@@ -116,13 +116,13 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     }
 
     // x3 = self.linear3.forward(x)
-    Mat x3 = gemm(x_norm, up, false, false);
+    Mat x3 = gemm(x_norm, up, false, true);
 
     // x_out = self.linear2.forward(x1 * x3)
     Mat out = *output[0];
     Mat x_out = Mat(out.size.dims(), out.size.p, out.type(), out.data);
 
-    gemm(x1 * x3, down, false, false).copyTo(out);
+    gemm(x1 * x3, down, false, true).copyTo(out);
 
     // std::cout<<"out gemm"<<std::endl;
     // out.print(10);

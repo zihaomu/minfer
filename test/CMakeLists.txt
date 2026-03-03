@@ -21,7 +21,6 @@ file(GLOB TEST_SRC
         ${CMAKE_SOURCE_DIR}/test/core/*.cpp              # 包含核心功能测试
         ${CMAKE_SOURCE_DIR}/test/layers/*.cpp            # 包含层实现测试和层数据生成
         ${CMAKE_SOURCE_DIR}/test/nets/*.cpp            # 包含常见llm模型测试
-        #        ${CMAKE_SOURCE_DIR}/test/opencv_lab/mat_test.cpp # 包含mat实验相关测试
 )
 
 add_executable(minfer_test ${TEST_SRC})

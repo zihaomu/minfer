@@ -50,8 +50,24 @@ void gemm_impl_naive(const Mat& a, const Mat& b, Mat& c)
     int K = shape_a[shape_a.size() - 1];
     int N = shape_b.size() == 1 ? 1 : shape_b[shape_b.size() - 1];
 
-    M_Assert(K == shape_b[shape_b.size() - 2]); // 目前不支持有一个矩阵K为1的情况，后续考虑支持。
-    M_Assert(a.type() == b.type());
+    if (K != shape_b[shape_b.size() - 2])
+    {
+        std::string errorInfo = "Mat shapes on gemm([M,K] x [K,N]) function are miss matching!\n";
+        errorInfo += "shape_a: ";
+        errorInfo += shape_to_str(shape_a);
+        errorInfo += "\n";
+        errorInfo += "shape_b: ";
+        errorInfo += shape_to_str(shape_b);
+        errorInfo += "\n";
+        errorInfo += "Expect gemm K = ";
+        errorInfo += std::to_string(shape_b[shape_b.size() - 2]);
+        errorInfo += ", but got ";
+        errorInfo += std::to_string(K);
+        errorInfo += "\n";
+        M_Error(NULL, errorInfo.c_str());
+    }
+
+    M_Assert(a.type() == b.type() && "Mat type on gemm function are miss matching!");
 
     M_Assert(a.type() == DT_32F && "Currently only FP32 mat is supported!");
 
@@ -129,6 +145,12 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
     MatShape shape_a = a.shape();
     MatShape shape_b = b.shape();
 
+#if 0
+    // print shape_a and shape_b
+    std::cout << "shape_a: " << shape_to_str(shape_a) << std::endl;
+    std::cout << "shape_b: " << shape_to_str(shape_b) << std::endl;
+#endif
+
     // 目前不处理 K x KxN 这种情况。
     M_Assert(shape_a.size() >= 2 && shape_b.size() >= 2 && "Mat shapes on gemm function are miss matching!");
 
@@ -198,9 +220,21 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
     int K = shape_a[shape_a.size() - 1];
     int N = shape_b.size() == 1 ? 1 : shape_b[shape_b.size() - 2];
 
+    // Check if K == shape_b[shape_b.size() - 1]
     if (K != shape_b[shape_b.size() - 1])
-    M_Assert(K == shape_b[shape_b.size() - 1]); // 目前不支持有一个矩阵K为1的情况，后续考虑支持。
-    M_Assert(a.type() == b.type());
+    {
+        std::string errorInfo = "Mat shapes on gemm([M,K] x [N,K]) function are miss matching!\n";
+        errorInfo += "shape_a: ";
+        errorInfo += shape_to_str(shape_a);
+        errorInfo += "\n";
+        errorInfo += "shape_b: ";
+        errorInfo += shape_to_str(shape_b);
+        errorInfo += "\n";
+        errorInfo += "Expact gemm K = " + std::to_string(K) + ", but got " + std::to_string(shape_b[shape_b.size() - 1]) + "\n";
+        M_Error(NULL, errorInfo.c_str());
+    }
+
+    M_Assert(a.type() == b.type() && "Mat type on gemm function are miss matching!");
 
     M_Assert(a.type() == DT_32F && "Currently only FP32 mat is supported!");
 

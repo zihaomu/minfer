@@ -58,6 +58,13 @@ void RMSNormLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &ou
     int seq_len = in_shape[1];
 
     // rms-norm
+    if (layerNamePrefix == "RMSNormLayer_" && in_shape[1] > 0) {
+        static bool printed = false;
+        if (!printed) {
+            std::cout << "DEBUG: RMSNormLayer using rms_eps = " << rms_eps << std::endl;
+            printed = true;
+        }
+    }
     for (int i = 0; i < seq_len; i++)
     {
         float sum_f2 = 0;

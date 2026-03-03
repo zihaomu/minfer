@@ -160,10 +160,12 @@ public:
 
     size_t total() const;
 
-    size_t total(int startDim, int endDim=INT_MAX) const;
+    size_t total(int startDim, int endDim=MAT_MAX_DIM) const;
 
     // print the mat value and shape.
     void print(int len = -1) const;
+
+    void printShape() const;
 
     MatShape shape() const;
 

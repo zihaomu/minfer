@@ -64,72 +64,6 @@ TEST(Net_TEST, simple_net_test)
     outMat_1.print();
 }
 
-// TEST(Net_TEST, multi_head_transform_test)
-// {
-//     // 参数目前为空
-//     int head_count;
-//     int head_count_kv;
-//     Mat _q;
-//     Mat _k;
-//     Mat _v;
-//     Mat _out;
-//
-//     // 需要增加参数，减少layer和layer name的要求。
-//     std::vector<std::shared_ptr<LayerParams> > layers = {
-//             std::shared_ptr<LayerParams>(new LayerParams(LayerType::Input, {0}, {1})),
-//             std::shared_ptr<LayerParams>(new LayerParams(LayerType::RMSNorm, {1}, {2})),
-//             std::shared_ptr<LayerParams>(new AttentionLayerParams(LayerType::Attention,{2}, {3}, head_count,
-//                                                                   head_count_kv, _q, _k, _v, _out)),
-//             std::shared_ptr<LayerParams>(new LayerParams(LayerType::Add, {1,3}, {4})),
-//             std::shared_ptr<LayerParams>(new LayerParams(LayerType::RMSNorm, {4}, {5})),
-//             std::shared_ptr<LayerParams>(new LayerParams(LayerType::FFN, {5}, {6})),
-//             std::shared_ptr<LayerParams>(new LayerParams(LayerType::Add, {4,6}, {7})),
-//             std::shared_ptr<LayerParams>(new LayerParams(LayerType::Output, {7}, {8})),
-//     };
-//
-//     Net nets;
-//     nets.createNet(layers);
-//
-//     float f20 = 20.f;
-//     float f30 = 30.f;
-//     float f50 = 50.f;
-//     Mat inpM1 = Mat({2, 3, 4}, DT_32F, reinterpret_cast<int&>(f20));
-//     Mat inpM2 = Mat({2, 3, 4}, DT_32F, reinterpret_cast<int&>(f30));
-//     Mat outM  = Mat({2, 3, 4}, DT_32F, reinterpret_cast<int&>(f50));
-//
-//     inpM1.print();
-//     inpM2.print();
-//
-//     nets.setInput(inpM1, 0);
-//     nets.setInput(inpM2, 2);
-//
-//     nets.init();
-//     Mat outMat = nets.forward();
-//
-//     outM.print();
-// }
-
-static std::vector<int> argmax_tokens(const float* logits, int batch, int seq_len, int vocab_size) {
-    std::vector<int> token_ids(seq_len, -1);
-
-    // 只取 batch=0 的情况
-    for (int t = 0; t < seq_len; t++) {
-        const float* row = logits + t * vocab_size;
-        int best_id = 0;
-        float best_val = -std::numeric_limits<float>::infinity();
-
-        for (int v = 0; v < vocab_size; v++) {
-            float val = row[v];
-            if (val > best_val) {
-                best_val = val;
-                best_id = v;
-            }
-        }
-        token_ids[t] = best_id;
-    }
-    return token_ids;
-}
-
 TEST(Net_TEST, tokenizer)
 {
     Net net;
@@ -161,52 +95,88 @@ TEST(Net_TEST, tokenizer)
 
 TEST(Net_TEST, net_tiny_llama)
 {
-    std::cout<<"print test on net_tiny_llama"<<std::endl;
+    std::cout << "print test on net_tiny_llama" << std::endl;
     Net net;
     net.readNet(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16.gguf");
 
-    // sentencepiece::SentencePieceProcessor sp;
-    // auto status = sp.Load(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16_tokenizer.model");
-    // if (!status.ok()) {
-    //     std::cerr << "Failed to load Lite-Oute-1-65M-FP16_tokenizer.model: " << status.ToString() << std::endl;
-    // }
-    // // 获取 vocab 大小
-    // int vocab_size = sp.GetPieceSize();
-    // std::cout << "Vocabulary size: " << vocab_size << std::endl;
+    std::string ROOT_path = std::string(M_ROOT_PATH) + "/test/layers/test_data/data/";
 
-    std::string text = "Hello, how are you?";
-    std::vector<int> ids;
-    net.encode(text, ids);
-    // sp.Encode(text, &ids);
+    int num_tests = 4;
+    for (int i = 0; i < num_tests; i++) {
+        std::string input_path = ROOT_path + "net_input_" + std::to_string(i) + ".npy";
+        std::string output_path = ROOT_path + "net_output_" + std::to_string(i) + ".npy";
 
-    std::cout << "Token IDs: ";
-    for (int id : ids) std::cout << id << " ";
-    std::cout << std::endl;
+        Mat input_ids = readMatFromNpy(input_path);
+        Mat output_checker = readMatFromNpy(output_path);
 
-    // convert tokens id to Mat
-    std::vector<int> mat_shape = {1, (int)ids.size()};
+        net.setInput(input_ids);
+        net.init();
 
-    Mat input = Mat(mat_shape, DT_32S, ids.data());
+        Mat output = net.forward();
 
-    net.setInput(input);
-    net.init();
 
-    Mat output = net.forward();
-    net.forward(output);
+        std::vector<int> token_ids_checker = argmax_tokens(reinterpret_cast<const float*>(output_checker.data), output_checker.size[0], output_checker.size[1], output_checker.size[2]);
+        std::vector<int> token_ids = argmax_tokens(reinterpret_cast<const float*>(output.data), output.size[0], output.size[1], output.size[2]);
 
-    output.print(10);
+        for (int j = 0; j < token_ids.size(); j++)
+        {
+            M_Assert(token_ids[j] == token_ids_checker[j]);
+        }
+        
+        std::string out_text, checker_text;
+        net.decode(token_ids, out_text);
+        net.decode(token_ids_checker, checker_text);
+        
+        std::cout << "Decoded Text: " << out_text << std::endl;
+        std::cout << "Checker Text: " << checker_text << std::endl;
 
-    std::vector<int> out_idx = argmax_tokens((float*)output.data, 1, output.size[1], output.size[2]);
+        std::cout << "Running forward pass for prompt " << i << std::endl;
 
-    std::cout << "Out Token IDs: ";
-    for (int id : out_idx) std::cout << id << " ";
-    std::cout << std::endl;
+        // dump internal tensors if accessible, otherwise just print output.
+        // To directly check Embedding, we would need to access net.layers_[1]->output[0] etc.
+        // Assuming we can access layers_ if public, else skip
+        // checking the first 10 float values of the final output explicitly.
 
-    std::string out_text;
-    // out_text = SafeDecodeTokens(sp, out_idx);
-    net.decode(out_idx, out_text);
+        std::cout << "Engine output shape: ";
+        for (int d = 0; d < output.dims; ++d) std::cout << output.size[d] << " ";
+        std::cout << "\nChecker output shape: ";
+        for (int d = 0; d < output_checker.dims; ++d) std::cout << output_checker.size[d] << " ";
+        std::cout << std::endl;
+        
+        // Since we explicitly save [1, seq_len, vocab_size] from python, the shapes match exactly
+        double mean_l1 = norm(output, output_checker, NORM_L1) / output.total();
+        double rel_l2_a  = norm(output, output_checker, NORM_L2);
+        double rel_l2_b = norm(output_checker, NORM_L2) + 1e-12;
+        double rel_l2 = rel_l2_a / rel_l2_b;
+        double max_err = norm(output, output_checker, NORM_INF);
 
-    std::cout << "Output Text: " << out_text << std::endl;
+        std::cout<<"output_checker"<<std::endl;
+        output_checker.print(10);
+        std::cout<<"output"<<std::endl;
+        output.print(10);
+        // M_Assert(mean_l1 < 1);
+        // M_Assert(rel_l2_a  < 1e-5);
+        // M_Assert(rel_l2_b  < 1e-5);
+        // M_Assert(max_err < 2);
 
-    // TODO add the forward type.
+        std::cout << "Prompt " << i << " -> mean L1 = " << mean_l1
+                  << ", relative L2 = " << rel_l2
+                  << ", max abs = " << max_err << std::endl;
+
+        if (i == 0) {
+            const float* outs = reinterpret_cast<const float*>(output.data);
+            int vocab_size = output.size[2]; // Assuming output shape is [batch, seq_len, vocab_size]
+            std::cout << "DEBUG: C++ Logits Token 0 First 10: ";
+            for (int d = 0; d < 10; d++) {
+                std::cout << outs[d] << " ";
+            }
+            std::cout << std::endl;
+            
+            std::cout << "DEBUG: C++ Logits Token 1 First 10: ";
+            for (int d = 0; d < 10; d++) {
+                std::cout << outs[1 * vocab_size + d] << " ";
+            }
+            std::cout << std::endl;
+        }
+    }
 }

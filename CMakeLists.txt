@@ -29,11 +29,11 @@ endif ()
 add_definitions(-DM_ROOT_PATH="${CMAKE_CURRENT_LIST_DIR}")
 
 include_directories(
+        ${CMAKE_CURRENT_LIST_DIR}/3rdparty/
         ${CMAKE_CURRENT_LIST_DIR}/include/
         ${CMAKE_CURRENT_LIST_DIR}/src/
         ${CMAKE_CURRENT_LIST_DIR}/src/core
         ${CMAKE_CURRENT_LIST_DIR}/tools/
-        ${CMAKE_CURRENT_LIST_DIR}/3rdparty/
 )
 
 FILE(GLOB_RECURSE M_Core_SRC

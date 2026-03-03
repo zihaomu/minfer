@@ -30,17 +30,21 @@ EmbeddingLayer::EmbeddingLayer(const std::shared_ptr<EmbeddingLayerParams> param
     {
         // 这种情况是[vocab_dim, embd_dim]
         w = wFp32;
+        std::cout << "EmbLayer Init: Shape is [vocab_dim, embd_dim], no transpose needed." << std::endl;
     }
     else if (w_shape[0] == embd_dim && w_shape[1] == vocab_dim)
     {
         // 这种情况是[embd_dim, vocab_dim]
+        w = wFp32;
         std::vector<int> new_shape = {vocab_dim, embd_dim};
-        w = transpose(wFp32);
+        w.setSize(new_shape);
+        std::cout << "EmbLayer Init: Shape is [embd_dim, vocab_dim], just reshaped wFp32 to [vocab_dim, embd_dim] without transposing." << std::endl;
     }
     else
         M_Error(NULL, "EmbeddingLayer weight shape is not supported! ");
 
     MatShape w_shape2 = w.shape();
+    std::cout << "EmbLayer Init Final Shape: [" << w_shape2[0] << ", " << w_shape2[1] << "]" << std::endl;
     M_Assert(w_shape2[0] == vocab_dim);
     M_Assert(w_shape2[1] == embd_dim);
 }
@@ -66,10 +70,13 @@ void EmbeddingLayer::init(const std::vector<Mat*> &input, std::vector<Mat*> &out
     M_Assert(output.size() == 1);
 
     MatShape in_shape = input[0]->shape();
-    M_Assert(in_shape.size() == 2); // [batch, seq_len]
+    M_Assert(in_shape.size() == 1 || in_shape.size() == 2); // [seq_len] or [batch, seq_len]
+
+    int batch = in_shape.size() == 2 ? in_shape[0] : 1;
+    int seq_len = in_shape.size() == 2 ? in_shape[1] : in_shape[0];
 
     // 设置同样的shape
-    MatShape out_shape = {in_shape[0], in_shape[1], embd_dim};
+    MatShape out_shape = {batch, seq_len, embd_dim};
     output[0]->setSize(out_shape);
 }
 
@@ -80,21 +87,22 @@ void EmbeddingLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &
 
     // 维度对齐
     MatShape in_shape = input[0]->shape();
-    M_Assert(in_shape.size() == 2); // [batch, seq_len]
+    M_Assert(in_shape.size() == 1 || in_shape.size() == 2); // [seq_len] or [batch, seq_len]
+
+    int batch = in_shape.size() == 2 ? in_shape[0] : 1;
+    int seq_len = in_shape.size() == 2 ? in_shape[1] : in_shape[0];
 
     // TODO Multi batch
-    M_Assert(in_shape[0] == 1 && "Currently, only support single batch!");
+    M_Assert(batch == 1 && "Currently, only support single batch!");
     M_Assert(input[0]->type() == DT_32S); // 输入必须是整型
-    M_Assert(output[0]->type() == DT_32F); // 输入必须是整型
+    M_Assert(output[0]->type() == DT_32F); // 输入必须是浮点型
 
     MatShape out_shape = output[0]->shape();
 
     M_Assert(out_shape.size() == 3); // [batch, seq_len, embd_dim]
     M_Assert(out_shape[0] == 1);
-    M_Assert(out_shape[1] == in_shape[1]); // seq_len should be same
+    M_Assert(out_shape[1] == seq_len); // seq_len should be same
     M_Assert(out_shape[2] == embd_dim);
-
-    size_t seq_len = in_shape[1];
 
     int* index = (int*)input[0]->data;
     float* w_ptr = (float*)w.data;
@@ -106,6 +114,15 @@ void EmbeddingLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &
         float* embd = output_ptr + i * embd_dim;
 
         memcpy(embd, w_ptr + word_id * embd_dim, embd_dim * sizeof(float));
+        
+        // Debug
+        if (i < 2) {
+            std::cout << "EmbLayer Token " << i << " (ID " << word_id << ") First 10: ";
+            for (int k = 0; k < 10; k++) {
+                std::cout << embd[k] << " ";
+            }
+            std::cout << std::endl;
+        }
     }
 }
 

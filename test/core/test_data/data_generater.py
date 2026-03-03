@@ -1,12 +1,12 @@
 # this file contains python test data generated code.
 # It's used to generate test input and output code for C++ layer defined in layer.h
-
+# NOTE: This script must be run at root directory of minfer.
 import numpy as np
 import math
 import sys
 import os
 
-ROOT_PATH = "./data"
+ROOT_PATH = "./test/core/test_data/data"
 # random seed
 np.random.seed(0)
 

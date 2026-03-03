@@ -712,11 +712,11 @@ struct LLama_loader
             return m;
         }
 
-        // convert uint64 to int 32
+        // convert uint64 to int 32 and transpose dimensions from GGML format (x, y, z) to numpy format (..., height, width)
         std::vector<int> dims(t->n_dims);
         for (int i = 0; i < dims.size(); i++)
         {
-            dims[i] = t->ne[i];
+            dims[i] = t->ne[t->n_dims - 1 - i];
         }
 
         M_Assert(t->data && "tensor data is empty!!");
@@ -762,6 +762,7 @@ struct LLama_loader
         llmKv = LLM_KV_Impl(llm_arch_from_string(arch_name));
 
         // get params
+        std::cout << "DEBUG: Starting to get_key inside LLama_loader!" << std::endl;
         this->get_key(LLM_KV_VOCAB_SIZE, params.n_vocab, false) || this->get_arr_n(LLM_KV_TOKENIZER_LIST, params.n_vocab);
         this->get_key(LLM_KV_CONTEXT_LENGTH, params.n_ctx_length);
         this->get_key(LLM_KV_EMBEDDING_LENGTH, params.n_embd);
@@ -777,7 +778,12 @@ struct LLama_loader
         this->get_key(LLM_KV_ROPE_DIMENSION_COUNT, params.n_rope_dim_count, false);
         M_Assert(params.n_rope_dim_count == params.n_embd / params.n_head && "Invalid n_rope_dim_count!");
 
+        std::cout << "DEBUG: Checking ROPE_FREQ_BASE" << std::endl;
         this->get_key(LLM_KV_ROPE_FREQ_BASE, params.rope_freq_base_train, false);
+
+        std::cout << "DEBUG: Checking LAYERNORM_RMS_EPS" << std::endl;
+        this->get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, params.f_norm_rms_eps, false);
+        std::cout << "DEBUG: Finished parsing in loader! eps = " << params.f_norm_rms_eps << std::endl;
     }
 };
 
@@ -851,36 +857,38 @@ void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >
     // how to construct the model from context
 
     // TODO: 目前会通过loader去持有内存，从而让内存在create net的阶段可读。
-    static LLama_loader loader = LLama_loader(path, false, nullptr);
-    LLM_ARCH arch = loader.get_arch();
+    static LLama_loader* loader = nullptr;
+    if (loader) delete loader;
+    loader = new LLama_loader(path, false, nullptr);
+    LLM_ARCH arch = loader->get_arch();
 
     std::cout<<"Arch = "<<LLM_ARCH_NAMES.at(arch)<<std::endl;
     // print base info of llm model
-    std::cout<<"n_vocab = "<<loader.params.n_vocab<<std::endl;
-    std::cout<<"n_ctx_length = "<<loader.params.n_ctx_length<<std::endl;
-    std::cout<<"n_embd = "<<loader.params.n_embd<<std::endl;
-    std::cout<<"n_ff = "<<loader.params.n_ff<<std::endl;
-    std::cout<<"n_head = "<<loader.params.n_head<<std::endl;
-    std::cout<<"n_head_kv = "<<loader.params.n_head_kv<<std::endl;
-    std::cout<<"n_layer = "<<loader.params.n_layer<<std::endl;
-    std::cout<<"n_rope_dim_count = "<<loader.params.n_rope_dim_count<<std::endl;
-    std::cout<<"rope_freq_base_train = "<<loader.params.rope_freq_base_train<<std::endl;
-    std::cout<<"f_norm_rms_eps = "<<loader.params.f_norm_rms_eps<<std::endl;
+    std::cout<<"n_vocab = "<<loader->params.n_vocab<<std::endl;
+    std::cout<<"n_ctx_length = "<<loader->params.n_ctx_length<<std::endl;
+    std::cout<<"n_embd = "<<loader->params.n_embd<<std::endl;
+    std::cout<<"n_ff = "<<loader->params.n_ff<<std::endl;
+    std::cout<<"n_head = "<<loader->params.n_head<<std::endl;
+    std::cout<<"n_head_kv = "<<loader->params.n_head_kv<<std::endl;
+    std::cout<<"n_layer = "<<loader->params.n_layer<<std::endl;
+    std::cout<<"n_rope_dim_count = "<<loader->params.n_rope_dim_count<<std::endl;
+    std::cout<<"rope_freq_base_train = "<<loader->params.rope_freq_base_train<<std::endl;
+    std::cout<<"f_norm_rms_eps = "<<loader->params.f_norm_rms_eps<<std::endl;
 
-    gguf_vocab->loadFromGGUF(&loader);
+    gguf_vocab->loadFromGGUF(loader);
 
     const auto getTensorName = LLM_TN(arch);
     // construct llama by loader to netParams
     std::string miss = "__missing__";
 
-    auto& p = loader.params;
+    auto& p = loader->params;
     // parse llama model
     if (arch == LLM_ARCH_LLAMA)
     {
         std::string out;
 
         // handle tok_embedding
-        Mat embdMat = loader.create_mat(getTensorName(LLM_TENSOR_TOKEN_EMBD, "weight"));
+        Mat embdMat = loader->create_mat(getTensorName(LLM_TENSOR_TOKEN_EMBD, "weight"));
         M_Assert(!embdMat.empty() && "Error when to create llama mat!");
 
         // set model input
@@ -895,20 +903,20 @@ void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >
         int layer_id = 2;
         // handle multi attention layer
         {
-            for (int i = 0; i < loader.params.n_layer; i++)
+            for (int i = 0; i < loader->params.n_layer; i++)
             {
                 // get attn Mats
-                Mat attn_norm = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_NORM, "weight", i));
-                Mat wq = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_Q, "weight", i));
-                Mat wk = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_K, "weight", i));
-                Mat wv = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_V, "weight", i));
-                Mat wo = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_OUT, "weight", i));
+                Mat attn_norm = loader->create_mat(getTensorName(LLM_TENSOR_ATTN_NORM, "weight", i));
+                Mat wq = loader->create_mat(getTensorName(LLM_TENSOR_ATTN_Q, "weight", i));
+                Mat wk = loader->create_mat(getTensorName(LLM_TENSOR_ATTN_K, "weight", i));
+                Mat wv = loader->create_mat(getTensorName(LLM_TENSOR_ATTN_V, "weight", i));
+                Mat wo = loader->create_mat(getTensorName(LLM_TENSOR_ATTN_OUT, "weight", i));
 
                 // optional bias tensors
-                Mat bq = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_Q, "bias", i), false);
-                Mat bk = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_K, "bias", i), false);
-                Mat bv = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_V, "bias", i), false);
-                Mat bo = loader.create_mat(getTensorName(LLM_TENSOR_ATTN_OUT, "bias", i), false);
+                Mat bq = loader->create_mat(getTensorName(LLM_TENSOR_ATTN_Q, "bias", i), false);
+                Mat bk = loader->create_mat(getTensorName(LLM_TENSOR_ATTN_K, "bias", i), false);
+                Mat bv = loader->create_mat(getTensorName(LLM_TENSOR_ATTN_V, "bias", i), false);
+                Mat bo = loader->create_mat(getTensorName(LLM_TENSOR_ATTN_OUT, "bias", i), false);
 
                 // add Attn layer
                 netParams.push_back(
@@ -918,29 +926,27 @@ void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >
                                 ))
                         );
 
-                layer_id ++;
-
                 // get FFN mats
-                Mat ffn_norm = loader.create_mat(getTensorName(LLM_TENSOR_FFN_NORM, "weight", i));
-                Mat ffn_gate = loader.create_mat(getTensorName(LLM_TENSOR_FFN_GATE, "weight", i), false);
-                Mat ffn_down = loader.create_mat(getTensorName(LLM_TENSOR_FFN_DOWN, "weight", i), false);
-                Mat ffn_up = loader.create_mat(getTensorName(LLM_TENSOR_FFN_UP, "weight", i), false);
+                Mat ffn_norm = loader->create_mat(getTensorName(LLM_TENSOR_FFN_NORM, "weight", i));
+                Mat ffn_gate = loader->create_mat(getTensorName(LLM_TENSOR_FFN_GATE, "weight", i), false);
+                Mat ffn_down = loader->create_mat(getTensorName(LLM_TENSOR_FFN_DOWN, "weight", i), false);
+                Mat ffn_up = loader->create_mat(getTensorName(LLM_TENSOR_FFN_UP, "weight", i), false);
 
                 // add FFN layer
                 netParams.push_back(
                         std::shared_ptr<LayerParams>(new FeedForwardLayerParams(
-                                {layer_id}, {layer_id + 1}, ActivateType::SILU, p.n_embd, p.n_ff, p.f_norm_rms_eps,
+                                {layer_id + 1}, {layer_id + 2}, ActivateType::SILU, p.n_embd, p.n_ff, p.f_norm_rms_eps,
                                 ffn_norm, ffn_gate, ffn_up, ffn_down
                                 ))
                         );
-                layer_id++;
+                layer_id += 2;
             }
         }
 
         // handle output
         {
             // create output norm
-            Mat out_norm = loader.create_mat(getTensorName(LLM_TENSOR_OUTPUT_NORM, "weight"));
+            Mat out_norm = loader->create_mat(getTensorName(LLM_TENSOR_OUTPUT_NORM, "weight"));
             M_Assert(!out_norm.empty() && "Error when to create llama mat!");
 
             netParams.push_back(std::shared_ptr<LayerParams>(
@@ -948,12 +954,12 @@ void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >
 
             layer_id++;
 
-            Mat outWeight = loader.create_mat(getTensorName(LLM_TENSOR_OUTPUT, "weight"), false);
+            Mat outWeight = loader->create_mat(getTensorName(LLM_TENSOR_OUTPUT, "weight"), false);
 
             // if output is NULL, init from the input tok embed
             if (outWeight.empty())
             {
-                outWeight = loader.create_mat(getTensorName(LLM_TENSOR_TOKEN_EMBD, "weight"));
+                outWeight = loader->create_mat(getTensorName(LLM_TENSOR_TOKEN_EMBD, "weight"));
             }
 
             // create output out-embedding

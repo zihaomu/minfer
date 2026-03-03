@@ -20,10 +20,12 @@ uint16_t fp32_to_fp16(const float in);
 std::string shape_to_str(const Mat& m);
 std::string shape_to_str(const MatShape& shape);
 
-
 // shape inferen of multi-dim gemm op
 MatShape get_gemm_shape(const Mat& A, const Mat& B);
 MatShape get_gemm_shape(const MatShape&A, const MatShape& B);
+
+// get the argmax tokens from the logits
+std::vector<int> argmax_tokens(const float* logits, int batch, int seq_len, int vocab_size);
 
 }
 

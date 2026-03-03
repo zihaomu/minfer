@@ -723,6 +723,25 @@ size_t Mat::total(int startDim, int endDim) const
     return p;
 }
 
+void Mat::printShape() const
+{
+    if (empty())
+    {
+        std::cout<<"shape = []"<<std::endl;
+        return;
+    }
+
+    std::cout<<"shape = ["<<size.p[0]<<"x";
+    for (int i = 1; i < dims; i++)
+    {
+        if (i == dims - 1)
+            std::cout<<size.p[i];
+        else
+            std::cout<<size.p[i]<<"x";
+    }
+    std::cout<<"]"<<std::endl;
+}
+
 void Mat::print(int len) const
 {
     if (empty())
