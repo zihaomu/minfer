@@ -5,6 +5,7 @@
 #ifndef MINFER_GGUF_UTILS_H
 #define MINFER_GGUF_UTILS_H
 
+#include <cinttypes>
 #include "minfer.h"
 #include "../memory_utils.h"
 #include "gguf_loader.h"

@@ -46,6 +46,16 @@ void Layer::forward(const std::vector<Mat*> & input, std::vector<Mat*> & output,
     this->forward(input, output);
 }
 
+void Layer::forward(const std::vector<Mat*> & input, std::vector<Mat*> & output, const InferenceContext&)
+{
+    this->forward(input, output);
+}
+
+void Layer::resetKVCache()
+{
+    // 默认空实现，仅 AttentionLayer 需要重写
+}
+
 int Layer::getId()
 {
     return layerId;

@@ -40,6 +40,12 @@ public:
 
     void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
+    // forward with inference context for chat (prefill/decode with KV cache)
+    void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output, const InferenceContext& ctx) override;
+
+    // 重置 KV Cache
+    void resetKVCache() override;
+
 private:
     Mat norm;
     Mat wq;
@@ -63,6 +69,15 @@ private:
     int embd_dim_kv;       // embd_dim of kv
 
     int start_pos = 0;     // 标志从哪里开始开始推理
+
+    // ====== KV Cache ======
+    Mat k_cache; // shape: [head_count_kv, max_seq_len, embd_dim_head]
+    Mat v_cache; // shape: [head_count_kv, max_seq_len, embd_dim_head]
+    int cached_len = 0; // 已缓存的 token 数
+
+    // 内部辅助方法
+    void forwardPrefill(const std::vector<Mat*>& input, std::vector<Mat*>& output, const InferenceContext& ctx);
+    void forwardDecode(const std::vector<Mat*>& input, std::vector<Mat*>& output, const InferenceContext& ctx);
 
     AttentionLayer(const std::shared_ptr<AttentionLayerParams> param);
 };

@@ -74,6 +74,12 @@ AttentionLayer::AttentionLayer(const std::shared_ptr<AttentionLayerParams> param
     // minfer::gemm does not currently support `transposeB=true`.
     // GGUF K and V matrices are stored as `[embd_dim_kv, embd_dim]`, so we
     // transpose them here during initialization so that `gemm` with `false, false` works.
+
+    // 预分配 KV Cache
+    std::vector<int> cache_shape = {head_count_kv, max_seq_len, embd_dim_head};
+    k_cache = Mat(cache_shape, DT_32F, 0);
+    v_cache = Mat(cache_shape, DT_32F, 0);
+    cached_len = 0;
 }
 
 void AttentionLayer::finalize(const std::vector<Mat *> &input, std::vector<Mat *> &output)
@@ -425,7 +431,8 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     // print_mat(out, 128, 20);
     // print_mat(out, 128 * 2, 20);
     // print_mat(out, 128 * 3, 20);
-    out = x_out + *input[0];
+    // Residual connection (就地加法，确保结果写回 *output[0])
+    out += *input[0];
 
     // 最后加上这次的seq len
     start_pos += seq_len;
@@ -460,6 +467,323 @@ std::shared_ptr<AttentionLayer> AttentionLayer::create(const std::shared_ptr<Lay
     M_Assert(attn_param->type == LayerType::Attention);
 
     return std::shared_ptr<AttentionLayer>(new AttentionLayer(attn_param));
+}
+
+// ====== Chat Forward with InferenceContext ======
+
+void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *> &output, const InferenceContext& ctx)
+{
+    if (ctx.phase == InferPhase::Prefill)
+    {
+        forwardPrefill(input, output, ctx);
+    }
+    else
+    {
+        forwardDecode(input, output, ctx);
+    }
+}
+
+// Helper: compute RMS norm for a slice of tokens
+static void rms_norm_slice(const float* input, float* out, const float* norm_w, int seq_len, int embd_dim, float eps)
+{
+    for (int i = 0; i < seq_len; i++)
+    {
+        const float* pi_s = input + i * embd_dim;
+        float* po = out + i * embd_dim;
+
+        float sum_f2 = 0;
+        for (int j = 0; j < embd_dim; j++)
+            sum_f2 += pi_s[j] * pi_s[j];
+
+        float x1 = 1.f / sqrtf(sum_f2 / embd_dim + eps);
+        for (int j = 0; j < embd_dim; j++)
+            po[j] = pi_s[j] * x1 * norm_w[j];
+    }
+}
+
+// Helper: apply RoPE to Q and K
+static void apply_rope(float* x_q_data, float* x_k_data, int seq_len, int start_pos,
+                        int head_count, int head_count_kv, int embd_dim_head)
+{
+    int embd_dim_head_complex = embd_dim_head / 2;
+    std::vector<float> freqs_cis(embd_dim_head_complex);
+    for (int i = 0; i < embd_dim_head_complex; i++)
+        freqs_cis[i] = 1.0f / powf(10000.0f, i * 2 / (float)(embd_dim_head));
+
+    for (int i = 0; i < seq_len; i++)
+    {
+        int cur_seq = i + start_pos;
+        float* p_x_q = x_q_data + i * embd_dim_head * head_count;
+        float* p_x_k = x_k_data + i * embd_dim_head * head_count_kv;
+
+        for (int h = 0; h < head_count; h++)
+        {
+            for (int j = 0; j < embd_dim_head_complex; j++)
+            {
+                float freqs_sin = sinf(cur_seq * freqs_cis[j]);
+                float freqs_cos = cosf(cur_seq * freqs_cis[j]);
+                float q_r = p_x_q[j * 2];
+                float q_i = p_x_q[j * 2 + 1];
+                p_x_q[j * 2]     = q_r * freqs_cos - q_i * freqs_sin;
+                p_x_q[j * 2 + 1] = q_r * freqs_sin + q_i * freqs_cos;
+            }
+            p_x_q += embd_dim_head;
+        }
+
+        for (int h = 0; h < head_count_kv; h++)
+        {
+            for (int j = 0; j < embd_dim_head_complex; j++)
+            {
+                float freqs_sin = sinf(cur_seq * freqs_cis[j]);
+                float freqs_cos = cosf(cur_seq * freqs_cis[j]);
+                float k_r = p_x_k[j * 2];
+                float k_i = p_x_k[j * 2 + 1];
+                p_x_k[j * 2]     = k_r * freqs_cos - k_i * freqs_sin;
+                p_x_k[j * 2 + 1] = k_r * freqs_sin + k_i * freqs_cos;
+            }
+            p_x_k += embd_dim_head;
+        }
+    }
+}
+
+void AttentionLayer::forwardPrefill(const std::vector<Mat *> &input, std::vector<Mat *> &output, const InferenceContext& ctx)
+{
+    M_Assert(input.size() == 1 && input[0]);
+    M_Assert(output.size() == 1 && output[0]);
+
+    MatShape in_shape = input[0]->shape();
+    M_Assert(in_shape.size() == 3);
+    M_Assert(in_shape[2] == embd_dim);
+    M_Assert(in_shape[0] == 1 && "Currently, only support single batch!");
+    M_Assert(input[0]->type() == DT_32F);
+
+    int seq_len = in_shape[1];
+
+    // Step 0: RMS Norm
+    Mat x = *input[0];
+    Mat x_norm = Mat(x.dims - 1, x.size.p + 1, DT_32F);
+    rms_norm_slice((float*)x.data, (float*)x_norm.data, (float*)norm.data, seq_len, embd_dim, rms_eps);
+
+    // Step 1: Q K V linear
+    Mat x_q = gemm(x_norm, wq, false, true);
+    Mat x_k = gemm(x_norm, wk, false, true);
+    Mat x_v = gemm(x_norm, wv, false, true);
+
+    // Step 2: RoPE
+    M_Assert(embd_dim_head % 2 == 0);
+    apply_rope((float*)x_q.data, (float*)x_k.data, seq_len, ctx.start_pos,
+               head_count, head_count_kv, embd_dim_head);
+
+    // Step 3: Reshape to multi-head format
+    std::vector<int> new_shape_q = {seq_len, head_count, embd_dim_head};
+    std::vector<int> new_shape_kv = {seq_len, head_count_kv, embd_dim_head};
+    x_q = x_q.reshape(new_shape_q);
+    x_k = x_k.reshape(new_shape_kv);
+    x_v = x_v.reshape(new_shape_kv);
+
+    // Step 4: Write K, V to cache
+    // k_cache/v_cache shape: [head_count_kv, max_seq_len, embd_dim_head]
+    // x_k shape: [seq_len, head_count_kv, embd_dim_head] -> need to transpose to [head_count_kv, seq_len, embd_dim_head]
+    Mat x_k_t = transposeND(x_k, {1, 0, 2}); // [head_count_kv, seq_len, embd_dim_head]
+    Mat x_v_t = transposeND(x_v, {1, 0, 2});
+
+    for (int h = 0; h < head_count_kv; h++)
+    {
+        float* dst_k = (float*)k_cache.data + h * max_seq_len * embd_dim_head + ctx.start_pos * embd_dim_head;
+        float* dst_v = (float*)v_cache.data + h * max_seq_len * embd_dim_head + ctx.start_pos * embd_dim_head;
+        float* src_k = (float*)x_k_t.data + h * seq_len * embd_dim_head;
+        float* src_v = (float*)x_v_t.data + h * seq_len * embd_dim_head;
+        memcpy(dst_k, src_k, seq_len * embd_dim_head * sizeof(float));
+        memcpy(dst_v, src_v, seq_len * embd_dim_head * sizeof(float));
+    }
+    cached_len = ctx.start_pos + seq_len;
+
+    // Step 5: Repeat KV for GQA
+    if (repeat_kv > 1)
+    {
+        Mat x_k_repeated = Mat({seq_len, head_count, embd_dim_head}, x_k.type());
+        Mat x_v_repeated = Mat({seq_len, head_count, embd_dim_head}, x_v.type());
+        float* k_src = (float*)x_k.data;
+        float* v_src = (float*)x_v.data;
+        float* k_dst = (float*)x_k_repeated.data;
+        float* v_dst = (float*)x_v_repeated.data;
+        for (int s = 0; s < seq_len; s++)
+        {
+            for (int h = 0; h < head_count; h++)
+            {
+                int kv_head = h / repeat_kv;
+                memcpy(k_dst + (s * head_count + h) * embd_dim_head,
+                       k_src + (s * head_count_kv + kv_head) * embd_dim_head,
+                       embd_dim_head * sizeof(float));
+                memcpy(v_dst + (s * head_count + h) * embd_dim_head,
+                       v_src + (s * head_count_kv + kv_head) * embd_dim_head,
+                       embd_dim_head * sizeof(float));
+            }
+        }
+        x_k = x_k_repeated;
+        x_v = x_v_repeated;
+    }
+
+    // Step 6: Transpose for attention
+    x_q = transposeND(x_q, {1, 0, 2}); // [head_count, seq_len, embd_dim_head]
+    x_k = transposeND(x_k, {1, 0, 2});
+    x_v = transposeND(x_v, {1, 0, 2});
+
+    // Step 7: Attention with causal mask
+    Mat qk = gemm(x_q, x_k, false, true);
+    Mat qk_sqrt = qk / sqrtf(embd_dim_head);
+
+    // Build causal mask
+    int dim_qk = qk_sqrt.size.dims();
+    size_t m = qk_sqrt.size.p[dim_qk - 2];
+    size_t n = qk_sqrt.size.p[dim_qk - 1];
+    std::vector<int> mask_shape(dim_qk, 1);
+    mask_shape[dim_qk - 1] = n;
+    mask_shape[dim_qk - 2] = m;
+    Mat mask = Mat(mask_shape, DT_32F);
+    float* p_mask = (float*)mask.data;
+    for (int i = 0; i < (int)m; i++)
+        for (int j = 0; j < (int)n; j++)
+            p_mask[i * n + j] = i >= j ? 1.0f : 0.0f;
+
+    Mat mask_1e20 = (1.f - mask) * 1e20f;
+    qk_sqrt = qk_sqrt * mask - mask_1e20;
+
+    Mat score = softmax(qk_sqrt);
+
+    // Step 8: score * V
+    Mat qkv = gemm(score, x_v);
+
+    // Step 9: Transpose back and output linear
+    Mat out = *output[0];
+    Mat x_out = Mat(out.size.dims() - 1, out.size.p + 1, out.type(), out.data);
+    Mat qkvT = transposeND(qkv, {1, 0, 2});
+    qkvT = qkvT.reshape({seq_len, head_count * embd_dim_head});
+    gemm(qkvT, wout, false, true).copyTo(x_out);
+
+    // Residual connection
+    // Residual connection (就地加法，确保结果写回 *output[0])
+    out += *input[0];
+}
+
+void AttentionLayer::forwardDecode(const std::vector<Mat *> &input, std::vector<Mat *> &output, const InferenceContext& ctx)
+{
+    M_Assert(input.size() == 1 && input[0]);
+    M_Assert(output.size() == 1 && output[0]);
+
+    MatShape in_shape = input[0]->shape();
+    M_Assert(in_shape.size() == 3);
+    M_Assert(in_shape[1] == 1 && "Decode phase should process 1 token at a time!");
+    M_Assert(in_shape[2] == embd_dim);
+    M_Assert(input[0]->type() == DT_32F);
+
+    int cur_pos = ctx.start_pos; // position of this new token
+
+    // Step 0: RMS Norm (1 token)
+    Mat x = *input[0];
+    Mat x_norm = Mat(x.dims - 1, x.size.p + 1, DT_32F);
+    rms_norm_slice((float*)x.data, (float*)x_norm.data, (float*)norm.data, 1, embd_dim, rms_eps);
+
+    // Step 1: Q K V linear (1 token)
+    Mat x_q = gemm(x_norm, wq, false, true); // [1, embd_dim]
+    Mat x_k = gemm(x_norm, wk, false, true); // [1, embd_dim_kv]
+    Mat x_v = gemm(x_norm, wv, false, true);
+
+    // Step 2: RoPE (1 token)
+    M_Assert(embd_dim_head % 2 == 0);
+    apply_rope((float*)x_q.data, (float*)x_k.data, 1, cur_pos,
+               head_count, head_count_kv, embd_dim_head);
+
+    // Step 3: Write new K, V to cache at position cur_pos
+    // x_k shape: [1, embd_dim_kv] = [1, head_count_kv * embd_dim_head]
+    for (int h = 0; h < head_count_kv; h++)
+    {
+        float* dst_k = (float*)k_cache.data + h * max_seq_len * embd_dim_head + cur_pos * embd_dim_head;
+        float* dst_v = (float*)v_cache.data + h * max_seq_len * embd_dim_head + cur_pos * embd_dim_head;
+        float* src_k = (float*)x_k.data + h * embd_dim_head;
+        float* src_v = (float*)x_v.data + h * embd_dim_head;
+        memcpy(dst_k, src_k, embd_dim_head * sizeof(float));
+        memcpy(dst_v, src_v, embd_dim_head * sizeof(float));
+    }
+    cached_len = cur_pos + 1;
+
+    int total_len = cached_len; // total KV sequence length including this token
+
+    // Step 4: Reshape Q for multi-head: [1, head_count, embd_dim_head]
+    x_q = x_q.reshape({1, head_count, embd_dim_head});
+
+    // Step 5: Get full K, V from cache for attention: [head_count_kv, total_len, embd_dim_head]
+    // Slice cache to [head_count_kv, total_len, embd_dim_head]
+    Mat k_slice = Mat({head_count_kv, total_len, embd_dim_head}, DT_32F);
+    Mat v_slice = Mat({head_count_kv, total_len, embd_dim_head}, DT_32F);
+    for (int h = 0; h < head_count_kv; h++)
+    {
+        float* src_k = (float*)k_cache.data + h * max_seq_len * embd_dim_head;
+        float* src_v = (float*)v_cache.data + h * max_seq_len * embd_dim_head;
+        float* dst_k = (float*)k_slice.data + h * total_len * embd_dim_head;
+        float* dst_v = (float*)v_slice.data + h * total_len * embd_dim_head;
+        memcpy(dst_k, src_k, total_len * embd_dim_head * sizeof(float));
+        memcpy(dst_v, src_v, total_len * embd_dim_head * sizeof(float));
+    }
+
+    // Step 6: Repeat KV for GQA, then transpose
+    // k_slice: [head_count_kv, total_len, embd_dim_head]
+    // Need to expand to [head_count, total_len, embd_dim_head] if GQA
+    Mat k_attn, v_attn;
+    if (repeat_kv > 1)
+    {
+        k_attn = Mat({head_count, total_len, embd_dim_head}, DT_32F);
+        v_attn = Mat({head_count, total_len, embd_dim_head}, DT_32F);
+        for (int h = 0; h < head_count; h++)
+        {
+            int kv_head = h / repeat_kv;
+            memcpy((float*)k_attn.data + h * total_len * embd_dim_head,
+                   (float*)k_slice.data + kv_head * total_len * embd_dim_head,
+                   total_len * embd_dim_head * sizeof(float));
+            memcpy((float*)v_attn.data + h * total_len * embd_dim_head,
+                   (float*)v_slice.data + kv_head * total_len * embd_dim_head,
+                   total_len * embd_dim_head * sizeof(float));
+        }
+    }
+    else
+    {
+        k_attn = k_slice;
+        v_attn = v_slice;
+    }
+
+    // Step 7: Compute attention
+    // Q: [1, head_count, embd_dim_head] -> transpose to [head_count, 1, embd_dim_head]
+    Mat q_t = transposeND(x_q, {1, 0, 2}); // [head_count, 1, embd_dim_head]
+    // K: [head_count, total_len, embd_dim_head] (already in right format)
+
+    // QK: [head_count, 1, total_len]
+    Mat qk = gemm(q_t, k_attn, false, true);
+    Mat qk_sqrt = qk / sqrtf(embd_dim_head);
+
+    // Decode phase: single query token attends to all cached tokens, no mask needed
+    Mat score = softmax(qk_sqrt);
+
+    // Step 8: score * V: [head_count, 1, embd_dim_head]
+    Mat qkv = gemm(score, v_attn);
+
+    // Step 9: Transpose back and output linear
+    Mat out = *output[0];
+    Mat x_out = Mat(out.size.dims() - 1, out.size.p + 1, out.type(), out.data);
+    Mat qkvT = transposeND(qkv, {1, 0, 2}); // [1, head_count, embd_dim_head]
+    qkvT = qkvT.reshape({1, head_count * embd_dim_head});
+    gemm(qkvT, wout, false, true).copyTo(x_out);
+
+    // Residual connection
+    // Residual connection (就地加法，确保结果写回 *output[0])
+    out += *input[0];
+}
+
+void AttentionLayer::resetKVCache()
+{
+    k_cache.setTo(0.0f);
+    v_cache.setTo(0.0f);
+    cached_len = 0;
+    start_pos = 0;
 }
 
 }

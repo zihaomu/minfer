@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include "mat.h"
+#include "context.h"
 
 namespace minfer
 {
@@ -203,6 +204,13 @@ public:
 
     // and the forward can be run several times
     virtual void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output);
+
+    // forward with inference context for chat (prefill/decode)
+    // 默认实现直接调用 forward(input, output)，Attention 层需要重写
+    virtual void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output, const InferenceContext& ctx);
+
+    // 重置 KV Cache，默认空实现，仅 AttentionLayer 需要重写
+    virtual void resetKVCache();
 
     void setId(int id);
 

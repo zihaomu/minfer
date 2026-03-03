@@ -2,6 +2,7 @@
 #define MINFER_NET_H
 
 #include "layer.h"
+#include "context.h"
 #include "mat.h"
 #include "map"
 
@@ -60,6 +61,17 @@ public:
 
     // 生成模式
     void generate(Mat& out);
+
+    // ====== Chat 生成接口 ======
+
+    /// Prefill 阶段：处理完整 prompt，返回最后一个 token 的 logits
+    Mat prefill(const std::vector<int>& token_ids);
+
+    /// 自回归生成一步：输入上一步产出的 token，返回下一个 token 的 logits
+    Mat step(int token_id);
+
+    /// 重置所有 AttentionLayer 的 KV Cache，开始新一轮对话
+    void resetKVCache();
 
     Mat forward();
 

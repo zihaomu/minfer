@@ -78,10 +78,22 @@ void Net::decode(const std::vector<int> &out_ids, std::string &out_text)
     return impl->decode(out_ids, out_text);
 }
 
+Mat Net::prefill(const std::vector<int>& token_ids)
+{
+    M_Assert(impl != nullptr);
+    return impl->prefill(token_ids);
+}
 
-//void Net::forward(std::vector<Mat>& outs, const std::vector<std::string> names)
-//{
-//    M_Assert(impl != nullptr);
-//    return impl->forward(outs, names);
-//}
+Mat Net::step(int token_id)
+{
+    M_Assert(impl != nullptr);
+    return impl->step(token_id);
+}
+
+void Net::resetKVCache()
+{
+    M_Assert(impl != nullptr);
+    return impl->resetKVCache();
+}
+
 }

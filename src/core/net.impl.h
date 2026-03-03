@@ -56,6 +56,11 @@ public:
 
     void encode(const std::string text, std::vector<int> &out_ids);
 
+    // Chat 生成接口
+    Mat prefill(const std::vector<int>& token_ids);
+    Mat step(int token_id);
+    void resetKVCache();
+
 private:
     void createLayerRecurve(int layerIdx, std::vector<int>& isLayerCreated, const std::map<int,
             std::vector<int> >& layer2Parent, const std::vector<std::shared_ptr<LayerParams> >& allLayerParams);
@@ -81,6 +86,8 @@ private:
     // 需要一个全局单例模式去管理所有Device，然后再指向这个Device。
 
     std::shared_ptr<GGUF_Vocab> gguf_vocab = nullptr; // 用于存储gguf模型的vocab
+
+    InferenceContext ctx_; // 推理上下文，用于 chat 生成
 };
 
 }

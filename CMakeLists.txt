@@ -48,3 +48,11 @@ list(APPEND M_TARGETS M_Core)
 include(src/backend/cpu/CMakeLists.txt)
 
 include(test/CMakeLists.txt)
+
+# Chat example
+add_executable(chat ${CMAKE_CURRENT_LIST_DIR}/example/chat.cpp)
+target_link_libraries(chat ${M_TARGETS})
+
+# Diagnostic test
+add_executable(diag_test /tmp/diag_test.cpp)
+target_link_libraries(diag_test ${M_TARGETS})

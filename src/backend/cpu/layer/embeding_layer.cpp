@@ -116,6 +116,7 @@ void EmbeddingLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &
         memcpy(embd, w_ptr + word_id * embd_dim, embd_dim * sizeof(float));
         
         // Debug
+        #if 0
         if (i < 2) {
             std::cout << "EmbLayer Token " << i << " (ID " << word_id << ") First 10: ";
             for (int k = 0; k < 10; k++) {
@@ -123,6 +124,7 @@ void EmbeddingLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &
             }
             std::cout << std::endl;
         }
+        #endif
     }
 }
 

@@ -379,4 +379,107 @@ void Net::NetImpl::encode(const std::string text, std::vector<int> &out_ids)
     gguf_vocab->encode(text, out_ids);
 }
 
+// ====== Chat 生成接口实现 ======
+
+Mat Net::NetImpl::prefill(const std::vector<int>& token_ids)
+{
+    int seq_len = token_ids.size();
+    M_Assert(seq_len > 0 && "Token ids must not be empty!");
+
+    // 设置推理上下文
+    ctx_.phase = InferPhase::Prefill;
+    ctx_.start_pos = 0;
+    ctx_.seq_len = seq_len;
+
+    // 构造输入 Mat: token ids as int Mat [1, seq_len]
+    std::vector<int> input_shape = {1, seq_len};
+    Mat input_mat(input_shape, DT_32S, (void*)token_ids.data());
+
+    // 设置输入并初始化
+    this->setInput(input_mat, -1);
+
+    if (!hasInit)
+    {
+        this->init();
+        hasInit = true;
+    }
+
+    // 遍历所有层，使用带 context 的 forward
+    for (auto it = lds.begin(); it != lds.end(); it++)
+    {
+        it->layer->forward(it->inputs, it->outputs, ctx_);
+    }
+
+    // 更新 start_pos
+    ctx_.start_pos += seq_len;
+
+    M_Assert(outputMatId.size() == 1);
+    Mat* m = this->getMat(outputMatId[0]);
+    M_Assert(m && "Output Mat can not be empty!");
+    return *m;
+}
+
+Mat Net::NetImpl::step(int token_id)
+{
+    // 设置推理上下文
+    ctx_.phase = InferPhase::Decode;
+    ctx_.seq_len = 1;
+
+    // 构造输入 Mat: single token id [1, 1]
+    std::vector<int> input_shape = {1, 1};
+    Mat input_mat(input_shape, DT_32S, (void*)&token_id);
+
+    // 直接更新输入数据，绕过 setInput 的 size 检查以避免 hasInit 被重置
+    M_Assert(inputMatId.size() == 1);
+    inputMatClone[0] = input_mat.clone();
+
+    // 更新输入指针
+    int mIndx = inputMatId[0];
+    auto itLayerId = matId2layer.find(mIndx);
+    M_Assert(itLayerId != matId2layer.end());
+    auto& ld_input = lds[itLayerId->second];
+    ld_input.inputs[0] = &inputMatClone[0];
+    mats[0] = &inputMatClone[0];
+
+    // 重新 init 所有层的 shape（不重新分配整个网络，只更新 shape 和分配 output）
+    for (auto it = lds.begin(); it != lds.end(); it++)
+    {
+        it->layer->init(it->inputs, it->outputs);
+        for (int i = 0; i < (int)it->outputsIdx.size(); i++)
+        {
+            // 仅当 output Mat 为空时才分配内存
+            if (it->outputs[i]->empty())
+            {
+                Runtime::getRuntime()->allocMat(it->outputs[i]);
+            }
+        }
+    }
+
+    // 遍历所有层，使用带 context 的 forward
+    for (auto it = lds.begin(); it != lds.end(); it++)
+    {
+        it->layer->forward(it->inputs, it->outputs, ctx_);
+    }
+
+    // 更新 start_pos
+    ctx_.start_pos += 1;
+
+    M_Assert(outputMatId.size() == 1);
+    Mat* m = this->getMat(outputMatId[0]);
+    M_Assert(m && "Output Mat can not be empty!");
+    return *m;
+}
+
+void Net::NetImpl::resetKVCache()
+{
+    ctx_.start_pos = 0;
+    ctx_.seq_len = 0;
+    ctx_.phase = InferPhase::Prefill;
+
+    for (auto it = lds.begin(); it != lds.end(); it++)
+    {
+        it->layer->resetKVCache();
+    }
+}
+
 }

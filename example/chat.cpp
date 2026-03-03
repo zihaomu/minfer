@@ -1,4 +1,4 @@
-// Finish a chat example based on Minfer
+// Chat example based on Minfer with prefill/decode and KV cache
 
 #include "minfer.h"
 
@@ -9,27 +9,46 @@ int main()
     Net net;
     net.readNet(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16.gguf");
 
-    // prompt
-    std::string text = "Hello world! <s>";
-    std::vector<int> ids;
+    // Tokenizer 编码
+    std::string prompt = "Hello world! <s>";
+    std::vector<int> prompt_ids;
+    net.encode(prompt, prompt_ids);
 
-    // tokenizer
-    net.encode(text, ids);
+    // Prefill: 处理完整 prompt
+    Mat logits = net.prefill(prompt_ids);
 
-    net.setInput(ids);
-    net.init();
+    // 取最后一个 token 的 argmax 作为生成的第一个 token
+    std::vector<int> next_ids = argmax_tokens(
+        reinterpret_cast<const float*>(logits.data),
+        logits.size[0], logits.size[1], logits.size[2]);
+    int next_token = next_ids.back();
 
-    Mat output = net.forward();
+    std::cout << "Prompt: " << prompt << std::endl;
+    std::cout << "Generated: ";
 
-    std::vector<int> token_ids = argmax_tokens(reinterpret_cast<const float*>(output.data), output.size[0], output.size[1], output.size[2]);
+    // Autoregressive Decode Loop
+    int max_new_tokens = 50;
+    for (int i = 0; i < max_new_tokens; i++)
+    {
+        logits = net.step(next_token);
 
-    std::string out_text;
-    net.decode(token_ids, out_text);
+        next_ids = argmax_tokens(
+            reinterpret_cast<const float*>(logits.data),
+            logits.size[0], logits.size[1], logits.size[2]);
+        next_token = next_ids[0];
 
-    std::cout << "Output: ";
-    output.print();
+        // Tokenizer 解码
+        std::string token_text;
+        net.decode({next_token}, token_text);
+        std::cout <<token_text << std::flush;
 
-    std::cout << "Decoded Text: " << out_text << std::endl;
+        // TODO: 检查 EOS token 以提前终止
+        // if (next_token == eos_token_id) break;
+    }
+    std::cout << std::endl;
+
+    // 重置 KV Cache 以开始新一轮对话
+    net.resetKVCache();
 
     return 0;
 }
