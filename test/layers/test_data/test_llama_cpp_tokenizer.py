@@ -2,7 +2,8 @@ from llama_cpp import Llama
 
 # 1. 加载 GGUF 模型
 llm = Llama(
-    model_path="/home/moo/work/my_lab/minfer/test/big_models/Lite-Oute-1-65M-FP16.gguf"
+    model_path="/home/moo/work/my_lab/minfer/test/big_models/Lite-Oute-1-65M-FP16.gguf",
+    seed=1234,
 )
 
 # 2. tokenizer 示例
@@ -12,7 +13,19 @@ text = "Who are"  # 这里的文本可以是任何你想测试的内容
 # print("Text:", text)
 # print("Tokens:", tokens)
 
-output = llm(text, max_tokens=50)
+tokens = llm.tokenize(text.encode("utf-8"))
+print("Tokens:", tokens)
+
+output = llm(
+    text,
+    max_tokens=50,
+    temperature=0.0,
+    top_k=1,
+    top_p=1.0,
+    repeat_penalty=1.0,
+    frequency_penalty=0.0,
+    presence_penalty=0.0,
+)
 
 print(output['choices'][0]['text'])
 

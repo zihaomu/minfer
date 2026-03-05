@@ -320,7 +320,6 @@ int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
     }
 
     layer->setId(layerId);
-    std::cout << "DEBUG: Created Layer " << layer->getName() << std::endl;
     std::vector<Mat*> outs(outputSize, nullptr);
     for (int i = 0; i < outputSize; ++i)
     {

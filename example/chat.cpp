@@ -26,9 +26,14 @@ int main()
     std::cout << "Prompt: " << prompt << std::endl;
     std::cout << "Generated: ";
 
+    // 先输出 prefill 阶段得到的第一个生成 token（避免漏掉第一个 token）
+    std::string token_text;
+    net.decode({next_token}, token_text);
+    std::cout << token_text << std::flush;
+
     // Autoregressive Decode Loop
     int max_new_tokens = 50;
-    for (int i = 0; i < max_new_tokens; i++)
+    for (int i = 1; i < max_new_tokens; i++)
     {
         logits = net.step(next_token);
 
@@ -38,7 +43,7 @@ int main()
         next_token = next_ids[0];
 
         // Tokenizer 解码
-        std::string token_text;
+        token_text.clear();
         net.decode({next_token}, token_text);
         std::cout <<token_text << std::flush;
 

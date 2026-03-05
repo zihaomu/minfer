@@ -30,21 +30,16 @@ EmbeddingLayer::EmbeddingLayer(const std::shared_ptr<EmbeddingLayerParams> param
     {
         // 这种情况是[vocab_dim, embd_dim]
         w = wFp32;
-        std::cout << "EmbLayer Init: Shape is [vocab_dim, embd_dim], no transpose needed." << std::endl;
     }
     else if (w_shape[0] == embd_dim && w_shape[1] == vocab_dim)
     {
         // 这种情况是[embd_dim, vocab_dim]
-        w = wFp32;
-        std::vector<int> new_shape = {vocab_dim, embd_dim};
-        w.setSize(new_shape);
-        std::cout << "EmbLayer Init: Shape is [embd_dim, vocab_dim], just reshaped wFp32 to [vocab_dim, embd_dim] without transposing." << std::endl;
+        w = transposeND(wFp32, {1, 0});
     }
     else
         M_Error(NULL, "EmbeddingLayer weight shape is not supported! ");
 
     MatShape w_shape2 = w.shape();
-    std::cout << "EmbLayer Init Final Shape: [" << w_shape2[0] << ", " << w_shape2[1] << "]" << std::endl;
     M_Assert(w_shape2[0] == vocab_dim);
     M_Assert(w_shape2[1] == embd_dim);
 }

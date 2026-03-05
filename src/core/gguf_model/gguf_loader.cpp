@@ -1186,23 +1186,51 @@ bool GGUF_Vocab::loadFromGGUF(void* _loader)
 
 void GGUF_Vocab::decode(const std::vector<int> &out_ids, std::string &out_text)
 {
+    auto parse_hex_byte_token = [](const std::string& text, char& out_ch) -> bool {
+        if (text.size() != 6 || text[0] != '<' || text[1] != '0' || text[2] != 'x' || text[5] != '>') {
+            return false;
+        }
+        auto hex_val = [](char c) -> int {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+            if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+            return -1;
+        };
+        const int hi = hex_val(text[3]);
+        const int lo = hex_val(text[4]);
+        if (hi < 0 || lo < 0) return false;
+        out_ch = static_cast<char>((hi << 4) | lo);
+        return true;
+    };
+
     // Implement the decoding logic here
     for (int id : out_ids)
     {
         if (id >= 0 && id < (int)id_to_token.size())
         {
-            out_text += id_to_token[id].text;
+            const auto& tok = id_to_token[id];
+
+            // Match llama.cpp behavior: do not emit control tokens into user-facing text.
+            if (tok.attr & LLAMA_TOKEN_ATTR_CONTROL) {
+                continue;
+            }
+
+            char byte_ch = 0;
+            bool is_byte_token = parse_hex_byte_token(tok.text, byte_ch);
+            if (!is_byte_token && (tok.attr & LLAMA_TOKEN_ATTR_BYTE) && tok.text.size() == 1) {
+                byte_ch = tok.text[0];
+                is_byte_token = true;
+            }
+            if (is_byte_token) {
+                out_text.push_back(byte_ch);
+                continue;
+            }
+
+            out_text += tok.text;
         }
     }
 
     llama_unescape_whitespace(out_text);
-    // 替换所有前导下划线为空格
-    for (size_t i = 0; i < out_text.size(); ++i) {
-        if (out_text[i] == '_')
-            out_text[i] = ' ';
-    }
-    // 去掉开头可能多余的空格
-    if (!out_text.empty() && out_text[0] == ' ') out_text.erase(0, 1);
 }
 
 struct llm_bigram_spm {

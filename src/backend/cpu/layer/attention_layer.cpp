@@ -49,20 +49,6 @@ AttentionLayer::AttentionLayer(const std::shared_ptr<AttentionLayerParams> param
     param->bv.convertTo(bv, DT_32F);
     param->bout.convertTo(bout, DT_32F);
 
-    std::cout << "DEBUG: Attn Layer Init Q: [" << wq.size[0] << ", " << wq.size[1] << "]" << std::endl;
-    std::cout << "DEBUG: Attn Layer Init K: [" << wk.size[0] << ", " << wk.size[1] << "]" << std::endl;
-    std::cout << "DEBUG: Attn Layer Init V: [" << wv.size[0] << ", " << wv.size[1] << "]" << std::endl;
-    std::cout << "DEBUG: Attn Layer Init Out: [" << wout.size[0] << ", " << wout.size[1] << "]" << std::endl;
-
-    if (layerNamePrefix == "AttentionLayer_") {
-        float* wq_ptr = (float*)wq.data;
-        std::cout << "DEBUG: Attn WQ first 5: ";
-        for(int k=0; k<5; k++) std::cout << wq_ptr[k] << " ";
-        std::cout << "\nDEBUG: Attn WQ last 5: ";
-        for(int k=wq.total()-5; k<wq.total(); k++) std::cout << wq_ptr[k] << " ";
-        std::cout << std::endl;
-    }
-
 #if ATTEN_DEBUG
     std::cout<<"print in init q k v out shape and params"<<std::endl;
     wq.print(2);
@@ -402,9 +388,6 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     //
     // apply the softmax to score
     Mat score = softmax(qk_sqrt);
-    qk_sqrt.print(2);
-    score.print(2);
-    x_v.print(2);
     // implementation matmul V
     Mat qkv = gemm(score, x_v); // qk shape is [bsz, seq_len, seq_len + cache_len]
     // implementation out linear.
@@ -787,4 +770,3 @@ void AttentionLayer::resetKVCache()
 }
 
 }
-
