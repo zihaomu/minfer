@@ -6,6 +6,7 @@
 #include "minfer/basic_op.h"
 #include "minfer/system.h"
 #include "minfer/utils.h"
+#include "backend/cpu/kernel/gemm_kernel_hwy.h"
 
 namespace minfer
 {
@@ -23,9 +24,27 @@ MatShape make_strides(const MatShape& shape)
         stride *= shape[i];
     }
 
-    if (strides.empty())
-        strides.push_back(1);
     return strides;
+}
+
+static inline
+size_t broadcast_linear_index(const MatShape& src_shape, const MatShape& src_strides,
+                              const std::vector<int>& out_batch_index, int out_batch_dims)
+{
+    const int src_batch_dims = static_cast<int>(src_shape.size()) - 2;
+    if (src_batch_dims <= 0)
+        return 0;
+
+    const int offset = out_batch_dims - src_batch_dims;
+    M_Assert(offset >= 0 && "Invalid broadcast mapping for GEMM batch dims!");
+
+    size_t linear = 0;
+    for (int d = 0; d < src_batch_dims; ++d)
+    {
+        int coord = src_shape[d] == 1 ? 0 : out_batch_index[d + offset];
+        linear += static_cast<size_t>(coord) * src_strides[d];
+    }
+    return linear;
 }
 
 // naive impl, [M x K] x [K x N] = M x N
@@ -74,7 +93,8 @@ void gemm_impl_naive(const Mat& a, const Mat& b, Mat& c)
     // For dimension > 2, use numpy broadcasting rule for previous dimension.
     c = Mat(shape_c, DT_32F);
 
-    size_t out_loop = len_s > 2 ? total(shape_c, 0, shape_c.size() - 2): 1;
+    const int out_batch_dims = static_cast<int>(shape_c.size()) - 2;
+    size_t out_loop = out_batch_dims > 0 ? total(shape_c, 0, shape_c.size() - 2): 1;
     size_t step_a = M * K;
     size_t step_b = K * N;
     size_t step_c = M * N;
@@ -87,54 +107,24 @@ void gemm_impl_naive(const Mat& a, const Mat& b, Mat& c)
     const float* pb = (const float*)b.data;
     float* pc = (float*)c.data;
 
-    for (int i = 0; i < out_loop; i++)
+    for (size_t i = 0; i < out_loop; i++)
     {
         size_t tmp = i;
-        std::vector<int> idx_c(stride_c.size());
-        for (int d = 0; d < (int)stride_c.size(); d++)
+        std::vector<int> idx_c(out_batch_dims);
+        for (int d = 0; d < out_batch_dims; d++)
         {
             idx_c[d] = tmp / stride_c[d];
             tmp %= stride_c[d];
         }
 
-        // --- 广播到 a 的 batch index ---
-        size_t lin_a = 0;
-        for (int d = 0; d < (int)stride_a.size(); d++)
-        {
-            int coord = (shape_a[d] == 1) ? 0 : idx_c[d];
-            lin_a += coord * stride_a[d];
-        }
-
-        // --- 广播到 b 的 batch index ---
-        size_t lin_b = 0;
-        for (int d = 0; d < (int)stride_b.size(); d++)
-        {
-            int coord = (shape_b[d] == 1) ? 0 : idx_c[d];
-            lin_b += coord * stride_b[d];
-        }
+        size_t lin_a = broadcast_linear_index(shape_a, stride_a, idx_c, out_batch_dims);
+        size_t lin_b = broadcast_linear_index(shape_b, stride_b, idx_c, out_batch_dims);
 
         const float* pai = lin_a * step_a + pa;
         const float* pbi = lin_b * step_b + pb;
         float* pci = i * step_c + pc;
 
-        // TODO optimize the gemm kernel, the following is naive implementation.
-        for (int m = 0; m < M; m++)
-        {
-            const float* paim = pai + K * m;
-            float* pcim = pci + N * m;
-
-            for (int n = 0; n < N; n++)
-            {
-                const float* pbin = pbi + n;
-                float sum = 0;
-                for (int k = 0; k < K; k++)
-                {
-                    sum += paim[k] * pbin[k * N];
-                }
-
-                pcim[n] = sum;
-            }
-        }
+        cpu::gemm_kernel_hwy_nn(pai, pbi, pci, M, N, K);
     }
 }
 
@@ -241,7 +231,8 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
     // For dimension > 2, use numpy broadcasting rule for previous dimension.
     c = Mat(shape_c, DT_32F);
 
-    size_t out_loop = len_s > 2 ? total(shape_c, 0, shape_c.size() - 2): 1;
+    const int out_batch_dims = static_cast<int>(shape_c.size()) - 2;
+    size_t out_loop = out_batch_dims > 0 ? total(shape_c, 0, shape_c.size() - 2): 1;
     size_t step_a = M * K;
     size_t step_b = K * N;
     size_t step_c = M * N;
@@ -253,54 +244,24 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
     const float* pb = (const float*)b.data;
     float* pc = (float*)c.data;
 
-    for (int i = 0; i < out_loop; i++)
+    for (size_t i = 0; i < out_loop; i++)
     {
         size_t tmp = i;
-        std::vector<int> idx_c(stride_c.size());
-        for (int d = 0; d < (int)stride_c.size(); d++)
+        std::vector<int> idx_c(out_batch_dims);
+        for (int d = 0; d < out_batch_dims; d++)
         {
             idx_c[d] = tmp / stride_c[d];
             tmp %= stride_c[d];
         }
 
-        // --- 广播到 a 的 batch index ---
-        size_t lin_a = 0;
-        for (int d = 0; d < (int)stride_a.size(); d++)
-        {
-            int coord = (shape_a[d] == 1) ? 0 : idx_c[d];
-            lin_a += coord * stride_a[d];
-        }
+        size_t lin_a = broadcast_linear_index(shape_a, stride_a, idx_c, out_batch_dims);
+        size_t lin_b = broadcast_linear_index(shape_b, stride_b, idx_c, out_batch_dims);
 
-        // --- 广播到 b 的 batch index ---
-        size_t lin_b = 0;
-        for (int d = 0; d < (int)stride_b.size(); d++)
-        {
-            int coord = (shape_b[d] == 1) ? 0 : idx_c[d];
-            lin_b += coord * stride_b[d];
-        }
-
-        const float* pai = i * step_a + pa;
-        const float* pbi = i * step_b + pb;
+        const float* pai = lin_a * step_a + pa;
+        const float* pbi = lin_b * step_b + pb;
         float* pci = i * step_c + pc;
 
-        // TODO optimize the gemm kernel, the following is naive implementation.
-        for (int m = 0; m < M; m++)
-        {
-            const float* paim = pai + K * m;
-            float* pcim = pci + N * m;
-
-            for (int n = 0; n < N; n++)
-            {
-                const float* pbin = pbi + n * K;
-                float sum = 0;
-                for (int k = 0; k < K; k++)
-                {
-                    sum += paim[k] * pbin[k];
-                }
-
-                pcim[n] = sum;
-            }
-        }
+        cpu::gemm_kernel_hwy_nt(pai, pbi, pci, M, N, K);
     }
 }
 

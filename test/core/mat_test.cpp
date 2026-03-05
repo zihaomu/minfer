@@ -4,8 +4,65 @@
 
 #include "minfer.h"
 #include "gtest/gtest.h"
+#include <algorithm>
+#include <cmath>
+#include <string>
+#include <vector>
 
 using namespace minfer;
+
+namespace {
+
+std::string core_data_path(const std::string& filename)
+{
+    return std::string(M_ROOT_PATH) + "/test/core/test_data/data/" + filename;
+}
+
+struct GemmCaseConfig
+{
+    const char* name;
+    bool trans_a;
+    bool trans_b;
+    float abs_tol;
+    float rel_tol;
+};
+
+void expect_mat_close(const Mat& out, const Mat& ref, float abs_tol, float rel_tol, const std::string& case_name)
+{
+    ASSERT_EQ(out.shape(), ref.shape()) << "shape mismatch, case=" << case_name;
+
+    const auto total_size = out.total();
+    const float* out_data = reinterpret_cast<const float*>(out.data);
+    const float* ref_data = reinterpret_cast<const float*>(ref.data);
+
+    double max_abs = 0.0;
+    double max_rel = 0.0;
+    double mean_abs = 0.0;
+
+    for (size_t i = 0; i < total_size; ++i)
+    {
+        const double diff = std::abs(static_cast<double>(out_data[i]) - static_cast<double>(ref_data[i]));
+        const double denom = std::max(1.0, std::abs(static_cast<double>(ref_data[i])));
+        const double rel = diff / denom;
+
+        max_abs = std::max(max_abs, diff);
+        max_rel = std::max(max_rel, rel);
+        mean_abs += diff;
+    }
+
+    mean_abs /= std::max<size_t>(1, total_size);
+    const bool pass = (max_abs <= abs_tol) || (max_rel <= rel_tol);
+
+    EXPECT_TRUE(pass)
+        << "case=" << case_name
+        << ", max_abs=" << max_abs
+        << ", max_rel=" << max_rel
+        << ", mean_abs=" << mean_abs
+        << ", abs_tol=" << abs_tol
+        << ", rel_tol=" << rel_tol;
+}
+
+}  // namespace
 
 // TODO add test element equal check. compare two mat, or compare mat and scalar.
 TEST(Mat_TEST, loadNpy)
@@ -184,6 +241,45 @@ TEST(Mat_TEST, mat_mul_broad_cast)
     M_Assert(v1 < 1e-3);
     M_Assert(v2 < 1e-3);
     M_Assert(v3 < 1e-3);
+}
+
+TEST(Mat_TEST, gemm_generated_cases)
+{
+    const std::vector<GemmCaseConfig> cases = {
+        {"nn_small_odd", false, false, 1e-3f, 1e-4f},
+        {"nn_tail_rect", false, false, 1e-3f, 1e-4f},
+        {"nn_rank3", false, false, 1e-3f, 1e-4f},
+        {"nn_rank4", false, false, 1e-3f, 1e-4f},
+        {"nn_broadcast_a", false, false, 1e-3f, 1e-4f},
+        {"nn_broadcast_b", false, false, 1e-3f, 1e-4f},
+        {"nn_rank_mismatch_a", false, false, 1e-3f, 1e-4f},
+        {"nn_rank_mismatch_b", false, false, 1e-3f, 1e-4f},
+        {"nt_small_odd", false, true, 1e-3f, 1e-4f},
+        {"nt_tail_rect", false, true, 1e-3f, 1e-4f},
+        {"nt_rank3", false, true, 1e-3f, 1e-4f},
+        {"nt_broadcast_a", false, true, 1e-3f, 1e-4f},
+        {"nt_broadcast_b", false, true, 1e-3f, 1e-4f},
+        {"nt_rank_mismatch", false, true, 1e-3f, 1e-4f},
+        {"tn_basic", true, false, 1e-3f, 1e-4f},
+        {"tn_rank3", true, false, 1e-3f, 1e-4f},
+        {"tn_broadcast", true, false, 1e-3f, 1e-4f},
+        {"tt_basic", true, true, 1e-3f, 1e-4f},
+        {"tt_rank3", true, true, 1e-3f, 1e-4f},
+        {"tt_broadcast", true, true, 1e-3f, 1e-4f},
+        {"nn_large_value", false, false, 5e-2f, 5e-4f},
+        {"nt_small_value", false, true, 1e-6f, 5e-4f},
+    };
+
+    for (const auto& c : cases)
+    {
+        SCOPED_TRACE(c.name);
+        Mat a = readMatFromNpy(core_data_path(std::string("gemm_") + c.name + "_a.npy"));
+        Mat b = readMatFromNpy(core_data_path(std::string("gemm_") + c.name + "_b.npy"));
+        Mat ref = readMatFromNpy(core_data_path(std::string("gemm_") + c.name + "_o.npy"));
+
+        Mat out = gemm(a, b, c.trans_a, c.trans_b);
+        expect_mat_close(out, ref, c.abs_tol, c.rel_tol, c.name);
+    }
 }
 
 TEST(Mat_TEST, data_convert_fp16_to_fp32)

@@ -762,7 +762,10 @@ struct LLama_loader
         llmKv = LLM_KV_Impl(llm_arch_from_string(arch_name));
 
         // get params
+#if M_DEBUG
         std::cout << "DEBUG: Starting to get_key inside LLama_loader!" << std::endl;
+#endif
+
         this->get_key(LLM_KV_VOCAB_SIZE, params.n_vocab, false) || this->get_arr_n(LLM_KV_TOKENIZER_LIST, params.n_vocab);
         this->get_key(LLM_KV_CONTEXT_LENGTH, params.n_ctx_length);
         this->get_key(LLM_KV_EMBEDDING_LENGTH, params.n_embd);
@@ -778,12 +781,20 @@ struct LLama_loader
         this->get_key(LLM_KV_ROPE_DIMENSION_COUNT, params.n_rope_dim_count, false);
         M_Assert(params.n_rope_dim_count == params.n_embd / params.n_head && "Invalid n_rope_dim_count!");
 
+#if M_DEBUG
         std::cout << "DEBUG: Checking ROPE_FREQ_BASE" << std::endl;
+#endif
         this->get_key(LLM_KV_ROPE_FREQ_BASE, params.rope_freq_base_train, false);
 
+#if M_DEBUG
         std::cout << "DEBUG: Checking LAYERNORM_RMS_EPS" << std::endl;
+#endif
+
         this->get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, params.f_norm_rms_eps, false);
+
+#if M_DEBUG
         std::cout << "DEBUG: Finished parsing in loader! eps = " << params.f_norm_rms_eps << std::endl;
+#endif
     }
 };
 

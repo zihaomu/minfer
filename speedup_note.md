@@ -175,3 +175,173 @@ decode  : avg=27.11 ms/tok, p50=27.12, p90=27.59, p99=28.17, throughput=36.89 to
 ttft    : avg=13646.48 ms
 end2end : throughput=37.45 tok/s (prompt+decode)
 '''
+
+
+将GEMM接入google highway之后的效果
+'''
+Model: /home/moo/work/my_lab/minfer/test/big_models/Lite-Oute-1-65M-FP16.gguf
+Prompt lengths: 32,128,512
+Decode tokens per run: 128
+Warmup: 1
+Runs: 5
+Arch = llama
+n_vocab = 32768
+n_ctx_length = 2048
+n_embd = 512
+n_ff = 2048
+n_head = 16
+n_head_kv = 8
+n_layer = 8
+n_rope_dim_count = 32
+rope_freq_base_train = 10000
+f_norm_rms_eps = 1e-06
+Model load time: 179.34 ms
+Running case prompt_len=32 ...
+  [warmup 1/1] start
+  [warmup 1/1] prefill done: 208.69 ms
+  [warmup 1/1] decode 32/128
+  [warmup 1/1] decode 64/128
+  [warmup 1/1] decode 96/128
+  [warmup 1/1] decode 128/128
+  [warmup 1/1] done: decode_total=800.67 ms
+  [run 1/5] start
+  [run 1/5] prefill done: 186.78 ms
+  [run 1/5] decode 32/128
+  [run 1/5] decode 64/128
+  [run 1/5] decode 96/128
+  [run 1/5] decode 128/128
+  [run 1/5] done: decode_total=791.18 ms
+  [run 2/5] start
+  [run 2/5] prefill done: 185.51 ms
+  [run 2/5] decode 32/128
+  [run 2/5] decode 64/128
+  [run 2/5] decode 96/128
+  [run 2/5] decode 128/128
+  [run 2/5] done: decode_total=789.14 ms
+  [run 3/5] start
+  [run 3/5] prefill done: 185.25 ms
+  [run 3/5] decode 32/128
+  [run 3/5] decode 64/128
+  [run 3/5] decode 96/128
+  [run 3/5] decode 128/128
+  [run 3/5] done: decode_total=790.16 ms
+  [run 4/5] start
+  [run 4/5] prefill done: 185.58 ms
+  [run 4/5] decode 32/128
+  [run 4/5] decode 64/128
+  [run 4/5] decode 96/128
+  [run 4/5] decode 128/128
+  [run 4/5] done: decode_total=793.92 ms
+  [run 5/5] start
+  [run 5/5] prefill done: 185.57 ms
+  [run 5/5] decode 32/128
+  [run 5/5] decode 64/128
+  [run 5/5] decode 96/128
+  [run 5/5] decode 128/128
+  [run 5/5] done: decode_total=794.08 ms
+Running case prompt_len=128 ...
+  [warmup 1/1] start
+  [warmup 1/1] prefill done: 765.14 ms
+  [warmup 1/1] decode 32/128
+  [warmup 1/1] decode 64/128
+  [warmup 1/1] decode 96/128
+  [warmup 1/1] decode 128/128
+  [warmup 1/1] done: decode_total=828.28 ms
+  [run 1/5] start
+  [run 1/5] prefill done: 762.84 ms
+  [run 1/5] decode 32/128
+  [run 1/5] decode 64/128
+  [run 1/5] decode 96/128
+  [run 1/5] decode 128/128
+  [run 1/5] done: decode_total=818.47 ms
+  [run 2/5] start
+  [run 2/5] prefill done: 760.37 ms
+  [run 2/5] decode 32/128
+  [run 2/5] decode 64/128
+  [run 2/5] decode 96/128
+  [run 2/5] decode 128/128
+  [run 2/5] done: decode_total=834.84 ms
+  [run 3/5] start
+  [run 3/5] prefill done: 759.67 ms
+  [run 3/5] decode 32/128
+  [run 3/5] decode 64/128
+  [run 3/5] decode 96/128
+  [run 3/5] decode 128/128
+  [run 3/5] done: decode_total=818.90 ms
+  [run 4/5] start
+  [run 4/5] prefill done: 755.92 ms
+  [run 4/5] decode 32/128
+  [run 4/5] decode 64/128
+  [run 4/5] decode 96/128
+  [run 4/5] decode 128/128
+  [run 4/5] done: decode_total=822.47 ms
+  [run 5/5] start
+  [run 5/5] prefill done: 756.16 ms
+  [run 5/5] decode 32/128
+  [run 5/5] decode 64/128
+  [run 5/5] decode 96/128
+  [run 5/5] decode 128/128
+  [run 5/5] done: decode_total=820.44 ms
+Running case prompt_len=512 ...
+  [warmup 1/1] start
+  [warmup 1/1] prefill done: 3484.41 ms
+  [warmup 1/1] decode 32/128
+  [warmup 1/1] decode 64/128
+  [warmup 1/1] decode 96/128
+  [warmup 1/1] decode 128/128
+  [warmup 1/1] done: decode_total=952.74 ms
+  [run 1/5] start
+  [run 1/5] prefill done: 3455.77 ms
+  [run 1/5] decode 32/128
+  [run 1/5] decode 64/128
+  [run 1/5] decode 96/128
+  [run 1/5] decode 128/128
+  [run 1/5] done: decode_total=952.83 ms
+  [run 2/5] start
+  [run 2/5] prefill done: 3459.47 ms
+  [run 2/5] decode 32/128
+  [run 2/5] decode 64/128
+  [run 2/5] decode 96/128
+  [run 2/5] decode 128/128
+  [run 2/5] done: decode_total=945.37 ms
+  [run 3/5] start
+  [run 3/5] prefill done: 3481.69 ms
+  [run 3/5] decode 32/128
+  [run 3/5] decode 64/128
+  [run 3/5] decode 96/128
+  [run 3/5] decode 128/128
+  [run 3/5] done: decode_total=948.12 ms
+  [run 4/5] start
+  [run 4/5] prefill done: 3451.29 ms
+  [run 4/5] decode 32/128
+  [run 4/5] decode 64/128
+  [run 4/5] decode 96/128
+  [run 4/5] decode 128/128
+  [run 4/5] done: decode_total=930.49 ms
+  [run 5/5] start
+  [run 5/5] prefill done: 3442.08 ms
+  [run 5/5] decode 32/128
+  [run 5/5] decode 64/128
+  [run 5/5] decode 96/128
+  [run 5/5] decode 128/128
+  [run 5/5] done: decode_total=924.69 ms
+
+=== Benchmark Results ===
+[prompt_len=32, decode_tokens=128]
+prefill : avg=185.74 ms, p50=185.57 ms, p90=186.30 ms, throughput=172.29 tok/s
+decode  : avg=6.19 ms/tok, p50=6.19, p90=6.29, p99=6.62, throughput=161.68 tok/s
+ttft    : avg=191.91 ms
+end2end : throughput=163.69 tok/s (prompt+decode)
+
+[prompt_len=128, decode_tokens=128]
+prefill : avg=758.99 ms, p50=759.67 ms, p90=761.85 ms, throughput=168.64 tok/s
+decode  : avg=6.43 ms/tok, p50=6.40, p90=6.60, p99=6.96, throughput=155.52 tok/s
+ttft    : avg=765.58 ms
+end2end : throughput=161.82 tok/s (prompt+decode)
+
+[prompt_len=512, decode_tokens=128]
+prefill : avg=3458.06 ms, p50=3455.77 ms, p90=3472.80 ms, throughput=148.06 tok/s
+decode  : avg=7.35 ms/tok, p50=7.30, p90=7.66, p99=8.14, throughput=136.13 tok/s
+ttft    : avg=3465.69 ms
+end2end : throughput=145.51 tok/s (prompt+decode)
+'''

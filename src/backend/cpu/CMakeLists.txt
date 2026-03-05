@@ -1,5 +1,9 @@
 
-FILE(GLOB M_CPU_SRC ${CMAKE_CURRENT_LIST_DIR}/*.cpp ${CMAKE_CURRENT_LIST_DIR}/layer/*.cpp)
+FILE(GLOB M_CPU_SRC
+        ${CMAKE_CURRENT_LIST_DIR}/*.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/layer/*.cpp
+        ${CMAKE_CURRENT_LIST_DIR}/kernel/*.cpp
+)
 
 include_directories(
         ${CMAKE_CURRENT_LIST_DIR}/include/
