@@ -3,7 +3,7 @@
 
 using namespace minfer;
 
-int main() {
+int ____main() {
     std::vector<std::shared_ptr<LayerParams>> netParams;
     std::shared_ptr<GGUF_Vocab> gguf_vocab;
     readGGUF("test/big_models/Lite-Oute-1-65M-FP16.gguf", netParams, gguf_vocab);

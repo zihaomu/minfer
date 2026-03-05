@@ -53,6 +53,10 @@ include(test/CMakeLists.txt)
 add_executable(chat ${CMAKE_CURRENT_LIST_DIR}/example/chat.cpp)
 target_link_libraries(chat ${M_TARGETS})
 
+# LLM benchmark
+add_executable(minfer_benchmark ${CMAKE_CURRENT_LIST_DIR}/benchmark/llm_benchmark.cpp)
+target_link_libraries(minfer_benchmark ${M_TARGETS})
+
 # Diagnostic test
 add_executable(diag_test /tmp/diag_test.cpp)
 target_link_libraries(diag_test ${M_TARGETS})

@@ -10,7 +10,7 @@ int main()
     net.readNet(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16.gguf");
 
     // Tokenizer 编码
-    std::string prompt = "Hello world! <s>";
+    std::string prompt = "Who are";
     std::vector<int> prompt_ids;
     net.encode(prompt, prompt_ids);
 
