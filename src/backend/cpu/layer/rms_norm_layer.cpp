@@ -51,31 +51,7 @@ void RMSNormLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &ou
     M_Assert(in_shape[2] == embd_dim);
     M_Assert(in_shape[0] == 1 && "Currently, only support single batch!");
 
-    float* p = (float *)output[0]->data;
-    float* pi = (float *)(input[0]->data);
-    float * p_norm = (float *)w.data;
-
-    int seq_len = in_shape[1];
-
-    // rms-norm
-    for (int i = 0; i < seq_len; i++)
-    {
-        float sum_f2 = 0;
-        float* pi_s = pi + i * embd_dim;
-
-        // extract np.sqrt(np.mean(x**2, axis=-1, keepdims=True) + self.eps)
-        for (int j = 0; j < embd_dim; j++)
-        {
-            sum_f2 += pi_s[j] * pi_s[j];
-        }
-
-        float x1 = 1.f/sqrtf(sum_f2/embd_dim + rms_eps);
-
-        for (int j = 0; j < embd_dim; j++)
-        {
-            p[i * embd_dim + j]= pi_s[j] * x1 * p_norm[j];
-        }
-    }
+    rmsnorm(*input[0], w, *output[0], rms_eps);
 }
 
 std::shared_ptr<RMSNormLayer> RMSNormLayer::create(const std::shared_ptr<LayerParams> param)

@@ -75,3 +75,21 @@ cmake --build build -j
 - `decode throughput(tok/s)`：decode token 吞吐
 - `ttft(ms)`：time-to-first-token，约等于 `prefill + 首个 decode step`
 - `--progress-interval`：每生成 N 个 token 打印一次 decode 进度，避免长时间无输出
+
+
+### 算子优化流程
+
+算子也就是kernel，是底层引擎的关键。开发流程如下：
+#### CPU算子
+实现依赖于google highway库去适配不同的平台的指令，avx2，neon，rsic-v等。
+kernel优化步骤：
+1. 生成对应kernel的测试数据
+kernel需要严格的测试，对比python用于验证C++实现是否正确。
+其中数据生成有python基于numpy，类似于`test/layers/test_data/layer_data_generater.py`或`test/core/test_data/gemm_case_generater.py`。而对应数据在对应python的data文件夹下。
+
+2. C++ 实现和测试
+C++对应算子实现放到`src/backend/cpu/kernel`中去。而上一步测试的数据应该在C++的测试样例中被使用，在`test/layers/feedforward_test.cpp`或`test/core/mat_test.cpp`中。
+
+3. benchmark
+算子有对应的benchmark脚本，放在`benchmark`，可以是python或者C++实现。
+当前仓库已提供 `benchmark/op_benchmark.cpp`，构建后可通过 `./build/minfer_op_benchmark` 对 `rope`、`transpose`、`softmax`、`silu`、`rmsnorm`，以及基础加减乘除广播场景做基准测试。

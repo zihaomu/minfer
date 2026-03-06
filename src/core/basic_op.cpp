@@ -1,4 +1,9 @@
 #include "minfer.h"
+#include "backend/cpu/kernel/activation_kernel_hwy.h"
+#include "backend/cpu/kernel/binary_kernel_hwy.h"
+#include "backend/cpu/kernel/normalization_kernel_hwy.h"
+#include "backend/cpu/kernel/rope_kernel.h"
+#include "backend/cpu/kernel/transpose_kernel.h"
 
 namespace minfer
 {
@@ -126,6 +131,118 @@ void divide(const Mat& a, const Mat& b, Mat& c)
     binaryFunc(BinaryOp::DIV, a, b, c);
 }
 
+void softmax(const Mat& input, Mat& output)
+{
+    M_Assert(!input.empty() && "Softmax input mat can not be empty!");
+    M_Assert(input.type() == DT_32F && "Currently only FP32 softmax is supported!");
+    M_Assert(input.dims >= 1 && "Softmax expects at least 1 dimension!");
+
+    if (output.empty())
+    {
+        output = Mat(input.dims, input.size.p, input.type());
+    }
+    else
+    {
+        M_Assert(output.type() == input.type());
+        M_Assert(output.shape() == input.shape());
+    }
+
+    const size_t inner = input.size[input.dims - 1];
+    const size_t outer = input.total() / inner;
+    cpu::softmax_lastdim_hwy(reinterpret_cast<const float*>(input.data),
+                             reinterpret_cast<float*>(output.data),
+                             outer,
+                             inner);
+}
+
+Mat softmax(const Mat& input)
+{
+    Mat output;
+    softmax(input, output);
+    return output;
+}
+
+void silu(const Mat& input, Mat& output)
+{
+    M_Assert(!input.empty() && "SiLU input mat can not be empty!");
+    M_Assert(input.type() == DT_32F && "Currently only FP32 SiLU is supported!");
+
+    if (output.empty())
+    {
+        output = Mat(input.dims, input.size.p, input.type());
+    }
+    else
+    {
+        M_Assert(output.type() == input.type());
+        M_Assert(output.shape() == input.shape());
+    }
+
+    cpu::silu_kernel_hwy(reinterpret_cast<const float*>(input.data),
+                         reinterpret_cast<float*>(output.data),
+                         input.total());
+}
+
+Mat silu(const Mat& input)
+{
+    Mat output;
+    silu(input, output);
+    return output;
+}
+
+void rmsnorm(const Mat& input, const Mat& weight, Mat& output, float eps)
+{
+    M_Assert(!input.empty() && !weight.empty() && "RMSNorm input/weight can not be empty!");
+    M_Assert(input.type() == DT_32F && weight.type() == DT_32F && "Currently only FP32 RMSNorm is supported!");
+    M_Assert(weight.dims == 1 && "RMSNorm weight must be 1D!");
+    M_Assert(weight.size[0] == input.size[input.dims - 1] && "RMSNorm weight size must match input last dimension!");
+
+    if (output.empty())
+    {
+        output = Mat(input.dims, input.size.p, input.type());
+    }
+    else
+    {
+        M_Assert(output.type() == input.type());
+        M_Assert(output.shape() == input.shape());
+    }
+
+    const size_t channels = input.size[input.dims - 1];
+    const size_t outer = input.total() / channels;
+    cpu::rmsnorm_lastdim_hwy(reinterpret_cast<const float*>(input.data),
+                             reinterpret_cast<const float*>(weight.data),
+                             reinterpret_cast<float*>(output.data),
+                             outer,
+                             channels,
+                             eps);
+}
+
+Mat rmsnorm(const Mat& input, const Mat& weight, float eps)
+{
+    Mat output;
+    rmsnorm(input, weight, output, eps);
+    return output;
+}
+
+void rope(Mat& q, Mat& k, int start_pos, float freq_base)
+{
+    M_Assert(!q.empty() && !k.empty() && "RoPE input mat can not be empty!");
+    M_Assert(q.type() == DT_32F && k.type() == DT_32F && "Currently only FP32 RoPE is supported!");
+    M_Assert(q.dims == 3 && k.dims == 3 && "RoPE expects [seq_len, head_count, head_dim] tensors!");
+    M_Assert(q.size[0] == k.size[0] && "Q/K seq_len must match on RoPE!");
+    M_Assert(q.size[2] == k.size[2] && "Q/K head_dim must match on RoPE!");
+    M_Assert(q.size[2] % 2 == 0 && "RoPE head_dim must be even!");
+    M_Assert(start_pos >= 0 && "RoPE start_pos must be non-negative!");
+
+    cpu::rope_kernel_inplace(reinterpret_cast<float*>(q.data),
+                             reinterpret_cast<float*>(k.data),
+                             q.size[0],
+                             start_pos,
+                             q.size[1],
+                             k.size[1],
+                             q.size[2],
+                             freq_base);
+}
+
 void compare(const Mat& a, const Mat& b, Mat& c, int op)
 {
     // TODO add implementation!
@@ -163,7 +280,7 @@ Mat transposeND(const Mat& input, const std::vector<int> order)
 {
     if (input.dims != order.size())
     {
-        M_Error_(Error::StsBadSize, ("In transposeND, the input dimension is not equal to the order size! input dim = %d, order size = %d!", input.dims, order.size()));
+        M_Error_(Error::StsBadSize, ("In transposeND, the input dimension is not equal to the order size! input dim = %d, order size = %d!", input.dims, static_cast<int>(order.size())));
     }
 
     auto order_ = order;
@@ -185,6 +302,41 @@ Mat transposeND(const Mat& input, const std::vector<int> order)
     }
 
     Mat out = Mat(newShape, input.type());
+
+    bool is_last_two_swap = order.size() >= 2;
+    for (int i = 0; i < order.size() && is_last_two_swap; ++i)
+    {
+        int expect = i;
+        if (i == order.size() - 2)
+            expect = order.size() - 1;
+        else if (i == order.size() - 1)
+            expect = order.size() - 2;
+
+        if (order[i] != expect)
+            is_last_two_swap = false;
+    }
+
+    if (is_last_two_swap)
+    {
+        const int rows = oldShape[oldShape.size() - 2];
+        const int cols = oldShape[oldShape.size() - 1];
+        const size_t elem_size = DT_ELEM_SIZE(input.type());
+        const size_t plane_bytes = static_cast<size_t>(rows) * cols * elem_size;
+        const size_t batch = input.total() / static_cast<size_t>(rows * cols);
+
+        const unsigned char* src = input.data;
+        unsigned char* dst = out.data;
+        for (size_t batch_idx = 0; batch_idx < batch; ++batch_idx)
+        {
+            cpu::transpose2d_kernel_blocked(src + batch_idx * plane_bytes,
+                                            dst + batch_idx * plane_bytes,
+                                            rows,
+                                            cols,
+                                            elem_size);
+        }
+
+        return out;
+    }
 
     int continuous_idx = 0;
     for (int i = order.size() - 1; i >= 0; --i)
@@ -483,21 +635,26 @@ public:
 
         while (idx >= 0)
         {
-            if (shape0[idx_0] == shape1[idx_1])
+            const int s0 = idx_0 >= 0 ? shape0[idx_0] : 1;
+            const int s1 = idx_1 >= 0 ? shape1[idx_1] : 1;
+
+            if (s0 == s1)
             {
-                out_shape[idx] = shape0[idx_0];
-                inp0_shape_align[idx] = shape0[idx_0];
-                inp1_shape_align[idx] = shape0[idx_0];
+                out_shape[idx] = s0;
+                inp0_shape_align[idx] = s0;
+                inp1_shape_align[idx] = s1;
             }
-            else if (idx_0 < 0 || shape0[idx_0] == 1)
+            else if (s0 == 1)
             {
-                out_shape[idx] = idx_1 >= 0 ? shape1[idx_1] : 1;
-                inp1_shape_align[idx] = out_shape[idx];
+                out_shape[idx] = s1;
+                inp0_shape_align[idx] = s0;
+                inp1_shape_align[idx] = s1;
             }
-            else if (idx_1 < 0 || shape1[idx_1] == 1)
+            else if (s1 == 1)
             {
-                out_shape[idx] = idx_0 >= 0 ? shape0[idx_0] : 1;
-                inp0_shape_align[idx] = out_shape[idx];
+                out_shape[idx] = s0;
+                inp0_shape_align[idx] = s0;
+                inp1_shape_align[idx] = s1;
             }
             else
             {
@@ -515,19 +672,24 @@ public:
         // set dim steps
         auto get_step_func = [](const MatShape& i_s, MatShape& o_s) {
             o_s.resize(i_s.size(), 1);
-            o_s[i_s.size() - 1] = 1;
+            size_t step = 1;
             for (int i = o_s.size() - 2; i >= 0; i--)
             {
-                o_s[i] *= i_s[i+1] * o_s[i+1];
+                o_s[i] = 1;
             }
 
-            // from the first dim to the last dim, if pre shape is 1, then step is 0.
-            for (int i = 0; i < i_s.size(); i++)
+            for (int i = static_cast<int>(i_s.size()) - 1; i >= 0; --i)
             {
                 if (i_s[i] == 1)
+                {
                     o_s[i] = 0;
+                }
                 else
-                    break;
+                {
+                    o_s[i] = step;
+                }
+
+                step *= i_s[i];
             }
         };
 
@@ -540,6 +702,94 @@ public:
         isInit = true; // set isInit as true.
     }
 };
+
+inline bool to_kernel_op(BinaryOp op, cpu::BinaryKernelOp& kernel_op)
+{
+    switch (op)
+    {
+        case BinaryOp::ADD:
+            kernel_op = cpu::BinaryKernelOp::Add;
+            return true;
+        case BinaryOp::SUB:
+            kernel_op = cpu::BinaryKernelOp::Sub;
+            return true;
+        case BinaryOp::MUL:
+            kernel_op = cpu::BinaryKernelOp::Mul;
+            return true;
+        case BinaryOp::DIV:
+            kernel_op = cpu::BinaryKernelOp::Div;
+            return true;
+        default:
+            return false;
+    }
+}
+
+inline bool is_row_broadcast(const MatShape& aligned_shape, const MatShape& out_shape)
+{
+    if (aligned_shape.empty() || aligned_shape.size() != out_shape.size())
+        return false;
+
+    if (aligned_shape.back() != out_shape.back())
+        return false;
+
+    for (size_t i = 0; i + 1 < aligned_shape.size(); ++i)
+    {
+        if (aligned_shape[i] != 1)
+            return false;
+    }
+
+    return true;
+}
+
+inline bool try_fast_binary_float(BinaryOp op, const BinaryOpHelper& helper, const Mat& a, const Mat& b, Mat& c)
+{
+    if (a.type() != DT_32F)
+        return false;
+
+    cpu::BinaryKernelOp kernel_op;
+    if (!to_kernel_op(op, kernel_op))
+        return false;
+
+    const float* pa = reinterpret_cast<const float*>(a.data);
+    const float* pb = reinterpret_cast<const float*>(b.data);
+    float* pc = reinterpret_cast<float*>(c.data);
+    const size_t total_num = total(helper.out_shape);
+
+    if (a.shape() == helper.out_shape && b.shape() == helper.out_shape)
+    {
+        cpu::binary_broadcast_hwy(kernel_op, pa, 0, 1, pb, 0, 1, pc, 1, total_num);
+        return true;
+    }
+
+    if (a.total() == 1)
+    {
+        cpu::binary_broadcast_hwy(kernel_op, pa, 0, 0, pb, 0, 1, pc, 1, total_num);
+        return true;
+    }
+
+    if (b.total() == 1)
+    {
+        cpu::binary_broadcast_hwy(kernel_op, pa, 0, 1, pb, 0, 0, pc, 1, total_num);
+        return true;
+    }
+
+    const size_t inner = helper.out_shape.back();
+    const size_t outer = total_num / inner;
+
+    if (is_row_broadcast(helper.inp0_shape_align, helper.out_shape) && b.shape() == helper.out_shape)
+    {
+        cpu::binary_broadcast_hwy(kernel_op, pa, 0, 1, pb, inner, 1, pc, outer, inner);
+        return true;
+    }
+
+    if (a.shape() == helper.out_shape && is_row_broadcast(helper.inp1_shape_align, helper.out_shape))
+    {
+        cpu::binary_broadcast_hwy(kernel_op, pa, inner, 1, pb, 0, 1, pc, outer, inner);
+        return true;
+    }
+
+    return false;
+}
 
 // TODO Optimized the following code.
 template<typename T, typename Func>
@@ -728,13 +978,19 @@ void binaryFunc(BinaryOp op, const Mat& a, const Mat& b, Mat& c)
     if (c.empty())
     {
         c = Mat(helper.out_shape, a.type());
-        typeDispatch(a.type(), op, helper, a.data, b.data, c.data);
     }
     else
     {
         M_Assert(c.shape() == helper.out_shape);
-        typeDispatch(a.type(), op, helper, a.data, b.data, c.data);
+        M_Assert(c.type() == a.type());
     }
+
+    if (try_fast_binary_float(op, helper, a, b, c))
+    {
+        return;
+    }
+
+    typeDispatch(a.type(), op, helper, a.data, b.data, c.data);
 }
 
 }

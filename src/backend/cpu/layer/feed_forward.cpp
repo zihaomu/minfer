@@ -2,7 +2,6 @@
 // Created by mzh on 2024/7/23.
 //
 
-#include <functional>
 #include "feed_forward.h"
 #define FFN_DEBUG 0
 namespace minfer
@@ -56,63 +55,27 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     // size_t pos_stripe = start_pos * total(in_shape, 1) * DT_ELEM_SIZE(input[0]->type());
 
     Mat x = *input[0];
-    Mat x_norm = Mat(x.dims, x.size.p, DT_32F); // shape [bsz, seq_len, embed]
-    float* p = (float *)x_norm.data;
-    float* pi = (float *)(x.data);
-    float * p_norm = (float *)norm.data;
-
-    int seq_len = in_shape[1];
-
-    // relu act
-    std::function<float(const float )> act_func;
-    if (activateType == ActivateType::RELU)
-    {
-        act_func = [&](const float v)
-        {
-            return std::max(0.f, v);
-        };
-    }
-    else if (activateType == ActivateType::SILU)
-    {
-        act_func = [&](const float v)
-        {
-            return v/(1 + exp(-v));
-        };
-    }
-    else
-    {
-        M_Error(NULL, "Un-supported activation type!");
-    }
-
-    // rms-norm
-    for (int i = 0; i < seq_len; i++)
-    {
-        float sum_f2 = 0;
-        float* pi_s = pi + i * embd_dim;
-
-        // extract np.sqrt(np.mean(x**2, axis=-1, keepdims=True) + self.eps)
-        for (int j = 0; j < embd_dim; j++)
-        {
-            sum_f2 += pi_s[j] * pi_s[j];
-        }
-
-        float x1 = 1.f/sqrtf(sum_f2/embd_dim + rms_eps);
-
-        for (int j = 0; j < embd_dim; j++)
-        {
-            p[i * embd_dim + j]= pi_s[j] * x1 * p_norm[j];
-        }
-    }
+    Mat x_norm = rmsnorm(x, norm, rms_eps); // shape [1, seq_len, embed]
 
     // x1 = silu(self.linear1.forward(x))
     Mat x1 = gemm(x_norm, gate, false, true);
 
-    // Apply activation function to all elements
-    float* p_x1 = (float *)x1.data;
-    size_t total_elements = x1.total();
-    for (size_t i = 0; i < total_elements; i++)
+    if (activateType == ActivateType::RELU)
     {
-        p_x1[i] = act_func(p_x1[i]);
+        float* p_x1 = (float*)x1.data;
+        const size_t total_elements = x1.total();
+        for (size_t i = 0; i < total_elements; i++)
+        {
+            p_x1[i] = std::max(0.f, p_x1[i]);
+        }
+    }
+    else if (activateType == ActivateType::SILU)
+    {
+        silu(x1, x1);
+    }
+    else
+    {
+        M_Error(NULL, "Un-supported activation type!");
     }
 
     // x3 = self.linear3.forward(x)

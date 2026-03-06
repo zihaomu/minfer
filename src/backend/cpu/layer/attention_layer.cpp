@@ -73,43 +73,6 @@ void AttentionLayer::finalize(const std::vector<Mat *> &input, std::vector<Mat *
 
 }
 
-Mat softmax(Mat inp)
-{
-    Mat out = inp.clone();
-    M_Assert(inp.type() == DT_32F);
-
-    int inp_dim = inp.dims;
-
-    M_Assert(inp_dim > 1);
-
-    size_t last_len = inp.size[inp_dim - 1];
-    size_t out_loop = inp.total(0, inp_dim - 1);
-
-    for (int l = 0; l < out_loop; l++)
-    {
-        const float* p_i = (const float*)inp.data + last_len * l;
-        float* p_o = (float*)out.data + last_len * l;
-
-        float max_val = *std::max_element(p_i, p_i + last_len);
-
-        float sum = 0.0f;
-        for (int i = 0; i < last_len; i++)
-        {
-            p_o[i] = expf(p_i[i] - max_val);
-            sum += p_o[i];
-        }
-
-        // normalize
-        float sum_div = 1.f/sum;
-        for (int i = 0; i < last_len; i++)
-        {
-            p_o[i] *= sum_div;
-        }
-    }
-
-    return out;
-}
-
 /* forward function contains two operator, RMSnorm and attention.
  * forward contain start_pos and sequence len, how to set the sequence len to the forward?
  * */
@@ -175,69 +138,6 @@ void AttentionLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *>
     }
 }
 
-// Helper: compute RMS norm for a slice of tokens
-static void rms_norm_slice(const float* input, float* out, const float* norm_w, int seq_len, int embd_dim, float eps)
-{
-    for (int i = 0; i < seq_len; i++)
-    {
-        const float* pi_s = input + i * embd_dim;
-        float* po = out + i * embd_dim;
-
-        float sum_f2 = 0;
-        for (int j = 0; j < embd_dim; j++)
-            sum_f2 += pi_s[j] * pi_s[j];
-
-        float x1 = 1.f / sqrtf(sum_f2 / embd_dim + eps);
-        for (int j = 0; j < embd_dim; j++)
-            po[j] = pi_s[j] * x1 * norm_w[j];
-    }
-}
-
-// Helper: apply RoPE to Q and K
-static void apply_rope(float* x_q_data, float* x_k_data, int seq_len, int start_pos,
-                        int head_count, int head_count_kv, int embd_dim_head)
-{
-    int embd_dim_head_complex = embd_dim_head / 2;
-    std::vector<float> freqs_cis(embd_dim_head_complex);
-    for (int i = 0; i < embd_dim_head_complex; i++)
-        freqs_cis[i] = 1.0f / powf(10000.0f, i * 2 / (float)(embd_dim_head));
-
-    for (int i = 0; i < seq_len; i++)
-    {
-        int cur_seq = i + start_pos;
-        float* p_x_q = x_q_data + i * embd_dim_head * head_count;
-        float* p_x_k = x_k_data + i * embd_dim_head * head_count_kv;
-
-        for (int h = 0; h < head_count; h++)
-        {
-            for (int j = 0; j < embd_dim_head_complex; j++)
-            {
-                float freqs_sin = sinf(cur_seq * freqs_cis[j]);
-                float freqs_cos = cosf(cur_seq * freqs_cis[j]);
-                float q_r = p_x_q[j * 2];
-                float q_i = p_x_q[j * 2 + 1];
-                p_x_q[j * 2]     = q_r * freqs_cos - q_i * freqs_sin;
-                p_x_q[j * 2 + 1] = q_r * freqs_sin + q_i * freqs_cos;
-            }
-            p_x_q += embd_dim_head;
-        }
-
-        for (int h = 0; h < head_count_kv; h++)
-        {
-            for (int j = 0; j < embd_dim_head_complex; j++)
-            {
-                float freqs_sin = sinf(cur_seq * freqs_cis[j]);
-                float freqs_cos = cosf(cur_seq * freqs_cis[j]);
-                float k_r = p_x_k[j * 2];
-                float k_i = p_x_k[j * 2 + 1];
-                p_x_k[j * 2]     = k_r * freqs_cos - k_i * freqs_sin;
-                p_x_k[j * 2 + 1] = k_r * freqs_sin + k_i * freqs_cos;
-            }
-            p_x_k += embd_dim_head;
-        }
-    }
-}
-
 struct QKVHeads {
     Mat q; // [seq_len, head_count, embd_dim_head]
     Mat k; // [seq_len, head_count_kv, embd_dim_head]
@@ -257,19 +157,18 @@ static QKVHeads compute_qkv_heads(const Mat& x,
                                   int head_count_kv,
                                   int embd_dim_head)
 {
-    Mat x_norm = Mat(x.dims - 1, x.size.p + 1, DT_32F);
-    rms_norm_slice((float*)x.data, (float*)x_norm.data, (float*)norm.data, seq_len, embd_dim, rms_eps);
+    Mat x_rows = Mat(x.dims - 1, x.size.p + 1, DT_32F, x.data);
+    Mat x_norm = rmsnorm(x_rows, norm, rms_eps);
 
     Mat x_q = gemm(x_norm, wq, false, true);
     Mat x_k = gemm(x_norm, wk, false, true);
     Mat x_v = gemm(x_norm, wv, false, true);
 
     M_Assert(embd_dim_head % 2 == 0);
-    apply_rope((float*)x_q.data, (float*)x_k.data, seq_len, start_pos, head_count, head_count_kv, embd_dim_head);
-
     x_q = x_q.reshape({seq_len, head_count, embd_dim_head});
     x_k = x_k.reshape({seq_len, head_count_kv, embd_dim_head});
     x_v = x_v.reshape({seq_len, head_count_kv, embd_dim_head});
+    rope(x_q, x_k, start_pos);
 
     return {x_q, x_k, x_v};
 }
