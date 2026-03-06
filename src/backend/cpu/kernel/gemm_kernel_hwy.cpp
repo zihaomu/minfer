@@ -2,6 +2,10 @@
 
 #include "hwy/highway.h"
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace minfer {
 namespace cpu {
 
@@ -12,6 +16,9 @@ void gemm_kernel_hwy_nn(const float* a, const float* b, float* c,
     const hn::ScalableTag<float> d;
     const int lanes = static_cast<int>(hn::Lanes(d));
 
+#ifdef _OPENMP
+#pragma omp parallel for if(static_cast<long long>(m) * n * k >= 1LL << 16 && !omp_in_parallel())
+#endif
     for (int mi = 0; mi < m; ++mi) {
         const float* a_row = a + static_cast<size_t>(mi) * k;
         float* c_row = c + static_cast<size_t>(mi) * n;
@@ -41,6 +48,9 @@ void gemm_kernel_hwy_nt(const float* a, const float* b, float* c,
     const hn::ScalableTag<float> d;
     const int lanes = static_cast<int>(hn::Lanes(d));
 
+#ifdef _OPENMP
+#pragma omp parallel for if(static_cast<long long>(m) * n * k >= 1LL << 16 && !omp_in_parallel())
+#endif
     for (int mi = 0; mi < m; ++mi) {
         const float* a_row = a + static_cast<size_t>(mi) * k;
         float* c_row = c + static_cast<size_t>(mi) * n;

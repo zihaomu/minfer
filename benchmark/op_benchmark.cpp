@@ -8,6 +8,10 @@
 #include <random>
 #include <string>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 using namespace minfer;
 
 namespace {
@@ -21,6 +25,7 @@ struct BenchmarkOptions
     int hidden = 1024;
     int head_count = 8;
     int head_count_kv = 4;
+    int threads = 0;
 };
 
 BenchmarkOptions parse_args(int argc, char** argv)
@@ -52,6 +57,8 @@ BenchmarkOptions parse_args(int argc, char** argv)
             opts.head_count = std::stoi(need_value(arg));
         else if (arg == "--head-count-kv")
             opts.head_count_kv = std::stoi(need_value(arg));
+        else if (arg == "--threads")
+            opts.threads = std::stoi(need_value(arg));
         else if (arg == "--help" || arg == "-h")
         {
             std::cout
@@ -62,7 +69,8 @@ BenchmarkOptions parse_args(int argc, char** argv)
                 << "  --seq-len <n>\n"
                 << "  --hidden <n>\n"
                 << "  --head-count <n>\n"
-                << "  --head-count-kv <n>\n";
+                << "  --head-count-kv <n>\n"
+                << "  --threads <n>\n";
             std::exit(0);
         }
         else
@@ -85,6 +93,21 @@ BenchmarkOptions parse_args(int argc, char** argv)
     }
 
     return opts;
+}
+
+int configured_threads(const BenchmarkOptions& opts)
+{
+#ifdef _OPENMP
+    if (opts.threads > 0)
+    {
+        omp_set_dynamic(0);
+        omp_set_num_threads(opts.threads);
+    }
+    return omp_get_max_threads();
+#else
+    (void)opts;
+    return 1;
+#endif
 }
 
 void fill_random(Mat& mat, std::mt19937& rng)
@@ -128,6 +151,7 @@ int main(int argc, char** argv)
     try
     {
         const BenchmarkOptions opts = parse_args(argc, argv);
+        const int active_threads = configured_threads(opts);
         const int head_dim = opts.hidden / opts.head_count;
 
         std::mt19937 rng(20260306);
@@ -151,6 +175,11 @@ int main(int argc, char** argv)
         Mat rope_k_work;
         fill_random(rope_q_base, rng);
         fill_random(rope_k_base, rng);
+
+        Mat gemm_a({opts.batch, opts.seq_len, opts.hidden}, DT_32F);
+        Mat gemm_w({opts.hidden * 4, opts.hidden}, DT_32F);
+        fill_random(gemm_a, rng);
+        fill_random(gemm_w, rng);
 
         Mat softmax_in({opts.batch, opts.seq_len, opts.head_count, head_dim}, DT_32F);
         Mat softmax_out;
@@ -185,6 +214,11 @@ int main(int argc, char** argv)
             rope(rope_q_work, rope_k_work, 0);
         });
 
+        const double gemm_ms = benchmark_ms(opts, [&]() {
+            Mat out = gemm(gemm_a, gemm_w, false, true);
+            (void)out;
+        });
+
         const double softmax_ms = benchmark_ms(opts, [&]() {
             softmax(softmax_in, softmax_out);
         });
@@ -198,10 +232,12 @@ int main(int argc, char** argv)
         });
 
         std::cout << "minfer operator benchmark" << std::endl;
+        std::cout << "threads=" << active_threads << std::endl;
         std::cout << "shape(batch, seq, hidden)=(" << opts.batch << ", " << opts.seq_len << ", " << opts.hidden << ")" << std::endl;
         std::cout << "rope(seq, q_heads, kv_heads, head_dim)=(" << opts.seq_len << ", "
                   << opts.head_count << ", " << opts.head_count_kv << ", " << head_dim << ")" << std::endl;
 
+        print_result("gemm nt", gemm_ms);
         print_result("add same-shape", add_ms);
         print_result("mul row-broadcast", mul_row_ms);
         print_result("transpose last-two", transpose_ms);

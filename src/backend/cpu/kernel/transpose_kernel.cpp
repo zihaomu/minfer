@@ -4,6 +4,10 @@
 #include <cstdint>
 #include <cstring>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace minfer {
 namespace cpu {
 
@@ -16,6 +20,9 @@ void transpose2d_tiled(const unsigned char* src_raw, unsigned char* dst_raw, int
     T* dst = reinterpret_cast<T*>(dst_raw);
 
     constexpr int TILE = 32;
+#ifdef _OPENMP
+#pragma omp parallel for if(static_cast<long long>(rows) * cols >= (1LL << 14) && !omp_in_parallel())
+#endif
     for (int row0 = 0; row0 < rows; row0 += TILE)
     {
         const int row1 = std::min(row0 + TILE, rows);
@@ -58,6 +65,9 @@ void transpose2d_kernel_blocked(const unsigned char* src,
         default:
         {
             constexpr int TILE = 32;
+#ifdef _OPENMP
+#pragma omp parallel for if(static_cast<long long>(rows) * cols >= (1LL << 14) && !omp_in_parallel())
+#endif
             for (int row0 = 0; row0 < rows; row0 += TILE)
             {
                 const int row1 = std::min(row0 + TILE, rows);

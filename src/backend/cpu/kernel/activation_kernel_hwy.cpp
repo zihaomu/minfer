@@ -5,6 +5,10 @@
 
 #include <cmath>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace minfer {
 namespace cpu {
 
@@ -17,16 +21,22 @@ void silu_kernel_hwy(const float* input, float* output, size_t count)
     const auto one = hn::Set(d, 1.0f);
     const auto zero = hn::Zero(d);
 
-    size_t idx = 0;
-    for (; idx + lanes <= count; idx += lanes)
+    const size_t vectorized = (count / lanes) * lanes;
+    const long long chunk_count = static_cast<long long>(vectorized / lanes);
+
+#ifdef _OPENMP
+#pragma omp parallel for if(static_cast<long long>(count) >= (1LL << 15) && !omp_in_parallel())
+#endif
+    for (long long chunk = 0; chunk < chunk_count; ++chunk)
     {
+        const size_t idx = static_cast<size_t>(chunk) * lanes;
         const auto vx = hn::LoadU(d, input + idx);
         const auto exp_neg = hn::Exp(d, hn::Sub(zero, vx));
         const auto vy = hn::Div(vx, hn::Add(one, exp_neg));
         hn::StoreU(vy, d, output + idx);
     }
 
-    for (; idx < count; ++idx)
+    for (size_t idx = vectorized; idx < count; ++idx)
     {
         const float x = input[idx];
         output[idx] = x / (1.0f + std::exp(-x));

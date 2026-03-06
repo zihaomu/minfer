@@ -3,6 +3,10 @@
 #include <cmath>
 #include <vector>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace minfer {
 namespace cpu {
 
@@ -43,8 +47,6 @@ void rope_kernel_inplace(float* q,
 {
     const int complex_dim = head_dim / 2;
     std::vector<float> inv_freq(complex_dim);
-    std::vector<float> sin_cache(complex_dim);
-    std::vector<float> cos_cache(complex_dim);
 
     for (int idx = 0; idx < complex_dim; ++idx)
     {
@@ -54,6 +56,13 @@ void rope_kernel_inplace(float* q,
     const size_t q_step = static_cast<size_t>(head_count) * head_dim;
     const size_t k_step = static_cast<size_t>(head_count_kv) * head_dim;
 
+#ifdef _OPENMP
+#pragma omp parallel if(static_cast<long long>(seq_len) * (head_count + head_count_kv) * head_dim >= (1LL << 13) && !omp_in_parallel())
+    {
+        std::vector<float> sin_cache(complex_dim);
+        std::vector<float> cos_cache(complex_dim);
+#pragma omp for
+#endif
     for (int seq_idx = 0; seq_idx < seq_len; ++seq_idx)
     {
         const float pos = static_cast<float>(start_pos + seq_idx);
@@ -75,6 +84,9 @@ void rope_kernel_inplace(float* q,
                             sin_cache,
                             cos_cache);
     }
+#ifdef _OPENMP
+    }
+#endif
 }
 
 }  // namespace cpu

@@ -8,6 +8,10 @@
 #include "minfer/utils.h"
 #include "backend/cpu/kernel/gemm_kernel_hwy.h"
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace minfer
 {
 
@@ -107,9 +111,13 @@ void gemm_impl_naive(const Mat& a, const Mat& b, Mat& c)
     const float* pb = (const float*)b.data;
     float* pc = (float*)c.data;
 
-    for (size_t i = 0; i < out_loop; i++)
+    const long long out_loop_ll = static_cast<long long>(out_loop);
+#ifdef _OPENMP
+#pragma omp parallel for if(out_loop_ll > 1 && static_cast<long long>(M) * N * K <= (1LL << 15))
+#endif
+    for (long long i = 0; i < out_loop_ll; i++)
     {
-        size_t tmp = i;
+        size_t tmp = static_cast<size_t>(i);
         std::vector<int> idx_c(out_batch_dims);
         for (int d = 0; d < out_batch_dims; d++)
         {
@@ -122,7 +130,7 @@ void gemm_impl_naive(const Mat& a, const Mat& b, Mat& c)
 
         const float* pai = lin_a * step_a + pa;
         const float* pbi = lin_b * step_b + pb;
-        float* pci = i * step_c + pc;
+        float* pci = static_cast<size_t>(i) * step_c + pc;
 
         cpu::gemm_kernel_hwy_nn(pai, pbi, pci, M, N, K);
     }
@@ -244,9 +252,13 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
     const float* pb = (const float*)b.data;
     float* pc = (float*)c.data;
 
-    for (size_t i = 0; i < out_loop; i++)
+    const long long out_loop_ll = static_cast<long long>(out_loop);
+#ifdef _OPENMP
+#pragma omp parallel for if(out_loop_ll > 1 && static_cast<long long>(M) * N * K <= (1LL << 15))
+#endif
+    for (long long i = 0; i < out_loop_ll; i++)
     {
-        size_t tmp = i;
+        size_t tmp = static_cast<size_t>(i);
         std::vector<int> idx_c(out_batch_dims);
         for (int d = 0; d < out_batch_dims; d++)
         {
@@ -259,7 +271,7 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
 
         const float* pai = lin_a * step_a + pa;
         const float* pbi = lin_b * step_b + pb;
-        float* pci = i * step_c + pc;
+        float* pci = static_cast<size_t>(i) * step_c + pc;
 
         cpu::gemm_kernel_hwy_nt(pai, pbi, pci, M, N, K);
     }

@@ -7,6 +7,10 @@
 #include <cmath>
 #include <limits>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace minfer {
 namespace cpu {
 
@@ -17,10 +21,15 @@ void softmax_lastdim_hwy(const float* input, float* output, size_t outer, size_t
     const hn::ScalableTag<float> d;
     const size_t lanes = static_cast<size_t>(hn::Lanes(d));
 
-    for (size_t outer_idx = 0; outer_idx < outer; ++outer_idx)
+    const long long outer_ll = static_cast<long long>(outer);
+#ifdef _OPENMP
+#pragma omp parallel for if(outer_ll * static_cast<long long>(inner) >= (1LL << 14) && !omp_in_parallel())
+#endif
+    for (long long outer_idx = 0; outer_idx < outer_ll; ++outer_idx)
     {
-        const float* input_row = input + outer_idx * inner;
-        float* output_row = output + outer_idx * inner;
+        const size_t outer_i = static_cast<size_t>(outer_idx);
+        const float* input_row = input + outer_i * inner;
+        float* output_row = output + outer_i * inner;
 
         auto vmax = hn::Set(d, -std::numeric_limits<float>::infinity());
         size_t idx = 0;
@@ -80,10 +89,15 @@ void rmsnorm_lastdim_hwy(const float* input,
     const hn::ScalableTag<float> d;
     const size_t lanes = static_cast<size_t>(hn::Lanes(d));
 
-    for (size_t outer_idx = 0; outer_idx < outer; ++outer_idx)
+    const long long outer_ll = static_cast<long long>(outer);
+#ifdef _OPENMP
+#pragma omp parallel for if(outer_ll * static_cast<long long>(channels) >= (1LL << 14) && !omp_in_parallel())
+#endif
+    for (long long outer_idx = 0; outer_idx < outer_ll; ++outer_idx)
     {
-        const float* input_row = input + outer_idx * channels;
-        float* output_row = output + outer_idx * channels;
+        const size_t outer_i = static_cast<size_t>(outer_idx);
+        const float* input_row = input + outer_i * channels;
+        float* output_row = output + outer_i * channels;
 
         auto sum_sq_vec = hn::Zero(d);
         size_t idx = 0;

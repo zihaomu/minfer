@@ -754,27 +754,26 @@ inline bool try_fast_binary_float(BinaryOp op, const BinaryOpHelper& helper, con
     const float* pb = reinterpret_cast<const float*>(b.data);
     float* pc = reinterpret_cast<float*>(c.data);
     const size_t total_num = total(helper.out_shape);
+    const size_t inner = helper.out_shape.back();
+    const size_t outer = total_num / inner;
 
     if (a.shape() == helper.out_shape && b.shape() == helper.out_shape)
     {
-        cpu::binary_broadcast_hwy(kernel_op, pa, 0, 1, pb, 0, 1, pc, 1, total_num);
+        cpu::binary_broadcast_hwy(kernel_op, pa, inner, 1, pb, inner, 1, pc, outer, inner);
         return true;
     }
 
     if (a.total() == 1)
     {
-        cpu::binary_broadcast_hwy(kernel_op, pa, 0, 0, pb, 0, 1, pc, 1, total_num);
+        cpu::binary_broadcast_hwy(kernel_op, pa, 0, 0, pb, inner, 1, pc, outer, inner);
         return true;
     }
 
     if (b.total() == 1)
     {
-        cpu::binary_broadcast_hwy(kernel_op, pa, 0, 1, pb, 0, 0, pc, 1, total_num);
+        cpu::binary_broadcast_hwy(kernel_op, pa, inner, 1, pb, 0, 0, pc, outer, inner);
         return true;
     }
-
-    const size_t inner = helper.out_shape.back();
-    const size_t outer = total_num / inner;
 
     if (is_row_broadcast(helper.inp0_shape_align, helper.out_shape) && b.shape() == helper.out_shape)
     {

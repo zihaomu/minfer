@@ -20,6 +20,17 @@ set(CMAKE_MODULE_PATH
     "${CMAKE_CURRENT_LIST_DIR}/cmake"
 )
 
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+    message(STATUS "OpenMP found: enabling parallel kernels")
+    add_compile_definitions(M_HAS_OPENMP=1)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+else()
+    message(STATUS "OpenMP not found: kernels remain single-threaded")
+endif()
+
 # Add debug macro to project
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     add_definitions(-DM_DEBUG)

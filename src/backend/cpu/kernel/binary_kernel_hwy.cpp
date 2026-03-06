@@ -2,6 +2,10 @@
 
 #include "hwy/highway.h"
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace minfer {
 namespace cpu {
 
@@ -42,11 +46,16 @@ void binary_broadcast_hwy(BinaryKernelOp op,
     const hn::ScalableTag<float> d;
     const size_t lanes = static_cast<size_t>(hn::Lanes(d));
 
-    for (size_t outer_idx = 0; outer_idx < outer; ++outer_idx)
+    const long long outer_ll = static_cast<long long>(outer);
+#ifdef _OPENMP
+#pragma omp parallel for if(outer_ll * static_cast<long long>(inner) >= (1LL << 15) && !omp_in_parallel())
+#endif
+    for (long long outer_idx = 0; outer_idx < outer_ll; ++outer_idx)
     {
-        const float* lhs_row = lhs + outer_idx * lhs_outer_stride;
-        const float* rhs_row = rhs + outer_idx * rhs_outer_stride;
-        float* out_row = out + outer_idx * inner;
+        const size_t outer_i = static_cast<size_t>(outer_idx);
+        const float* lhs_row = lhs + outer_i * lhs_outer_stride;
+        const float* rhs_row = rhs + outer_i * rhs_outer_stride;
+        float* out_row = out + outer_i * inner;
 
         size_t inner_idx = 0;
         if (lhs_inner_stride == 1 && rhs_inner_stride == 1)
