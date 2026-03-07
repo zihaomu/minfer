@@ -60,6 +60,8 @@ public:
     Mat prefill(const std::vector<int>& token_ids);
     Mat step(int token_id);
     void resetKVCache();
+    void setRuntimePrecision(RuntimePrecision precision);
+    RuntimePrecision getRuntimePrecision() const;
 
 private:
     void createLayerRecurve(int layerIdx, std::vector<int>& isLayerCreated, const std::map<int,
@@ -88,6 +90,7 @@ private:
     std::shared_ptr<GGUF_Vocab> gguf_vocab = nullptr; // 用于存储gguf模型的vocab
 
     InferenceContext ctx_; // 推理上下文，用于 chat 生成
+    RuntimePrecision runtimePrecision_ = RuntimePrecision::FP32;
 };
 
 }

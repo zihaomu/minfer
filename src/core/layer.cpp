@@ -56,6 +56,16 @@ void Layer::resetKVCache()
     // 默认空实现，仅 AttentionLayer 需要重写
 }
 
+void Layer::setRuntimePrecision(RuntimePrecision precision)
+{
+    runtimePrecision = precision;
+}
+
+RuntimePrecision Layer::getRuntimePrecision() const
+{
+    return runtimePrecision;
+}
+
 int Layer::getId()
 {
     return layerId;

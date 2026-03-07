@@ -77,5 +77,65 @@ void gemm_kernel_hwy_nt(const float* a, const float* b, float* c,
     }
 }
 
+void gemm_kernel_hwy_nn_fp16(const float* a, const hfloat* b, float* c,
+                             int m, int n, int k) {
+#ifdef _OPENMP
+#pragma omp parallel for if(should_parallelize_1d_loop(m, static_cast<size_t>(n) * static_cast<size_t>(k), 1LL << 16, 1))
+#endif
+    for (int mi = 0; mi < m; ++mi) {
+        const float* a_row = a + static_cast<size_t>(mi) * k;
+        float* c_row = c + static_cast<size_t>(mi) * n;
+
+        for (int ni = 0; ni < n; ++ni) {
+            float sum = 0.0f;
+            for (int ki = 0; ki < k; ++ki) {
+                sum += a_row[ki] * static_cast<float>(b[static_cast<size_t>(ki) * n + ni]);
+            }
+            c_row[ni] = sum;
+        }
+    }
+}
+
+void gemm_kernel_hwy_nt_fp16(const float* a, const hfloat* b, float* c,
+                             int m, int n, int k) {
+#ifdef _OPENMP
+#pragma omp parallel for if(should_parallelize_1d_loop(m, static_cast<size_t>(n) * static_cast<size_t>(k), 1LL << 16, 1))
+#endif
+    for (int mi = 0; mi < m; ++mi) {
+        const float* a_row = a + static_cast<size_t>(mi) * k;
+        float* c_row = c + static_cast<size_t>(mi) * n;
+
+        for (int ni = 0; ni < n; ++ni) {
+            const hfloat* b_row = b + static_cast<size_t>(ni) * k;
+            float sum = 0.0f;
+            for (int ki = 0; ki < k; ++ki) {
+                sum += a_row[ki] * static_cast<float>(b_row[ki]);
+            }
+            c_row[ni] = sum;
+        }
+    }
+}
+
+void gemm_kernel_hwy_nt_i8_rowwise(const float* a, const int8_t* b, const float* scales, float* c,
+                                   int m, int n, int k) {
+#ifdef _OPENMP
+#pragma omp parallel for if(should_parallelize_1d_loop(m, static_cast<size_t>(n) * static_cast<size_t>(k), 1LL << 16, 1))
+#endif
+    for (int mi = 0; mi < m; ++mi) {
+        const float* a_row = a + static_cast<size_t>(mi) * k;
+        float* c_row = c + static_cast<size_t>(mi) * n;
+
+        for (int ni = 0; ni < n; ++ni) {
+            const int8_t* b_row = b + static_cast<size_t>(ni) * k;
+            const float scale = scales[ni];
+            float sum = 0.0f;
+            for (int ki = 0; ki < k; ++ki) {
+                sum += a_row[ki] * (static_cast<float>(b_row[ki]) * scale);
+            }
+            c_row[ni] = sum;
+        }
+    }
+}
+
 }  // namespace cpu
 }  // namespace minfer

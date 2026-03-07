@@ -290,6 +290,12 @@ size_t total(const MatShape shape, int startDim, int endDim = -1);
 
 // for fast gemm
 Mat gemm(const Mat& a, const Mat& b, bool transA = false, bool transB = false);
+Mat gemm(const Mat& a, const Mat& b, const Mat& b_scales, bool transA = false, bool transB = false);
+
+void quantize_int8_per_tensor(const Mat& src, Mat& dst_int8, Mat& dst_scales);
+void quantize_int8_per_row(const Mat& src, Mat& dst_int8, Mat& dst_scales);
+void dequantize_int8_per_tensor(const Mat& src_int8, const Mat& scales, Mat& dst_fp32);
+void dequantize_int8_per_row(const Mat& src_int8, const Mat& scales, Mat& dst_fp32);
 
 // read data from given path and re-construct it to Mat.
 Mat readMatFromNpy(const std::string& path);

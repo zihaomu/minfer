@@ -180,3 +180,72 @@ TEST(Net_TEST, net_tiny_llama)
         }
     }
 }
+
+TEST(Net_TEST, runtime_precision_matches_fp32_on_synthetic_transformer)
+{
+    const int vocab = 16;
+    const int embd = 8;
+    const int seq_len = 4;
+    const int heads = 2;
+    const int ffn_dim = 16;
+
+    auto make_mat = [](const std::vector<int>& shape, float scale = 1.0f, float bias = 0.0f) {
+        Mat mat(shape, DT_32F);
+        float* data = reinterpret_cast<float*>(mat.data);
+        for (size_t i = 0; i < mat.total(); ++i)
+        {
+            data[i] = std::sin(static_cast<float>(i) * 0.17f) * scale +
+                      std::cos(static_cast<float>(i) * 0.05f) * scale * 0.5f +
+                      bias;
+        }
+        return mat;
+    };
+
+    std::vector<std::shared_ptr<LayerParams>> layers = {
+        std::shared_ptr<LayerParams>(new LayerParams(LayerType::Input, {0}, {1})),
+        std::shared_ptr<LayerParams>(new EmbeddingLayerParams({1}, {2}, vocab, embd, make_mat({vocab, embd}, 0.4f))),
+        std::shared_ptr<LayerParams>(new AttentionLayerParams({2}, {3}, 8, embd, heads, heads, 1e-6f,
+            make_mat({embd}, 0.2f, 1.0f), make_mat({embd, embd}, 0.25f), make_mat({embd, embd}, 0.25f),
+            make_mat({embd, embd}, 0.25f), make_mat({embd, embd}, 0.25f))),
+        std::shared_ptr<LayerParams>(new FeedForwardLayerParams({3}, {4}, ActivateType::SILU, embd, ffn_dim, 1e-6f,
+            make_mat({embd}, 0.2f, 1.0f), make_mat({ffn_dim, embd}, 0.2f), make_mat({ffn_dim, embd}, 0.2f),
+            make_mat({embd, ffn_dim}, 0.2f))),
+        std::shared_ptr<LayerParams>(new LinearLayerParams({4}, {5}, embd, vocab, make_mat({vocab, embd}, 0.2f), make_mat({vocab}, 0.05f))),
+        std::shared_ptr<LayerParams>(new LayerParams(LayerType::Output, {5}, {6})),
+    };
+
+    std::vector<int> ids_data = {1, 3, 7, 2};
+    Mat input_ids({1, seq_len}, DT_32S, ids_data.data());
+
+    auto run_net = [&](RuntimePrecision precision) {
+        Net net;
+        net.createNet(layers);
+        net.setRuntimePrecision(precision);
+        net.setInput(input_ids);
+        net.init();
+        return net.forward();
+    };
+
+    Mat fp32_out = run_net(RuntimePrecision::FP32);
+    Mat fp16_out = run_net(RuntimePrecision::FP16);
+    Mat int8_out = run_net(RuntimePrecision::INT8);
+
+    auto expect_close = [](const Mat& out, const Mat& ref, float mean_tol, float max_tol, const char* name) {
+        const float* out_data = reinterpret_cast<const float*>(out.data);
+        const float* ref_data = reinterpret_cast<const float*>(ref.data);
+        double mean_abs = 0.0;
+        double max_abs = 0.0;
+        for (size_t i = 0; i < out.total(); ++i)
+        {
+            const double diff = std::abs(static_cast<double>(out_data[i]) - static_cast<double>(ref_data[i]));
+            mean_abs += diff;
+            max_abs = std::max(max_abs, diff);
+        }
+        mean_abs /= std::max<size_t>(1, out.total());
+        EXPECT_LE(mean_abs, mean_tol) << name << " mean_abs=" << mean_abs;
+        EXPECT_LE(max_abs, max_tol) << name << " max_abs=" << max_abs;
+    };
+
+    expect_close(fp16_out, fp32_out, 1.0e-1f, 6.0e-1f, "net_fp16");
+    expect_close(int8_out, fp32_out, 4.0e-1f, 2.5f, "net_int8");
+}

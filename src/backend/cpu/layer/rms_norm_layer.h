@@ -6,6 +6,7 @@
 #define MINFER_RMS_NORM_LAYER_H
 
 #include "common_layer.h"
+#include "runtime_weight.h"
 
 namespace minfer {
 
@@ -22,10 +23,12 @@ public:
     // and the forward can be run several times
     void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
+    void setRuntimePrecision(RuntimePrecision precision) override;
+
 private:
     int embd_dim;
     float rms_eps;
-    Mat w;
+    RuntimeWeight w;
     RMSNormLayer(const std::shared_ptr<RMSNormLayerParams> param);
 };
 

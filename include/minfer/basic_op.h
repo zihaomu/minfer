@@ -70,6 +70,8 @@ Mat silu(const Mat& input);
 // Apply RMSNorm along the last dimension using 1D weight.
 void rmsnorm(const Mat& input, const Mat& weight, Mat& output, float eps = 1e-6f);
 Mat rmsnorm(const Mat& input, const Mat& weight, float eps = 1e-6f);
+void rmsnorm(const Mat& input, const Mat& weight, const Mat& weight_scales, Mat& output, float eps = 1e-6f);
+Mat rmsnorm(const Mat& input, const Mat& weight, const Mat& weight_scales, float eps = 1e-6f);
 
 // Apply rotary positional embedding to Q/K in place.
 // q shape: [seq_len, head_count, head_dim]

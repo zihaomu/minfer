@@ -16,7 +16,7 @@ RMSNormLayer::RMSNormLayer(const std::shared_ptr<RMSNormLayerParams> param)
     rms_eps = param->rms_eps;
     MatShape w_shape = param->w.shape();
     M_Assert(w_shape.size() == 1 && w_shape[0] == embd_dim);
-    w = param->w;
+    w.init(param->w, Int8QuantScheme::PerTensor);
 }
 
 RMSNormLayer::~RMSNormLayer()
@@ -51,7 +51,14 @@ void RMSNormLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &ou
     M_Assert(in_shape[2] == embd_dim);
     M_Assert(in_shape[0] == 1 && "Currently, only support single batch!");
 
-    rmsnorm(*input[0], w, *output[0], rms_eps);
+    if (w.usesInt8())
+    {
+        rmsnorm(*input[0], w.active(), w.int8Scales(), *output[0], rms_eps);
+    }
+    else
+    {
+        rmsnorm(*input[0], w.active(), *output[0], rms_eps);
+    }
 }
 
 std::shared_ptr<RMSNormLayer> RMSNormLayer::create(const std::shared_ptr<LayerParams> param)
@@ -63,6 +70,12 @@ std::shared_ptr<RMSNormLayer> RMSNormLayer::create(const std::shared_ptr<LayerPa
 
     return std::shared_ptr<RMSNormLayer>(new RMSNormLayer(r_param));
 
+}
+
+void RMSNormLayer::setRuntimePrecision(RuntimePrecision precision)
+{
+    Layer::setRuntimePrecision(precision);
+    w.setPrecision(precision);
 }
 
 }

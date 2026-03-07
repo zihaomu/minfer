@@ -7,6 +7,7 @@
 
 #include "minfer.h"
 #include "common_layer.h"
+#include "runtime_weight.h"
 
 namespace minfer {
 
@@ -46,12 +47,14 @@ public:
     // 重置 KV Cache
     void resetKVCache() override;
 
+    void setRuntimePrecision(RuntimePrecision precision) override;
+
 private:
-    Mat norm;
-    Mat wq;
-    Mat wk;
-    Mat wv;
-    Mat wout;
+    RuntimeWeight norm;
+    RuntimeWeight wq;
+    RuntimeWeight wk;
+    RuntimeWeight wv;
+    RuntimeWeight wout;
 
     bool has_bias;
     Mat bq;

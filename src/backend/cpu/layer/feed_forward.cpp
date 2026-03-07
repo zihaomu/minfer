@@ -10,14 +10,15 @@ namespace minfer
 FeedForwardLayer::FeedForwardLayer(const std::shared_ptr<FeedForwardLayerParams> param)
 {
     layerNamePrefix = "FeedForwardLayer_";
+    getBasicInfo(param);
     embd_dim = param->embd_dim;
     ffn_dim = param->ffn_dim;
     rms_eps = param->rms_eps;
 
-    param->norm.convertTo(norm, DT_32F);
-    param->up.convertTo(up, DT_32F);
-    param->gate.convertTo(gate, DT_32F);
-    param->down.convertTo(down, DT_32F);
+    norm.init(param->norm, Int8QuantScheme::PerTensor);
+    up.init(canonicalize_linear_weight(param->up, ffn_dim, embd_dim), Int8QuantScheme::PerRow);
+    gate.init(canonicalize_linear_weight(param->gate, ffn_dim, embd_dim), Int8QuantScheme::PerRow);
+    down.init(canonicalize_linear_weight(param->down, embd_dim, ffn_dim), Int8QuantScheme::PerRow);
 
     activateType = param->actType;
 #if ATTEN_DEBUG
@@ -55,10 +56,14 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     // size_t pos_stripe = start_pos * total(in_shape, 1) * DT_ELEM_SIZE(input[0]->type());
 
     Mat x = *input[0];
-    Mat x_norm = rmsnorm(x, norm, rms_eps); // shape [1, seq_len, embed]
+    Mat x_norm = norm.usesInt8()
+        ? rmsnorm(x, norm.active(), norm.int8Scales(), rms_eps)
+        : rmsnorm(x, norm.active(), rms_eps); // shape [1, seq_len, embed]
 
     // x1 = silu(self.linear1.forward(x))
-    Mat x1 = gemm(x_norm, gate, false, true);
+    Mat x1 = gate.usesInt8()
+        ? gemm(x_norm, gate.active(), gate.int8Scales(), false, true)
+        : gemm(x_norm, gate.active(), false, true);
 
     if (activateType == ActivateType::RELU)
     {
@@ -79,13 +84,22 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     }
 
     // x3 = self.linear3.forward(x)
-    Mat x3 = gemm(x_norm, up, false, true);
+    Mat x3 = up.usesInt8()
+        ? gemm(x_norm, up.active(), up.int8Scales(), false, true)
+        : gemm(x_norm, up.active(), false, true);
 
     // x_out = self.linear2.forward(x1 * x3)
     Mat out = *output[0];
     Mat x_out = Mat(out.size.dims(), out.size.p, out.type(), out.data);
 
-    gemm(x1 * x3, down, false, true).copyTo(out);
+    if (down.usesInt8())
+    {
+        gemm(x1 * x3, down.active(), down.int8Scales(), false, true).copyTo(out);
+    }
+    else
+    {
+        gemm(x1 * x3, down.active(), false, true).copyTo(out);
+    }
 
     // std::cout<<"out gemm"<<std::endl;
     // out.print(10);
@@ -97,6 +111,15 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
 void FeedForwardLayer::finalize(const std::vector<Mat*>& input, std::vector<Mat*>& output)
 {
 
+}
+
+void FeedForwardLayer::setRuntimePrecision(RuntimePrecision precision)
+{
+    Layer::setRuntimePrecision(precision);
+    norm.setPrecision(precision);
+    gate.setPrecision(precision);
+    up.setPrecision(precision);
+    down.setPrecision(precision);
 }
 
 FeedForwardLayer::~FeedForwardLayer()

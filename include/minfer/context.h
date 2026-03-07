@@ -8,6 +8,12 @@
 namespace minfer
 {
 
+enum class RuntimePrecision {
+    FP32,
+    FP16,
+    INT8,
+};
+
 enum class InferPhase {
     Prefill,   // 首次处理完整 prompt
     Decode     // 逐 token 自回归生成

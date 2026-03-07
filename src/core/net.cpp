@@ -96,4 +96,16 @@ void Net::resetKVCache()
     return impl->resetKVCache();
 }
 
+void Net::setRuntimePrecision(RuntimePrecision precision)
+{
+    M_Assert(impl != nullptr);
+    impl->setRuntimePrecision(precision);
+}
+
+RuntimePrecision Net::getRuntimePrecision() const
+{
+    M_Assert(impl != nullptr);
+    return impl->getRuntimePrecision();
+}
+
 }

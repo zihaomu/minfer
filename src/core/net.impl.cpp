@@ -290,6 +290,7 @@ int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
     {
         M_Error_(Error::Code::StsBadType, ("Fail to create layer instance with type = %d!", (int)param->type));
     }
+    layer->setRuntimePrecision(runtimePrecision_);
 
     // 对输入输出对特殊处理
     // 输入将会在setinput中进行初始化。
@@ -376,6 +377,23 @@ void Net::NetImpl::encode(const std::string text, std::vector<int> &out_ids)
 {
     M_Assert(gguf_vocab && "gguf_vocab is empty, can not encode!");
     gguf_vocab->encode(text, out_ids);
+}
+
+void Net::NetImpl::setRuntimePrecision(RuntimePrecision precision)
+{
+    runtimePrecision_ = precision;
+    for (auto& ld : lds)
+    {
+        if (ld.layer)
+        {
+            ld.layer->setRuntimePrecision(precision);
+        }
+    }
+}
+
+RuntimePrecision Net::NetImpl::getRuntimePrecision() const
+{
+    return runtimePrecision_;
 }
 
 // ====== Chat 生成接口实现 ======

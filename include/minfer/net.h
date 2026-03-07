@@ -73,6 +73,10 @@ public:
     /// 重置所有 AttentionLayer 的 KV Cache，开始新一轮对话
     void resetKVCache();
 
+    void setRuntimePrecision(RuntimePrecision precision);
+
+    RuntimePrecision getRuntimePrecision() const;
+
     Mat forward();
 
 private:

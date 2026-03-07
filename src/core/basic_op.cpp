@@ -192,7 +192,8 @@ Mat silu(const Mat& input)
 void rmsnorm(const Mat& input, const Mat& weight, Mat& output, float eps)
 {
     M_Assert(!input.empty() && !weight.empty() && "RMSNorm input/weight can not be empty!");
-    M_Assert(input.type() == DT_32F && weight.type() == DT_32F && "Currently only FP32 RMSNorm is supported!");
+    M_Assert(input.type() == DT_32F && "Currently only FP32 RMSNorm input is supported!");
+    M_Assert((weight.type() == DT_32F || weight.type() == DT_16F) && "RMSNorm weight supports FP32/FP16!");
     M_Assert(weight.dims == 1 && "RMSNorm weight must be 1D!");
     M_Assert(weight.size[0] == input.size[input.dims - 1] && "RMSNorm weight size must match input last dimension!");
 
@@ -208,18 +209,67 @@ void rmsnorm(const Mat& input, const Mat& weight, Mat& output, float eps)
 
     const size_t channels = input.size[input.dims - 1];
     const size_t outer = input.total() / channels;
-    cpu::rmsnorm_lastdim_hwy(reinterpret_cast<const float*>(input.data),
-                             reinterpret_cast<const float*>(weight.data),
-                             reinterpret_cast<float*>(output.data),
-                             outer,
-                             channels,
-                             eps);
+    if (weight.type() == DT_32F)
+    {
+        cpu::rmsnorm_lastdim_hwy(reinterpret_cast<const float*>(input.data),
+                                 reinterpret_cast<const float*>(weight.data),
+                                 reinterpret_cast<float*>(output.data),
+                                 outer,
+                                 channels,
+                                 eps);
+    }
+    else
+    {
+        cpu::rmsnorm_lastdim_hwy_fp16_weight(reinterpret_cast<const float*>(input.data),
+                                             reinterpret_cast<const hfloat*>(weight.data),
+                                             reinterpret_cast<float*>(output.data),
+                                             outer,
+                                             channels,
+                                             eps);
+    }
 }
 
 Mat rmsnorm(const Mat& input, const Mat& weight, float eps)
 {
     Mat output;
     rmsnorm(input, weight, output, eps);
+    return output;
+}
+
+void rmsnorm(const Mat& input, const Mat& weight, const Mat& weight_scales, Mat& output, float eps)
+{
+    M_Assert(!input.empty() && !weight.empty() && !weight_scales.empty() && "RMSNorm quantized input/weight can not be empty!");
+    M_Assert(input.type() == DT_32F && "Currently only FP32 RMSNorm input is supported!");
+    M_Assert(weight.type() == DT_8S && "Quantized RMSNorm expects INT8 weight!");
+    M_Assert(weight_scales.type() == DT_32F && weight_scales.total() == 1 && "Quantized RMSNorm expects a single FP32 scale!");
+    M_Assert(weight.dims == 1 && "RMSNorm weight must be 1D!");
+    M_Assert(weight.size[0] == input.size[input.dims - 1] && "RMSNorm weight size must match input last dimension!");
+
+    if (output.empty())
+    {
+        output = Mat(input.dims, input.size.p, input.type());
+    }
+    else
+    {
+        M_Assert(output.type() == input.type());
+        M_Assert(output.shape() == input.shape());
+    }
+
+    const size_t channels = input.size[input.dims - 1];
+    const size_t outer = input.total() / channels;
+    cpu::rmsnorm_lastdim_hwy_i8_weight(reinterpret_cast<const float*>(input.data),
+                                       reinterpret_cast<const int8_t*>(weight.data),
+                                       reinterpret_cast<const float*>(weight_scales.data),
+                                       reinterpret_cast<float*>(output.data),
+                                       outer,
+                                       channels,
+                                       eps);
+}
+
+Mat rmsnorm(const Mat& input, const Mat& weight, const Mat& weight_scales, float eps)
+{
+    Mat output;
+    rmsnorm(input, weight, weight_scales, output, eps);
     return output;
 }
 

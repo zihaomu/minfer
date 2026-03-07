@@ -18,28 +18,9 @@ EmbeddingLayer::EmbeddingLayer(const std::shared_ptr<EmbeddingLayerParams> param
     MatShape w_shape = param->w.shape();
     M_Assert(w_shape.size() == 2);
 
+    w.init(canonicalize_lookup_weight(param->w, vocab_dim, embd_dim), Int8QuantScheme::PerRow);
 
-    auto tt = param->w.total();
-    auto t = param->w.type();
-
-    Mat wFp32;
-    param->w.convertTo(wFp32, DT_32F);
-
-    // 有的模型会将embedding的weight设置为[embd_dim, vocab_dim]，有的模型会设置为[vocab_dim, embd_dim]
-    if (w_shape[0] == vocab_dim && w_shape[1] == embd_dim)
-    {
-        // 这种情况是[vocab_dim, embd_dim]
-        w = wFp32;
-    }
-    else if (w_shape[0] == embd_dim && w_shape[1] == vocab_dim)
-    {
-        // 这种情况是[embd_dim, vocab_dim]
-        w = transposeND(wFp32, {1, 0});
-    }
-    else
-        M_Error(NULL, "EmbeddingLayer weight shape is not supported! ");
-
-    MatShape w_shape2 = w.shape();
+    MatShape w_shape2 = w.active().shape();
     M_Assert(w_shape2[0] == vocab_dim);
     M_Assert(w_shape2[1] == embd_dim);
 }
@@ -100,15 +81,47 @@ void EmbeddingLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &
     M_Assert(out_shape[2] == embd_dim);
 
     int* index = (int*)input[0]->data;
-    float* w_ptr = (float*)w.data;
     float* output_ptr = (float*)output[0]->data;
+    const RuntimePrecision precision = w.precision();
+    const float* w_ptr_fp32 = precision == RuntimePrecision::FP32
+        ? reinterpret_cast<const float*>(w.active().data)
+        : nullptr;
+    const hfloat* w_ptr_fp16 = precision == RuntimePrecision::FP16
+        ? reinterpret_cast<const hfloat*>(w.active().data)
+        : nullptr;
+    const int8_t* w_ptr_int8 = precision == RuntimePrecision::INT8
+        ? reinterpret_cast<const int8_t*>(w.active().data)
+        : nullptr;
+    const float* int8_scales = precision == RuntimePrecision::INT8
+        ? reinterpret_cast<const float*>(w.int8Scales().data)
+        : nullptr;
 
     for (int i = 0; i < seq_len; i++)
     {
         int word_id = index[i];
         float* embd = output_ptr + i * embd_dim;
 
-        memcpy(embd, w_ptr + word_id * embd_dim, embd_dim * sizeof(float));
+        if (precision == RuntimePrecision::FP32)
+        {
+            memcpy(embd, w_ptr_fp32 + word_id * embd_dim, embd_dim * sizeof(float));
+        }
+        else if (precision == RuntimePrecision::FP16)
+        {
+            const hfloat* src = w_ptr_fp16 + word_id * embd_dim;
+            for (int j = 0; j < embd_dim; ++j)
+            {
+                embd[j] = static_cast<float>(src[j]);
+            }
+        }
+        else
+        {
+            const int8_t* src = w_ptr_int8 + word_id * embd_dim;
+            const float scale = int8_scales[word_id];
+            for (int j = 0; j < embd_dim; ++j)
+            {
+                embd[j] = static_cast<float>(src[j]) * scale;
+            }
+        }
         
         // Debug
         #if 0
@@ -121,6 +134,12 @@ void EmbeddingLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &
         }
         #endif
     }
+}
+
+void EmbeddingLayer::setRuntimePrecision(RuntimePrecision precision)
+{
+    Layer::setRuntimePrecision(precision);
+    w.setPrecision(precision);
 }
 
 std::shared_ptr<EmbeddingLayer> EmbeddingLayer::create(const std::shared_ptr<LayerParams> param)

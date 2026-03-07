@@ -4,10 +4,33 @@
 
 #include "attention_layer.h"
 #include "autobuffer.h"
+#include "backend/cpu/kernel/normalization_kernel_hwy.h"
 #include <cstring>  // for memcpy
 
 #define ATTEN_DEBUG 0
 namespace minfer {
+
+namespace {
+
+Mat project_with_runtime_weight(const Mat& input, const RuntimeWeight& weight)
+{
+    if (weight.usesInt8())
+    {
+        return gemm(input, weight.active(), weight.int8Scales(), false, true);
+    }
+    return gemm(input, weight.active(), false, true);
+}
+
+Mat rmsnorm_with_runtime_weight(const Mat& input, const RuntimeWeight& weight, float eps)
+{
+    if (weight.usesInt8())
+    {
+        return rmsnorm(input, weight.active(), weight.int8Scales(), eps);
+    }
+    return rmsnorm(input, weight.active(), eps);
+}
+
+}  // namespace
 
 #if ATTEN_DEBUG
 void print_mat(const Mat& m, int start, int num)
@@ -24,6 +47,7 @@ void print_mat(const Mat& m, int start, int num)
 AttentionLayer::AttentionLayer(const std::shared_ptr<AttentionLayerParams> param)
 {
     layerNamePrefix = "AttentionLayer_";
+    getBasicInfo(param);
     max_seq_len = param->max_seq_len;
     embd_dim = param->embd_dim;
     head_count = param->head_count;
@@ -37,12 +61,11 @@ AttentionLayer::AttentionLayer(const std::shared_ptr<AttentionLayerParams> param
     embd_dim_head = embd_dim / head_count;
     embd_dim_kv = embd_dim_head * head_count_kv;
 
-    param->norm.convertTo(norm, DT_32F);
-
-    param->wq.convertTo(wq, DT_32F);
-    param->wk.convertTo(wk, DT_32F);
-    param->wv.convertTo(wv, DT_32F);
-    param->wout.convertTo(wout, DT_32F);
+    norm.init(param->norm, Int8QuantScheme::PerTensor);
+    wq.init(canonicalize_linear_weight(param->wq, embd_dim, embd_dim), Int8QuantScheme::PerRow);
+    wk.init(canonicalize_linear_weight(param->wk, embd_dim_kv, embd_dim), Int8QuantScheme::PerRow);
+    wv.init(canonicalize_linear_weight(param->wv, embd_dim_kv, embd_dim), Int8QuantScheme::PerRow);
+    wout.init(canonicalize_linear_weight(param->wout, embd_dim, embd_dim), Int8QuantScheme::PerRow);
 
     param->bq.convertTo(bq, DT_32F);
     param->bk.convertTo(bk, DT_32F);
@@ -145,10 +168,10 @@ struct QKVHeads {
 };
 
 static QKVHeads compute_qkv_heads(const Mat& x,
-                                  const Mat& norm,
-                                  const Mat& wq,
-                                  const Mat& wk,
-                                  const Mat& wv,
+                                  const RuntimeWeight& norm,
+                                  const RuntimeWeight& wq,
+                                  const RuntimeWeight& wk,
+                                  const RuntimeWeight& wv,
                                   int seq_len,
                                   int start_pos,
                                   int embd_dim,
@@ -158,11 +181,11 @@ static QKVHeads compute_qkv_heads(const Mat& x,
                                   int embd_dim_head)
 {
     Mat x_rows = Mat(x.dims - 1, x.size.p + 1, DT_32F, x.data);
-    Mat x_norm = rmsnorm(x_rows, norm, rms_eps);
+    Mat x_norm = rmsnorm_with_runtime_weight(x_rows, norm, rms_eps);
 
-    Mat x_q = gemm(x_norm, wq, false, true);
-    Mat x_k = gemm(x_norm, wk, false, true);
-    Mat x_v = gemm(x_norm, wv, false, true);
+    Mat x_q = project_with_runtime_weight(x_norm, wq);
+    Mat x_k = project_with_runtime_weight(x_norm, wk);
+    Mat x_v = project_with_runtime_weight(x_norm, wv);
 
     M_Assert(embd_dim_head % 2 == 0);
     x_q = x_q.reshape({seq_len, head_count, embd_dim_head});
@@ -210,7 +233,7 @@ static void repeat_kv_if_needed(Mat& x_k,
 }
 
 static void project_output_and_add_residual(const Mat& qkv,
-                                            const Mat& wout,
+                                            const RuntimeWeight& wout,
                                             int seq_len,
                                             int head_count,
                                             int embd_dim_head,
@@ -220,7 +243,7 @@ static void project_output_and_add_residual(const Mat& qkv,
     Mat x_out = Mat(out.size.dims() - 1, out.size.p + 1, out.type(), out.data);
     Mat qkv_t = transposeND(qkv, {1, 0, 2});
     qkv_t = qkv_t.reshape({seq_len, head_count * embd_dim_head});
-    gemm(qkv_t, wout, false, true).copyTo(x_out);
+    project_with_runtime_weight(qkv_t, wout).copyTo(x_out);
     out += residual;
 }
 
@@ -272,28 +295,15 @@ void AttentionLayer::forwardPrefill(const std::vector<Mat *> &input, std::vector
 
     // Step 7: Attention with causal mask
     Mat qk = gemm(x_q, x_k, false, true);
-    Mat qk_sqrt = qk / sqrtf(embd_dim_head);
-
-    // Build causal mask
-    int dim_qk = qk_sqrt.size.dims();
-    size_t m = qk_sqrt.size.p[dim_qk - 2];
-    size_t n = qk_sqrt.size.p[dim_qk - 1];
-    std::vector<int> mask_shape(dim_qk, 1);
-    mask_shape[dim_qk - 1] = n;
-    mask_shape[dim_qk - 2] = m;
-    Mat mask = Mat(mask_shape, DT_32F);
-    float* p_mask = (float*)mask.data;
-    for (int i = 0; i < (int)m; i++)
-        for (int j = 0; j < (int)n; j++)
-            p_mask[i * n + j] = i >= j ? 1.0f : 0.0f;
-
-    Mat mask_1e20 = (1.f - mask) * 1e20f;
-    qk_sqrt = qk_sqrt * mask - mask_1e20;
-
-    Mat score = softmax(qk_sqrt);
+    const size_t softmax_outer = qk.total() / (static_cast<size_t>(seq_len) * static_cast<size_t>(seq_len));
+    cpu::causal_masked_softmax_square_hwy(reinterpret_cast<const float*>(qk.data),
+                                          reinterpret_cast<float*>(qk.data),
+                                          softmax_outer,
+                                          seq_len,
+                                          1.0f / sqrtf(embd_dim_head));
 
     // Step 8: score * V
-    Mat attn_out = gemm(score, x_v);
+    Mat attn_out = gemm(qk, x_v);
 
     // Step 9: Transpose back and output linear
     Mat out = *output[0];
@@ -400,6 +410,16 @@ void AttentionLayer::resetKVCache()
     v_cache.setTo(0.0f);
     cached_len = 0;
     start_pos = 0;
+}
+
+void AttentionLayer::setRuntimePrecision(RuntimePrecision precision)
+{
+    Layer::setRuntimePrecision(precision);
+    norm.setPrecision(precision);
+    wq.setPrecision(precision);
+    wk.setPrecision(precision);
+    wv.setPrecision(precision);
+    wout.setPrecision(precision);
 }
 
 }

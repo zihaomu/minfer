@@ -298,6 +298,55 @@ TEST(Mat_TEST, data_convert_fp16_to_fp32)
     M_Assert(v0 < 1e-3);
 }
 
+TEST(Mat_TEST, gemm_supports_fp16_weight_matrix)
+{
+    Mat a({1, 3, 8}, DT_32F);
+    Mat b({6, 8}, DT_32F);
+
+    float* pa = reinterpret_cast<float*>(a.data);
+    float* pb = reinterpret_cast<float*>(b.data);
+    for (size_t i = 0; i < a.total(); ++i)
+    {
+        pa[i] = std::sin(static_cast<float>(i) * 0.19f) * 0.8f + std::cos(static_cast<float>(i) * 0.07f);
+    }
+    for (size_t i = 0; i < b.total(); ++i)
+    {
+        pb[i] = std::sin(static_cast<float>(i) * 0.13f) * 0.6f - std::cos(static_cast<float>(i) * 0.05f) * 0.4f;
+    }
+
+    Mat b_fp16;
+    b.convertTo(b_fp16, DT_16F);
+
+    Mat ref = gemm(a, b, false, true);
+    Mat out = gemm(a, b_fp16, false, true);
+    expect_mat_close(out, ref, 5e-2f, 1e-2f, "gemm_fp16_weight_matrix");
+}
+
+TEST(Mat_TEST, gemm_supports_int8_weight_matrix)
+{
+    Mat a({1, 4, 8}, DT_32F);
+    Mat b({7, 8}, DT_32F);
+
+    float* pa = reinterpret_cast<float*>(a.data);
+    float* pb = reinterpret_cast<float*>(b.data);
+    for (size_t i = 0; i < a.total(); ++i)
+    {
+        pa[i] = std::sin(static_cast<float>(i) * 0.17f) * 0.7f + std::cos(static_cast<float>(i) * 0.03f);
+    }
+    for (size_t i = 0; i < b.total(); ++i)
+    {
+        pb[i] = std::sin(static_cast<float>(i) * 0.11f) * 0.9f - std::cos(static_cast<float>(i) * 0.09f) * 0.3f;
+    }
+
+    Mat b_int8;
+    Mat b_scales;
+    quantize_int8_per_row(b, b_int8, b_scales);
+
+    Mat ref = gemm(a, b, false, true);
+    Mat out = gemm(a, b_int8, b_scales, false, true);
+    expect_mat_close(out, ref, 2.5e-1f, 8e-2f, "gemm_int8_weight_matrix");
+}
+
 TEST(Mat_TEST, test_mat_brodcast)
 {
     float f20 = 20.f;

@@ -6,6 +6,7 @@
 #define MINFER_LINEAR_LAYER_H
 
 #include "common_layer.h"
+#include "runtime_weight.h"
 
 namespace minfer {
 
@@ -22,12 +23,13 @@ public:
     // and the forward can be run several times
     void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
+    void setRuntimePrecision(RuntimePrecision precision) override;
+
 private:
     int in_features;  // input, the number of input features
     int out_features; // output, the number of output features
-    Mat w;           // weight matrix
+    RuntimeWeight w; // weight matrix
     Mat b;           // bias vector
-    bool transposeW = false; // 是否需要转置weight矩阵
     LinearLayer(const std::shared_ptr<LinearLayerParams> param);
 };
 

@@ -91,9 +91,8 @@ void gemm_impl_naive(const Mat& a, const Mat& b, Mat& c)
         M_Error(NULL, errorInfo.c_str());
     }
 
-    M_Assert(a.type() == b.type() && "Mat type on gemm function are miss matching!");
-
-    M_Assert(a.type() == DT_32F && "Currently only FP32 mat is supported!");
+    M_Assert(a.type() == DT_32F && "Currently only FP32 activation mat is supported!");
+    M_Assert((b.type() == DT_32F || b.type() == DT_16F) && "NN gemm currently supports FP32/FP16 weights only!");
 
     // For dimension > 2, use numpy broadcasting rule for previous dimension.
     c = Mat(shape_c, DT_32F);
@@ -109,7 +108,6 @@ void gemm_impl_naive(const Mat& a, const Mat& b, Mat& c)
     MatShape stride_c = make_strides(shape_c);
 
     const float* pa = (const float*)a.data;
-    const float* pb = (const float*)b.data;
     float* pc = (float*)c.data;
 
     const long long out_loop_ll = static_cast<long long>(out_loop);
@@ -130,16 +128,26 @@ void gemm_impl_naive(const Mat& a, const Mat& b, Mat& c)
         size_t lin_b = broadcast_linear_index(shape_b, stride_b, idx_c, out_batch_dims);
 
         const float* pai = lin_a * step_a + pa;
-        const float* pbi = lin_b * step_b + pb;
         float* pci = static_cast<size_t>(i) * step_c + pc;
 
-        cpu::gemm_kernel_hwy_nn(pai, pbi, pci, M, N, K);
+        if (b.type() == DT_32F)
+        {
+            const float* pb = reinterpret_cast<const float*>(b.data);
+            const float* pbi = lin_b * step_b + pb;
+            cpu::gemm_kernel_hwy_nn(pai, pbi, pci, M, N, K);
+        }
+        else
+        {
+            const hfloat* pb = reinterpret_cast<const hfloat*>(b.data);
+            const hfloat* pbi = lin_b * step_b + pb;
+            cpu::gemm_kernel_hwy_nn_fp16(pai, pbi, pci, M, N, K);
+        }
     }
 }
 
 // Mat b is not transposed! [M x K] x [N x K] = M x N
 static inline
-void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
+void gemm_impl_row(const Mat& a, const Mat& b, const Mat* b_scales, Mat& c)
 {
     MatShape shape_a = a.shape();
     MatShape shape_b = b.shape();
@@ -233,9 +241,15 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
         M_Error(NULL, errorInfo.c_str());
     }
 
-    M_Assert(a.type() == b.type() && "Mat type on gemm function are miss matching!");
-
-    M_Assert(a.type() == DT_32F && "Currently only FP32 mat is supported!");
+    M_Assert(a.type() == DT_32F && "Currently only FP32 activation mat is supported!");
+    M_Assert((b.type() == DT_32F || b.type() == DT_16F || b.type() == DT_8S) &&
+             "NT gemm currently supports FP32/FP16/INT8 weights!");
+    if (b.type() == DT_8S)
+    {
+        M_Assert(b_scales && !b_scales->empty() && "INT8 gemm requires non-empty weight scales!");
+        M_Assert(b_scales->type() == DT_32F);
+        M_Assert(b_scales->total() == static_cast<size_t>(N));
+    }
 
     // For dimension > 2, use numpy broadcasting rule for previous dimension.
     c = Mat(shape_c, DT_32F);
@@ -250,7 +264,6 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
     MatShape stride_b = make_strides(shape_b);
     MatShape stride_c = make_strides(shape_c);
     const float* pa = (const float*)a.data;
-    const float* pb = (const float*)b.data;
     float* pc = (float*)c.data;
 
     const long long out_loop_ll = static_cast<long long>(out_loop);
@@ -271,10 +284,27 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
         size_t lin_b = broadcast_linear_index(shape_b, stride_b, idx_c, out_batch_dims);
 
         const float* pai = lin_a * step_a + pa;
-        const float* pbi = lin_b * step_b + pb;
         float* pci = static_cast<size_t>(i) * step_c + pc;
 
-        cpu::gemm_kernel_hwy_nt(pai, pbi, pci, M, N, K);
+        if (b.type() == DT_32F)
+        {
+            const float* pb = reinterpret_cast<const float*>(b.data);
+            const float* pbi = lin_b * step_b + pb;
+            cpu::gemm_kernel_hwy_nt(pai, pbi, pci, M, N, K);
+        }
+        else if (b.type() == DT_16F)
+        {
+            const hfloat* pb = reinterpret_cast<const hfloat*>(b.data);
+            const hfloat* pbi = lin_b * step_b + pb;
+            cpu::gemm_kernel_hwy_nt_fp16(pai, pbi, pci, M, N, K);
+        }
+        else
+        {
+            const int8_t* pb = reinterpret_cast<const int8_t*>(b.data);
+            const int8_t* pbi = lin_b * step_b + pb;
+            const float* scale_ptr = reinterpret_cast<const float*>(b_scales->data);
+            cpu::gemm_kernel_hwy_nt_i8_rowwise(pai, pbi, scale_ptr, pci, M, N, K);
+        }
     }
 }
 
@@ -285,7 +315,7 @@ Mat gemm(const Mat& a, const Mat& b, bool transA, bool transB)
     Mat out;
     if (transA == false && transB == true)
     {
-        gemm_impl_row(a, b, out);
+        gemm_impl_row(a, b, nullptr, out);
     }
     else
     {
@@ -306,6 +336,25 @@ Mat gemm(const Mat& a, const Mat& b, bool transA, bool transB)
     }
 
     return out;
+}
+
+Mat gemm(const Mat& a, const Mat& b, const Mat& b_scales, bool transA, bool transB)
+{
+    M_Assert(!b_scales.empty() && "Quantized gemm requires non-empty scales!");
+    if (b.type() != DT_8S)
+    {
+        return gemm(a, b, transA, transB);
+    }
+
+    Mat out;
+    if (transA == false && transB == true)
+    {
+        gemm_impl_row(a, b, &b_scales, out);
+        return out;
+    }
+
+    M_Error_(Error::StsNotImplemented, ("INT8 gemm only supports transA=false, transB=true right now"));
+    return {};
 }
 
 }

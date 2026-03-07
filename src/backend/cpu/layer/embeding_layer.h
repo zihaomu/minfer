@@ -7,6 +7,7 @@
 
 #include "minfer.h"
 #include "common_layer.h"
+#include "runtime_weight.h"
 
 namespace minfer {
 
@@ -30,12 +31,14 @@ public:
     // and the forward can be run several times
     void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
+    void setRuntimePrecision(RuntimePrecision precision) override;
+
 private:
     EmbeddingLayer(const std::shared_ptr<EmbeddingLayerParams> param);
 
     int vocab_dim;  // input, the length of vocabulary
     int embd_dim;   // output, embedding feature length.
-    Mat w;          // Embedding layer params
+    RuntimeWeight w;          // Embedding layer params
 
     Mode model = LOOKUP; // 目前仅支持 loopup模式，projection 情况目前是用 linear层实现。
 };

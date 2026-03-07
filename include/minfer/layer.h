@@ -212,6 +212,10 @@ public:
     // 重置 KV Cache，默认空实现，仅 AttentionLayer 需要重写
     virtual void resetKVCache();
 
+    virtual void setRuntimePrecision(RuntimePrecision precision);
+
+    RuntimePrecision getRuntimePrecision() const;
+
     void setId(int id);
 
     int getId();
@@ -226,6 +230,7 @@ protected:
     std::string layerNamePrefix = "";          // Layer name prefix
     std::string layerName;                     // layer prefix + layerId
     LayerType layerType; // layerType是层类型
+    RuntimePrecision runtimePrecision = RuntimePrecision::FP32;
 };
 
 }

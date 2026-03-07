@@ -6,6 +6,7 @@
 #define MINFER_FEED_FORWARD_H
 
 #include "common_layer.h"
+#include "runtime_weight.h"
 
 namespace minfer {
 
@@ -23,16 +24,18 @@ public:
 
     void finalize(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
+    void setRuntimePrecision(RuntimePrecision precision) override;
+
 private:
     FeedForwardLayer(const std::shared_ptr<FeedForwardLayerParams> param);
 
     int embd_dim; // input embedding feature length
     int ffn_dim;  // ffn feature length
     float rms_eps;
-    Mat norm;
-    Mat gate;
-    Mat up;
-    Mat down;
+    RuntimeWeight norm;
+    RuntimeWeight gate;
+    RuntimeWeight up;
+    RuntimeWeight down;
     ActivateType activateType;
 };
 

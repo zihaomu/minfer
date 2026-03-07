@@ -12,18 +12,10 @@ LinearLayer::LinearLayer(const std::shared_ptr<LinearLayerParams> param)
     M_Assert(param->type == LayerType::Linear);
     getBasicInfo(param);
 
-    MatShape w_shape = param->w.shape();
-    M_Assert(w_shape.size() == 2);
     in_features = param->in_features;
     out_features = param->out_features;
 
-    param->w.convertTo(w, DT_32F);
-
-    if (w_shape[0] == out_features && w_shape[1] == in_features)
-    {
-        // 这种情况是[out_features, in_features]
-        transposeW = true;
-    }
+    w.init(canonicalize_linear_weight(param->w, out_features, in_features), Int8QuantScheme::PerRow);
 
     if (!param->b.empty())
     {
@@ -42,14 +34,10 @@ void LinearLayer::init(const std::vector<Mat*> &input, std::vector<Mat*> &output
     M_Assert(input.size() == output.size() && input.size() == 1);
 
     MatShape in_shape = input[0]->shape();
-    MatShape w_shape = w.shape();
-    
-    if (transposeW)
-    {
-        std::swap(w_shape[w_shape.size() - 1], w_shape[w_shape.size() - 2]);
-    }
+    M_Assert(in_shape.size() >= 2);
 
-    MatShape output_shape = get_gemm_shape(in_shape, w_shape);
+    MatShape output_shape = in_shape;
+    output_shape.back() = out_features;
 
     output[0]->setSize(output_shape);
 }
@@ -71,8 +59,14 @@ void LinearLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &out
     M_Assert(in_shape[2] == in_features);
 
     // gemm: y = alpha * A * B + beta * C
-    Mat out_tmp;
-    gemm(x, w, false, transposeW).copyTo(out);
+    if (w.usesInt8())
+    {
+        gemm(x, w.active(), w.int8Scales(), false, true).copyTo(out);
+    }
+    else
+    {
+        gemm(x, w.active(), false, true).copyTo(out);
+    }
 
     // std::cout<<"out"<<std::endl;
     // out.print(10);
@@ -80,6 +74,12 @@ void LinearLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &out
         out = out + b;
     // out.print(10);
     // out_tmp.copyTo(out);
+}
+
+void LinearLayer::setRuntimePrecision(RuntimePrecision precision)
+{
+    Layer::setRuntimePrecision(precision);
+    w.setPrecision(precision);
 }
 
 std::shared_ptr<LinearLayer> LinearLayer::create(const std::shared_ptr<LayerParams> param)
