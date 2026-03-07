@@ -1,4 +1,5 @@
 #include "transpose_kernel.h"
+#include "openmp_utils.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -21,7 +22,7 @@ void transpose2d_tiled(const unsigned char* src_raw, unsigned char* dst_raw, int
 
     constexpr int TILE = 32;
 #ifdef _OPENMP
-#pragma omp parallel for if(static_cast<long long>(rows) * cols >= (1LL << 14) && !omp_in_parallel())
+#pragma omp parallel for if(should_parallelize_1d_loop(static_cast<size_t>((rows + TILE - 1) / TILE), static_cast<size_t>(TILE) * static_cast<size_t>(cols), 1LL << 14, 2))
 #endif
     for (int row0 = 0; row0 < rows; row0 += TILE)
     {
@@ -66,7 +67,7 @@ void transpose2d_kernel_blocked(const unsigned char* src,
         {
             constexpr int TILE = 32;
 #ifdef _OPENMP
-#pragma omp parallel for if(static_cast<long long>(rows) * cols >= (1LL << 14) && !omp_in_parallel())
+#pragma omp parallel for if(should_parallelize_1d_loop(static_cast<size_t>((rows + TILE - 1) / TILE), static_cast<size_t>(TILE) * static_cast<size_t>(cols), 1LL << 14, 2))
 #endif
             for (int row0 = 0; row0 < rows; row0 += TILE)
             {

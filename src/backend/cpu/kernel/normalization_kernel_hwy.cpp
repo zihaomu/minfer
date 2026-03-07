@@ -1,4 +1,5 @@
 #include "normalization_kernel_hwy.h"
+#include "openmp_utils.h"
 
 #include "hwy/contrib/math/math-inl.h"
 #include "hwy/highway.h"
@@ -23,7 +24,7 @@ void softmax_lastdim_hwy(const float* input, float* output, size_t outer, size_t
 
     const long long outer_ll = static_cast<long long>(outer);
 #ifdef _OPENMP
-#pragma omp parallel for if(outer_ll * static_cast<long long>(inner) >= (1LL << 14) && !omp_in_parallel())
+#pragma omp parallel for if(should_parallelize_1d_loop(outer, inner, 1LL << 14, 2))
 #endif
     for (long long outer_idx = 0; outer_idx < outer_ll; ++outer_idx)
     {
@@ -91,7 +92,7 @@ void rmsnorm_lastdim_hwy(const float* input,
 
     const long long outer_ll = static_cast<long long>(outer);
 #ifdef _OPENMP
-#pragma omp parallel for if(outer_ll * static_cast<long long>(channels) >= (1LL << 14) && !omp_in_parallel())
+#pragma omp parallel for if(should_parallelize_1d_loop(outer, channels, 1LL << 14, 2))
 #endif
     for (long long outer_idx = 0; outer_idx < outer_ll; ++outer_idx)
     {

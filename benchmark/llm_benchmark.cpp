@@ -1,4 +1,5 @@
 #include "minfer.h"
+#include "benchmark_threads.h"
 
 #include <algorithm>
 #include <cctype>
@@ -26,6 +27,7 @@ struct BenchmarkOptions {
     int warmup = 1;
     int runs = 5;
     int progress_interval = 32;
+    int threads = 0;
     std::string csv_path;
 };
 
@@ -121,6 +123,7 @@ void print_usage(const char* prog) {
         << "  --warmup <n>            Warmup runs (default: 1)\n"
         << "  --runs <n>              Measured runs (default: 5)\n"
         << "  --progress-interval <n> Print decode progress every n tokens (default: 32)\n"
+        << "  --threads <n>           Thread count to use (default: all platform threads)\n"
         << "  --csv <path>            Save result table to csv\n"
         << "  --help                  Show help\n";
 }
@@ -155,6 +158,8 @@ BenchmarkOptions parse_args(int argc, char** argv) {
             opts.runs = std::stoi(need_value(arg));
         } else if (arg == "--progress-interval") {
             opts.progress_interval = std::stoi(need_value(arg));
+        } else if (arg == "--threads") {
+            opts.threads = std::stoi(need_value(arg));
         } else if (arg == "--csv") {
             opts.csv_path = need_value(arg);
         } else {
@@ -177,6 +182,9 @@ BenchmarkOptions parse_args(int argc, char** argv) {
     }
     if (opts.progress_interval <= 0) {
         throw std::runtime_error("--progress-interval must be > 0");
+    }
+    if (opts.threads < 0) {
+        throw std::runtime_error("--threads must be >= 0");
     }
     return opts;
 }
@@ -354,6 +362,7 @@ int main(int argc, char** argv) {
     try {
         std::cout.setf(std::ios::unitbuf);
         const BenchmarkOptions opts = parse_args(argc, argv);
+        const int active_threads = configure_benchmark_threads(opts.threads);
 
         std::cout << "Model: " << opts.model_path << "\n";
         std::cout << "Prompt lengths: ";
@@ -363,7 +372,8 @@ int main(int argc, char** argv) {
         }
         std::cout << "\nDecode tokens per run: " << opts.decode_tokens
                   << "\nWarmup: " << opts.warmup
-                  << "\nRuns: " << opts.runs << "\n";
+                  << "\nRuns: " << opts.runs
+                  << "\nThreads: " << active_threads << "\n";
 
         Net net;
 

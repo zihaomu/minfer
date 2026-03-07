@@ -1,4 +1,5 @@
 #include "gemm_kernel_hwy.h"
+#include "openmp_utils.h"
 
 #include "hwy/highway.h"
 
@@ -17,7 +18,7 @@ void gemm_kernel_hwy_nn(const float* a, const float* b, float* c,
     const int lanes = static_cast<int>(hn::Lanes(d));
 
 #ifdef _OPENMP
-#pragma omp parallel for if(static_cast<long long>(m) * n * k >= 1LL << 16 && !omp_in_parallel())
+#pragma omp parallel for if(should_parallelize_1d_loop(m, static_cast<size_t>(n) * static_cast<size_t>(k), 1LL << 16, 1))
 #endif
     for (int mi = 0; mi < m; ++mi) {
         const float* a_row = a + static_cast<size_t>(mi) * k;
@@ -49,7 +50,7 @@ void gemm_kernel_hwy_nt(const float* a, const float* b, float* c,
     const int lanes = static_cast<int>(hn::Lanes(d));
 
 #ifdef _OPENMP
-#pragma omp parallel for if(static_cast<long long>(m) * n * k >= 1LL << 16 && !omp_in_parallel())
+#pragma omp parallel for if(should_parallelize_1d_loop(m, static_cast<size_t>(n) * static_cast<size_t>(k), 1LL << 16, 1))
 #endif
     for (int mi = 0; mi < m; ++mi) {
         const float* a_row = a + static_cast<size_t>(mi) * k;

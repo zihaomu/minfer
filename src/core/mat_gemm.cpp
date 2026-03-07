@@ -7,6 +7,7 @@
 #include "minfer/system.h"
 #include "minfer/utils.h"
 #include "backend/cpu/kernel/gemm_kernel_hwy.h"
+#include "backend/cpu/kernel/openmp_utils.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -113,7 +114,7 @@ void gemm_impl_naive(const Mat& a, const Mat& b, Mat& c)
 
     const long long out_loop_ll = static_cast<long long>(out_loop);
 #ifdef _OPENMP
-#pragma omp parallel for if(out_loop_ll > 1 && static_cast<long long>(M) * N * K <= (1LL << 15))
+#pragma omp parallel for if(static_cast<long long>(M) * N * K <= (1LL << 15) && cpu::should_parallelize_1d_loop(out_loop, static_cast<size_t>(M) * static_cast<size_t>(N) * static_cast<size_t>(K), 1LL << 15, 2))
 #endif
     for (long long i = 0; i < out_loop_ll; i++)
     {
@@ -254,7 +255,7 @@ void gemm_impl_row(const Mat& a, const Mat& b, Mat& c)
 
     const long long out_loop_ll = static_cast<long long>(out_loop);
 #ifdef _OPENMP
-#pragma omp parallel for if(out_loop_ll > 1 && static_cast<long long>(M) * N * K <= (1LL << 15))
+#pragma omp parallel for if(static_cast<long long>(M) * N * K <= (1LL << 15) && cpu::should_parallelize_1d_loop(out_loop, static_cast<size_t>(M) * static_cast<size_t>(N) * static_cast<size_t>(K), 1LL << 15, 2))
 #endif
     for (long long i = 0; i < out_loop_ll; i++)
     {

@@ -1,4 +1,5 @@
 #include "activation_kernel_hwy.h"
+#include "openmp_utils.h"
 
 #include "hwy/contrib/math/math-inl.h"
 #include "hwy/highway.h"
@@ -25,7 +26,7 @@ void silu_kernel_hwy(const float* input, float* output, size_t count)
     const long long chunk_count = static_cast<long long>(vectorized / lanes);
 
 #ifdef _OPENMP
-#pragma omp parallel for if(static_cast<long long>(count) >= (1LL << 15) && !omp_in_parallel())
+#pragma omp parallel for if(should_parallelize_1d_loop(static_cast<size_t>(chunk_count), lanes, 1LL << 15, 2))
 #endif
     for (long long chunk = 0; chunk < chunk_count; ++chunk)
     {

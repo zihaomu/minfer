@@ -1,4 +1,5 @@
 #include "rope_kernel.h"
+#include "openmp_utils.h"
 
 #include <cmath>
 #include <vector>
@@ -57,7 +58,7 @@ void rope_kernel_inplace(float* q,
     const size_t k_step = static_cast<size_t>(head_count_kv) * head_dim;
 
 #ifdef _OPENMP
-#pragma omp parallel if(static_cast<long long>(seq_len) * (head_count + head_count_kv) * head_dim >= (1LL << 13) && !omp_in_parallel())
+#pragma omp parallel if(should_parallelize_1d_loop(seq_len, static_cast<size_t>(head_count + head_count_kv) * static_cast<size_t>(head_dim), 1LL << 13, 2))
     {
         std::vector<float> sin_cache(complex_dim);
         std::vector<float> cos_cache(complex_dim);
