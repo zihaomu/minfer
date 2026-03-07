@@ -21,7 +21,7 @@
     1. 统一的kv cache系统，为 page attention做准备
     2. gguf loader
     3. memory 管理
-    4. tensor的管理
+
  - backend 后端计算代码
   - cpu 基于cpu实现的layer，包括simd优化
   - gpu TBD
@@ -93,3 +93,6 @@ C++对应算子实现放到`src/backend/cpu/kernel`中去。而上一步测试�
 3. benchmark
 算子有对应的benchmark脚本，放在`benchmark`，可以是python或者C++实现。
 当前仓库已提供 `benchmark/op_benchmark.cpp`，构建后可通过 `./build/minfer_op_benchmark` 对 `rope`、`transpose`、`softmax`、`silu`、`rmsnorm`，以及基础加减乘除广播场景做基准测试。
+
+### GEMM 微内核优化
+GEMM是llm模型的最主要的算子，需要的是不是简单的并行，而是针对平台，计算精度，以及原始矩阵规模设定一个完整的并行策略。

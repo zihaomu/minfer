@@ -41,7 +41,7 @@ add_definitions(-DM_ROOT_PATH="${CMAKE_CURRENT_LIST_DIR}")
 
 include_directories(
         ${CMAKE_CURRENT_LIST_DIR}/3rdparty/
-        ${CMAKE_CURRENT_LIST_DIR}/3rdparty/xsimd-14.0.0/include
+        ${CMAKE_CURRENT_LIST_DIR}/3rdparty/xsimd/include
         ${CMAKE_CURRENT_LIST_DIR}/include/
         ${CMAKE_CURRENT_LIST_DIR}/src/
         ${CMAKE_CURRENT_LIST_DIR}/src/core

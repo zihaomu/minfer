@@ -14,11 +14,7 @@ namespace {
 
 Mat project_with_runtime_weight(const Mat& input, const RuntimeWeight& weight)
 {
-    if (weight.usesInt8())
-    {
-        return gemm(input, weight.active(), weight.int8Scales(), false, true);
-    }
-    return gemm(input, weight.active(), false, true);
+    return weight.gemmNT(input);
 }
 
 Mat rmsnorm_with_runtime_weight(const Mat& input, const RuntimeWeight& weight, float eps)
@@ -62,10 +58,10 @@ AttentionLayer::AttentionLayer(const std::shared_ptr<AttentionLayerParams> param
     embd_dim_kv = embd_dim_head * head_count_kv;
 
     norm.init(param->norm, Int8QuantScheme::PerTensor);
-    wq.init(canonicalize_linear_weight(param->wq, embd_dim, embd_dim), Int8QuantScheme::PerRow);
-    wk.init(canonicalize_linear_weight(param->wk, embd_dim_kv, embd_dim), Int8QuantScheme::PerRow);
-    wv.init(canonicalize_linear_weight(param->wv, embd_dim_kv, embd_dim), Int8QuantScheme::PerRow);
-    wout.init(canonicalize_linear_weight(param->wout, embd_dim, embd_dim), Int8QuantScheme::PerRow);
+    wq.init(canonicalize_linear_weight(param->wq, embd_dim, embd_dim), Int8QuantScheme::PerRow, true);
+    wk.init(canonicalize_linear_weight(param->wk, embd_dim_kv, embd_dim), Int8QuantScheme::PerRow, true);
+    wv.init(canonicalize_linear_weight(param->wv, embd_dim_kv, embd_dim), Int8QuantScheme::PerRow, true);
+    wout.init(canonicalize_linear_weight(param->wout, embd_dim, embd_dim), Int8QuantScheme::PerRow, true);
 
     param->bq.convertTo(bq, DT_32F);
     param->bk.convertTo(bk, DT_32F);

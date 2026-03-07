@@ -15,7 +15,7 @@ LinearLayer::LinearLayer(const std::shared_ptr<LinearLayerParams> param)
     in_features = param->in_features;
     out_features = param->out_features;
 
-    w.init(canonicalize_linear_weight(param->w, out_features, in_features), Int8QuantScheme::PerRow);
+    w.init(canonicalize_linear_weight(param->w, out_features, in_features), Int8QuantScheme::PerRow, true);
 
     if (!param->b.empty())
     {
@@ -59,14 +59,7 @@ void LinearLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &out
     M_Assert(in_shape[2] == in_features);
 
     // gemm: y = alpha * A * B + beta * C
-    if (w.usesInt8())
-    {
-        gemm(x, w.active(), w.int8Scales(), false, true).copyTo(out);
-    }
-    else
-    {
-        gemm(x, w.active(), false, true).copyTo(out);
-    }
+    w.gemmNT(x).copyTo(out);
 
     // std::cout<<"out"<<std::endl;
     // out.print(10);

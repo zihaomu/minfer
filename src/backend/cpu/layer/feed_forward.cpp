@@ -16,9 +16,9 @@ FeedForwardLayer::FeedForwardLayer(const std::shared_ptr<FeedForwardLayerParams>
     rms_eps = param->rms_eps;
 
     norm.init(param->norm, Int8QuantScheme::PerTensor);
-    up.init(canonicalize_linear_weight(param->up, ffn_dim, embd_dim), Int8QuantScheme::PerRow);
-    gate.init(canonicalize_linear_weight(param->gate, ffn_dim, embd_dim), Int8QuantScheme::PerRow);
-    down.init(canonicalize_linear_weight(param->down, embd_dim, ffn_dim), Int8QuantScheme::PerRow);
+    up.init(canonicalize_linear_weight(param->up, ffn_dim, embd_dim), Int8QuantScheme::PerRow, true);
+    gate.init(canonicalize_linear_weight(param->gate, ffn_dim, embd_dim), Int8QuantScheme::PerRow, true);
+    down.init(canonicalize_linear_weight(param->down, embd_dim, ffn_dim), Int8QuantScheme::PerRow, true);
 
     activateType = param->actType;
 #if ATTEN_DEBUG
@@ -61,9 +61,7 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
         : rmsnorm(x, norm.active(), rms_eps); // shape [1, seq_len, embed]
 
     // x1 = silu(self.linear1.forward(x))
-    Mat x1 = gate.usesInt8()
-        ? gemm(x_norm, gate.active(), gate.int8Scales(), false, true)
-        : gemm(x_norm, gate.active(), false, true);
+    Mat x1 = gate.gemmNT(x_norm);
 
     if (activateType == ActivateType::RELU)
     {
@@ -84,22 +82,13 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     }
 
     // x3 = self.linear3.forward(x)
-    Mat x3 = up.usesInt8()
-        ? gemm(x_norm, up.active(), up.int8Scales(), false, true)
-        : gemm(x_norm, up.active(), false, true);
+    Mat x3 = up.gemmNT(x_norm);
 
     // x_out = self.linear2.forward(x1 * x3)
     Mat out = *output[0];
     Mat x_out = Mat(out.size.dims(), out.size.p, out.type(), out.data);
 
-    if (down.usesInt8())
-    {
-        gemm(x1 * x3, down.active(), down.int8Scales(), false, true).copyTo(out);
-    }
-    else
-    {
-        gemm(x1 * x3, down.active(), false, true).copyTo(out);
-    }
+    down.gemmNT(x1 * x3).copyTo(out);
 
     // std::cout<<"out gemm"<<std::endl;
     // out.print(10);
