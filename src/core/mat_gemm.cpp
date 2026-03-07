@@ -6,7 +6,7 @@
 #include "minfer/basic_op.h"
 #include "minfer/system.h"
 #include "minfer/utils.h"
-#include "backend/cpu/kernel/gemm_kernel_hwy.h"
+#include "backend/cpu/kernel/gemm_kernel_xsimd.h"
 #include "backend/cpu/kernel/openmp_utils.h"
 
 #ifdef _OPENMP
@@ -134,13 +134,13 @@ void gemm_impl_naive(const Mat& a, const Mat& b, Mat& c)
         {
             const float* pb = reinterpret_cast<const float*>(b.data);
             const float* pbi = lin_b * step_b + pb;
-            cpu::gemm_kernel_hwy_nn(pai, pbi, pci, M, N, K);
+            cpu::gemm_kernel_xsimd_nn(pai, pbi, pci, M, N, K);
         }
         else
         {
             const hfloat* pb = reinterpret_cast<const hfloat*>(b.data);
             const hfloat* pbi = lin_b * step_b + pb;
-            cpu::gemm_kernel_hwy_nn_fp16(pai, pbi, pci, M, N, K);
+            cpu::gemm_kernel_xsimd_nn_fp16(pai, pbi, pci, M, N, K);
         }
     }
 }
@@ -290,20 +290,20 @@ void gemm_impl_row(const Mat& a, const Mat& b, const Mat* b_scales, Mat& c)
         {
             const float* pb = reinterpret_cast<const float*>(b.data);
             const float* pbi = lin_b * step_b + pb;
-            cpu::gemm_kernel_hwy_nt(pai, pbi, pci, M, N, K);
+            cpu::gemm_kernel_xsimd_nt(pai, pbi, pci, M, N, K);
         }
         else if (b.type() == DT_16F)
         {
             const hfloat* pb = reinterpret_cast<const hfloat*>(b.data);
             const hfloat* pbi = lin_b * step_b + pb;
-            cpu::gemm_kernel_hwy_nt_fp16(pai, pbi, pci, M, N, K);
+            cpu::gemm_kernel_xsimd_nt_fp16(pai, pbi, pci, M, N, K);
         }
         else
         {
             const int8_t* pb = reinterpret_cast<const int8_t*>(b.data);
             const int8_t* pbi = lin_b * step_b + pb;
             const float* scale_ptr = reinterpret_cast<const float*>(b_scales->data);
-            cpu::gemm_kernel_hwy_nt_i8_rowwise(pai, pbi, scale_ptr, pci, M, N, K);
+            cpu::gemm_kernel_xsimd_nt_i8_rowwise(pai, pbi, scale_ptr, pci, M, N, K);
         }
     }
 }

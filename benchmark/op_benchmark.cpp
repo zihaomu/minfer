@@ -1,12 +1,15 @@
 #include "minfer.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <functional>
 #include <iomanip>
 #include <iostream>
 #include <random>
 #include <string>
+#include <vector>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -23,9 +26,11 @@ struct BenchmarkOptions
     int batch = 4;
     int seq_len = 128;
     int hidden = 1024;
+    int gemm_out = 0;
     int head_count = 8;
     int head_count_kv = 4;
     int threads = 0;
+    bool gemm_only = false;
 };
 
 BenchmarkOptions parse_args(int argc, char** argv)
@@ -53,12 +58,16 @@ BenchmarkOptions parse_args(int argc, char** argv)
             opts.seq_len = std::stoi(need_value(arg));
         else if (arg == "--hidden")
             opts.hidden = std::stoi(need_value(arg));
+        else if (arg == "--gemm-out")
+            opts.gemm_out = std::stoi(need_value(arg));
         else if (arg == "--head-count")
             opts.head_count = std::stoi(need_value(arg));
         else if (arg == "--head-count-kv")
             opts.head_count_kv = std::stoi(need_value(arg));
         else if (arg == "--threads")
             opts.threads = std::stoi(need_value(arg));
+        else if (arg == "--gemm-only")
+            opts.gemm_only = true;
         else if (arg == "--help" || arg == "-h")
         {
             std::cout
@@ -68,9 +77,11 @@ BenchmarkOptions parse_args(int argc, char** argv)
                 << "  --batch <n>\n"
                 << "  --seq-len <n>\n"
                 << "  --hidden <n>\n"
+                << "  --gemm-out <n> (default: hidden * 4)\n"
                 << "  --head-count <n>\n"
                 << "  --head-count-kv <n>\n"
-                << "  --threads <n>\n";
+                << "  --threads <n>\n"
+                << "  --gemm-only\n";
             std::exit(0);
         }
         else
@@ -87,9 +98,17 @@ BenchmarkOptions parse_args(int argc, char** argv)
     {
         throw std::runtime_error("Head counts must be positive");
     }
+    if (opts.gemm_out < 0)
+    {
+        throw std::runtime_error("--gemm-out must be non-negative");
+    }
     if (opts.hidden % opts.head_count != 0)
     {
         throw std::runtime_error("--hidden must be divisible by --head-count");
+    }
+    if (opts.gemm_out == 0)
+    {
+        opts.gemm_out = opts.hidden * 4;
     }
 
     return opts;
@@ -138,10 +157,72 @@ double benchmark_ms(const BenchmarkOptions& opts, const std::function<void()>& f
     return total_ms / opts.iters;
 }
 
+struct BenchmarkStats
+{
+    double avg_ms = 0.0;
+    double p50_ms = 0.0;
+    double p95_ms = 0.0;
+};
+
+double percentile_ms(std::vector<double> values, double percentile)
+{
+    if (values.empty())
+    {
+        return 0.0;
+    }
+    std::sort(values.begin(), values.end());
+    const double clamped = std::max(0.0, std::min(1.0, percentile));
+    const size_t rank = static_cast<size_t>(std::ceil(clamped * static_cast<double>(values.size())));
+    const size_t index = rank == 0 ? 0 : std::min(values.size() - 1, rank - 1);
+    return values[index];
+}
+
+BenchmarkStats benchmark_stats(const BenchmarkOptions& opts, const std::function<void()>& fn)
+{
+    for (int i = 0; i < opts.warmup; ++i)
+    {
+        fn();
+    }
+
+    std::vector<double> samples_ms;
+    samples_ms.reserve(static_cast<size_t>(opts.iters));
+
+    for (int i = 0; i < opts.iters; ++i)
+    {
+        const auto begin = std::chrono::steady_clock::now();
+        fn();
+        const auto end = std::chrono::steady_clock::now();
+        samples_ms.push_back(std::chrono::duration<double, std::milli>(end - begin).count());
+    }
+
+    double total_ms = 0.0;
+    for (double sample_ms : samples_ms)
+    {
+        total_ms += sample_ms;
+    }
+
+    BenchmarkStats stats;
+    stats.avg_ms = total_ms / static_cast<double>(samples_ms.size());
+    stats.p50_ms = percentile_ms(samples_ms, 0.50);
+    stats.p95_ms = percentile_ms(samples_ms, 0.95);
+    return stats;
+}
+
 void print_result(const std::string& name, double avg_ms)
 {
     std::cout << std::left << std::setw(28) << name
               << " avg=" << std::fixed << std::setprecision(4) << avg_ms << " ms" << std::endl;
+}
+
+void print_gemm_result(const std::string& name, const BenchmarkStats& stats, double gflops, double speedup_vs_fp32)
+{
+    std::cout << std::left << std::setw(20) << name
+              << " avg=" << std::fixed << std::setprecision(4) << stats.avg_ms << " ms"
+              << " p50=" << stats.p50_ms << " ms"
+              << " p95=" << stats.p95_ms << " ms"
+              << " throughput=" << std::setprecision(2) << gflops << " GFLOP/s"
+              << " speedup=" << std::setprecision(2) << speedup_vs_fp32 << "x"
+              << std::endl;
 }
 
 }  // namespace
@@ -155,6 +236,51 @@ int main(int argc, char** argv)
         const int head_dim = opts.hidden / opts.head_count;
 
         std::mt19937 rng(20260306);
+
+        Mat gemm_a({opts.batch, opts.seq_len, opts.hidden}, DT_32F);
+        Mat gemm_w({opts.gemm_out, opts.hidden}, DT_32F);
+        Mat gemm_w_fp16;
+        Mat gemm_w_int8;
+        Mat gemm_w_int8_scales;
+        fill_random(gemm_a, rng);
+        fill_random(gemm_w, rng);
+        gemm_w.convertTo(gemm_w_fp16, DT_16F);
+        quantize_int8_per_row(gemm_w, gemm_w_int8, gemm_w_int8_scales);
+
+        const BenchmarkStats gemm_fp32_stats = benchmark_stats(opts, [&]() {
+            Mat out = gemm(gemm_a, gemm_w, false, true);
+            (void)out;
+        });
+
+        const BenchmarkStats gemm_fp16_stats = benchmark_stats(opts, [&]() {
+            Mat out = gemm(gemm_a, gemm_w_fp16, false, true);
+            (void)out;
+        });
+
+        const BenchmarkStats gemm_int8_stats = benchmark_stats(opts, [&]() {
+            Mat out = gemm(gemm_a, gemm_w_int8, gemm_w_int8_scales, false, true);
+            (void)out;
+        });
+
+        const double gemm_flops = 2.0 * static_cast<double>(opts.batch) * static_cast<double>(opts.seq_len) *
+                                  static_cast<double>(opts.gemm_out) * static_cast<double>(opts.hidden);
+        const double gemm_fp32_gflops = gemm_flops / (gemm_fp32_stats.avg_ms * 1e6);
+        const double gemm_fp16_gflops = gemm_flops / (gemm_fp16_stats.avg_ms * 1e6);
+        const double gemm_int8_gflops = gemm_flops / (gemm_int8_stats.avg_ms * 1e6);
+
+        if (opts.gemm_only)
+        {
+            std::cout << "minfer gemm benchmark" << std::endl;
+            std::cout << "threads=" << active_threads << std::endl;
+            std::cout << "shape(batch, seq, hidden, out)=(" << opts.batch << ", " << opts.seq_len
+                      << ", " << opts.hidden << ", " << opts.gemm_out << ")" << std::endl;
+            print_gemm_result("gemm nt fp32", gemm_fp32_stats, gemm_fp32_gflops, 1.0);
+            print_gemm_result("gemm nt fp16", gemm_fp16_stats, gemm_fp16_gflops,
+                              gemm_fp32_stats.avg_ms / gemm_fp16_stats.avg_ms);
+            print_gemm_result("gemm nt int8", gemm_int8_stats, gemm_int8_gflops,
+                              gemm_fp32_stats.avg_ms / gemm_int8_stats.avg_ms);
+            return 0;
+        }
 
         Mat add_a({opts.batch, opts.seq_len, opts.hidden}, DT_32F);
         Mat add_b({opts.batch, opts.seq_len, opts.hidden}, DT_32F);
@@ -175,11 +301,6 @@ int main(int argc, char** argv)
         Mat rope_k_work;
         fill_random(rope_q_base, rng);
         fill_random(rope_k_base, rng);
-
-        Mat gemm_a({opts.batch, opts.seq_len, opts.hidden}, DT_32F);
-        Mat gemm_w({opts.hidden * 4, opts.hidden}, DT_32F);
-        fill_random(gemm_a, rng);
-        fill_random(gemm_w, rng);
 
         Mat softmax_in({opts.batch, opts.seq_len, opts.head_count, head_dim}, DT_32F);
         Mat softmax_out;
@@ -214,11 +335,6 @@ int main(int argc, char** argv)
             rope(rope_q_work, rope_k_work, 0);
         });
 
-        const double gemm_ms = benchmark_ms(opts, [&]() {
-            Mat out = gemm(gemm_a, gemm_w, false, true);
-            (void)out;
-        });
-
         const double softmax_ms = benchmark_ms(opts, [&]() {
             softmax(softmax_in, softmax_out);
         });
@@ -234,10 +350,16 @@ int main(int argc, char** argv)
         std::cout << "minfer operator benchmark" << std::endl;
         std::cout << "threads=" << active_threads << std::endl;
         std::cout << "shape(batch, seq, hidden)=(" << opts.batch << ", " << opts.seq_len << ", " << opts.hidden << ")" << std::endl;
+        std::cout << "gemm(batch, seq, hidden, out)=(" << opts.batch << ", " << opts.seq_len << ", "
+                  << opts.hidden << ", " << opts.gemm_out << ")" << std::endl;
         std::cout << "rope(seq, q_heads, kv_heads, head_dim)=(" << opts.seq_len << ", "
                   << opts.head_count << ", " << opts.head_count_kv << ", " << head_dim << ")" << std::endl;
 
-        print_result("gemm nt", gemm_ms);
+        print_gemm_result("gemm nt fp32", gemm_fp32_stats, gemm_fp32_gflops, 1.0);
+        print_gemm_result("gemm nt fp16", gemm_fp16_stats, gemm_fp16_gflops,
+                          gemm_fp32_stats.avg_ms / gemm_fp16_stats.avg_ms);
+        print_gemm_result("gemm nt int8", gemm_int8_stats, gemm_int8_gflops,
+                          gemm_fp32_stats.avg_ms / gemm_int8_stats.avg_ms);
         print_result("add same-shape", add_ms);
         print_result("mul row-broadcast", mul_row_ms);
         print_result("transpose last-two", transpose_ms);

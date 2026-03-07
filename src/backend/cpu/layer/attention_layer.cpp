@@ -4,7 +4,7 @@
 
 #include "attention_layer.h"
 #include "autobuffer.h"
-#include "backend/cpu/kernel/normalization_kernel_hwy.h"
+#include "backend/cpu/kernel/normalization_kernel_xsimd.h"
 #include <cstring>  // for memcpy
 
 #define ATTEN_DEBUG 0
@@ -296,11 +296,11 @@ void AttentionLayer::forwardPrefill(const std::vector<Mat *> &input, std::vector
     // Step 7: Attention with causal mask
     Mat qk = gemm(x_q, x_k, false, true);
     const size_t softmax_outer = qk.total() / (static_cast<size_t>(seq_len) * static_cast<size_t>(seq_len));
-    cpu::causal_masked_softmax_square_hwy(reinterpret_cast<const float*>(qk.data),
-                                          reinterpret_cast<float*>(qk.data),
-                                          softmax_outer,
-                                          seq_len,
-                                          1.0f / sqrtf(embd_dim_head));
+    cpu::causal_masked_softmax_square_xsimd(reinterpret_cast<const float*>(qk.data),
+                                            reinterpret_cast<float*>(qk.data),
+                                            softmax_outer,
+                                            seq_len,
+                                            1.0f / sqrtf(embd_dim_head));
 
     // Step 8: score * V
     Mat attn_out = gemm(qk, x_v);

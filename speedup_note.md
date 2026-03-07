@@ -177,7 +177,7 @@ end2end : throughput=37.45 tok/s (prompt+decode)
 '''
 
 
-将GEMM接入google highway之后的效果
+将GEMM接入 xsimd 之后的效果
 '''
 Model: /home/moo/work/my_lab/minfer/test/big_models/Lite-Oute-1-65M-FP16.gguf
 Prompt lengths: 32,128,512

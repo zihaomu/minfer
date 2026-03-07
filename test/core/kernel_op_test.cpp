@@ -4,7 +4,7 @@
 
 #include "minfer.h"
 #include "gtest/gtest.h"
-#include "backend/cpu/kernel/normalization_kernel_hwy.h"
+#include "backend/cpu/kernel/normalization_kernel_xsimd.h"
 
 #include <algorithm>
 #include <cmath>
@@ -235,11 +235,11 @@ TEST(KernelOp_TEST, causal_masked_softmax_square_matches_reference)
     }
 
     Mat out(input.dims, input.size.p, input.type());
-    cpu::causal_masked_softmax_square_hwy(reinterpret_cast<const float*>(input.data),
-                                          reinterpret_cast<float*>(out.data),
-                                          outer,
-                                          seq_len,
-                                          scale);
+    cpu::causal_masked_softmax_square_xsimd(reinterpret_cast<const float*>(input.data),
+                                            reinterpret_cast<float*>(out.data),
+                                            outer,
+                                            seq_len,
+                                            scale);
 
     Mat ref = reference_causal_masked_softmax_square(input, scale);
     expect_mat_close(out, ref, 1e-5f, 1e-5f, "causal_masked_softmax_square");

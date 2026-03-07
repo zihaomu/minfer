@@ -81,7 +81,7 @@ cmake --build build -j
 
 算子也就是kernel，是底层引擎的关键。开发流程如下：
 #### CPU算子
-实现依赖于google highway库去适配不同的平台的指令，avx2，neon，rsic-v等。
+实现依赖于`xsimd`库去适配不同的平台指令，覆盖 avx2、avx512、neon、risc-v 等 SIMD 后端。
 kernel优化步骤：
 1. 生成对应kernel的测试数据
 kernel需要严格的测试，对比python用于验证C++实现是否正确。

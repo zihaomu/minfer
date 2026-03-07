@@ -1,7 +1,7 @@
 #include "minfer.h"
-#include "backend/cpu/kernel/activation_kernel_hwy.h"
-#include "backend/cpu/kernel/binary_kernel_hwy.h"
-#include "backend/cpu/kernel/normalization_kernel_hwy.h"
+#include "backend/cpu/kernel/activation_kernel_xsimd.h"
+#include "backend/cpu/kernel/binary_kernel_xsimd.h"
+#include "backend/cpu/kernel/normalization_kernel_xsimd.h"
 #include "backend/cpu/kernel/rope_kernel.h"
 #include "backend/cpu/kernel/transpose_kernel.h"
 
@@ -149,10 +149,10 @@ void softmax(const Mat& input, Mat& output)
 
     const size_t inner = input.size[input.dims - 1];
     const size_t outer = input.total() / inner;
-    cpu::softmax_lastdim_hwy(reinterpret_cast<const float*>(input.data),
-                             reinterpret_cast<float*>(output.data),
-                             outer,
-                             inner);
+    cpu::softmax_lastdim_xsimd(reinterpret_cast<const float*>(input.data),
+                               reinterpret_cast<float*>(output.data),
+                               outer,
+                               inner);
 }
 
 Mat softmax(const Mat& input)
@@ -177,9 +177,9 @@ void silu(const Mat& input, Mat& output)
         M_Assert(output.shape() == input.shape());
     }
 
-    cpu::silu_kernel_hwy(reinterpret_cast<const float*>(input.data),
-                         reinterpret_cast<float*>(output.data),
-                         input.total());
+    cpu::silu_kernel_xsimd(reinterpret_cast<const float*>(input.data),
+                          reinterpret_cast<float*>(output.data),
+                          input.total());
 }
 
 Mat silu(const Mat& input)
@@ -211,21 +211,21 @@ void rmsnorm(const Mat& input, const Mat& weight, Mat& output, float eps)
     const size_t outer = input.total() / channels;
     if (weight.type() == DT_32F)
     {
-        cpu::rmsnorm_lastdim_hwy(reinterpret_cast<const float*>(input.data),
-                                 reinterpret_cast<const float*>(weight.data),
-                                 reinterpret_cast<float*>(output.data),
-                                 outer,
-                                 channels,
-                                 eps);
+        cpu::rmsnorm_lastdim_xsimd(reinterpret_cast<const float*>(input.data),
+                                   reinterpret_cast<const float*>(weight.data),
+                                   reinterpret_cast<float*>(output.data),
+                                   outer,
+                                   channels,
+                                   eps);
     }
     else
     {
-        cpu::rmsnorm_lastdim_hwy_fp16_weight(reinterpret_cast<const float*>(input.data),
-                                             reinterpret_cast<const hfloat*>(weight.data),
-                                             reinterpret_cast<float*>(output.data),
-                                             outer,
-                                             channels,
-                                             eps);
+        cpu::rmsnorm_lastdim_xsimd_fp16_weight(reinterpret_cast<const float*>(input.data),
+                                               reinterpret_cast<const hfloat*>(weight.data),
+                                               reinterpret_cast<float*>(output.data),
+                                               outer,
+                                               channels,
+                                               eps);
     }
 }
 
@@ -257,13 +257,13 @@ void rmsnorm(const Mat& input, const Mat& weight, const Mat& weight_scales, Mat&
 
     const size_t channels = input.size[input.dims - 1];
     const size_t outer = input.total() / channels;
-    cpu::rmsnorm_lastdim_hwy_i8_weight(reinterpret_cast<const float*>(input.data),
-                                       reinterpret_cast<const int8_t*>(weight.data),
-                                       reinterpret_cast<const float*>(weight_scales.data),
-                                       reinterpret_cast<float*>(output.data),
-                                       outer,
-                                       channels,
-                                       eps);
+    cpu::rmsnorm_lastdim_xsimd_i8_weight(reinterpret_cast<const float*>(input.data),
+                                         reinterpret_cast<const int8_t*>(weight.data),
+                                         reinterpret_cast<const float*>(weight_scales.data),
+                                         reinterpret_cast<float*>(output.data),
+                                         outer,
+                                         channels,
+                                         eps);
 }
 
 Mat rmsnorm(const Mat& input, const Mat& weight, const Mat& weight_scales, float eps)
@@ -809,31 +809,31 @@ inline bool try_fast_binary_float(BinaryOp op, const BinaryOpHelper& helper, con
 
     if (a.shape() == helper.out_shape && b.shape() == helper.out_shape)
     {
-        cpu::binary_broadcast_hwy(kernel_op, pa, inner, 1, pb, inner, 1, pc, outer, inner);
+        cpu::binary_broadcast_xsimd(kernel_op, pa, inner, 1, pb, inner, 1, pc, outer, inner);
         return true;
     }
 
     if (a.total() == 1)
     {
-        cpu::binary_broadcast_hwy(kernel_op, pa, 0, 0, pb, inner, 1, pc, outer, inner);
+        cpu::binary_broadcast_xsimd(kernel_op, pa, 0, 0, pb, inner, 1, pc, outer, inner);
         return true;
     }
 
     if (b.total() == 1)
     {
-        cpu::binary_broadcast_hwy(kernel_op, pa, inner, 1, pb, 0, 0, pc, outer, inner);
+        cpu::binary_broadcast_xsimd(kernel_op, pa, inner, 1, pb, 0, 0, pc, outer, inner);
         return true;
     }
 
     if (is_row_broadcast(helper.inp0_shape_align, helper.out_shape) && b.shape() == helper.out_shape)
     {
-        cpu::binary_broadcast_hwy(kernel_op, pa, 0, 1, pb, inner, 1, pc, outer, inner);
+        cpu::binary_broadcast_xsimd(kernel_op, pa, 0, 1, pb, inner, 1, pc, outer, inner);
         return true;
     }
 
     if (a.shape() == helper.out_shape && is_row_broadcast(helper.inp1_shape_align, helper.out_shape))
     {
-        cpu::binary_broadcast_hwy(kernel_op, pa, inner, 1, pb, 0, 1, pc, outer, inner);
+        cpu::binary_broadcast_xsimd(kernel_op, pa, inner, 1, pb, 0, 1, pc, outer, inner);
         return true;
     }
 
