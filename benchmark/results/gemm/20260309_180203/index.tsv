@@ -1,0 +1,3 @@
+group	mode	name	batch	seq_len	hidden	gemm_out	log
+decode	entry	decode_m1_h512_ffn	1	1	512	2048	/home/moo/work/my_lab/minfer/benchmark/results/gemm/20260309_180203/entry_decode_decode_m1_h512_ffn.log
+decode	micro	decode_m1_h512_ffn	1	1	512	2048	/home/moo/work/my_lab/minfer/benchmark/results/gemm/20260309_180203/micro_decode_decode_m1_h512_ffn.log

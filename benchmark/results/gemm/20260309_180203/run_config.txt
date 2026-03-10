@@ -1,0 +1,8 @@
+binary=/home/moo/work/my_lab/minfer/build/minfer_op_benchmark
+group=decode
+mode=both
+threads=32
+warmup=10
+iters=30
+filter=h512
+pwd=/home/moo/work/my_lab/minfer

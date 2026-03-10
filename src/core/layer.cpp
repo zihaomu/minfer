@@ -92,6 +92,7 @@ void Layer::getBasicInfo(const std::shared_ptr<LayerParams> param)
 {
     // layer id was set as layer create time.
     layerType = param->type;
+    runtimePrecision = param->precision;
 }
 
 }

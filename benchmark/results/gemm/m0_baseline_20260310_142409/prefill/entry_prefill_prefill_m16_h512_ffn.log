@@ -1,0 +1,6 @@
+minfer gemm benchmark
+threads=32
+shape(batch, seq, hidden, out)=(1, 16, 512, 2048)
+gemm nt fp32         avg=1.0386 ms p50=1.0362 ms p95=1.0579 ms throughput=32.31 GFLOP/s speedup=1.00x
+gemm nt fp16         avg=1.7232 ms p50=1.7173 ms p95=1.7487 ms throughput=19.47 GFLOP/s speedup=0.60x
+gemm nt int8         avg=1.2377 ms p50=1.2373 ms p95=1.2453 ms throughput=27.11 GFLOP/s speedup=0.84x

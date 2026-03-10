@@ -5,6 +5,7 @@
 #include "minfer.h"
 #include "gtest/gtest.h"
 #include "backend/cpu/kernel/normalization_kernel_xsimd.h"
+#include "backend/cpu/kernel/xsimd_kernel_utils.h"
 
 #include <algorithm>
 #include <cmath>
@@ -218,6 +219,44 @@ TEST(KernelOp_TEST, softmax_generated_cases)
         Mat ref = readMatFromNpy(core_data_path(case_name + "_o.npy"));
         Mat out = softmax(input);
         expect_mat_close(out, ref, 1e-5f, 1e-5f, case_name);
+    }
+}
+
+TEST(KernelOp_TEST, softmax_precision_alignment_matches_python_reference)
+{
+    Mat input = readMatFromNpy(core_data_path("softmax_precision_input.npy"));
+    Mat ref_fp32 = readMatFromNpy(core_data_path("softmax_precision_fp32_o.npy"));
+    Mat ref_fp16 = readMatFromNpy(core_data_path("softmax_precision_fp16floor_o.npy"));
+
+    Mat out_fp32 = softmax(input);
+    expect_mat_close(out_fp32, ref_fp32, 1e-6f, 1e-6f, "softmax_precision_fp32");
+
+    Mat aligned_fp16 = align_precision_sensitive_input(input, RuntimePrecision::FP16);
+    Mat out_fp16 = softmax(aligned_fp16);
+    expect_mat_close(out_fp16, ref_fp16, 1e-6f, 1e-6f, "softmax_precision_fp16_floor");
+
+    Mat aligned_int8 = align_precision_sensitive_input(input, RuntimePrecision::INT8);
+    Mat out_int8 = softmax(aligned_int8);
+    expect_mat_close(out_int8, ref_fp16, 1e-6f, 1e-6f, "softmax_precision_int8_floor");
+}
+
+TEST(KernelOp_TEST, load_hfloat_batch_matches_scalar_conversion)
+{
+    std::vector<hfloat> input(cpu::kXSimdBatchSize);
+    for (size_t idx = 0; idx < input.size(); ++idx)
+    {
+        const float value = std::sin(static_cast<float>(idx) * 0.37f) * 7.0f +
+                            std::cos(static_cast<float>(idx) * 0.13f) * 0.5f;
+        input[idx] = hfloat(value);
+    }
+
+    const cpu::XSimdBatch batch = cpu::load_hfloat_batch(input.data());
+    alignas(64) float out[cpu::kXSimdBatchSize];
+    batch.store_unaligned(out);
+
+    for (size_t idx = 0; idx < input.size(); ++idx)
+    {
+        EXPECT_FLOAT_EQ(out[idx], static_cast<float>(input[idx]));
     }
 }
 

@@ -426,22 +426,83 @@ TEST(Mat_TEST, runtime_weight_gemmNT_matches_reference_with_decode_pack)
                            std::cos(static_cast<float>(idx) * 0.05f) * 0.35f;
     }
 
-    RuntimeWeight rw;
-    rw.init(weight, Int8QuantScheme::PerRow, true);
+    RuntimeWeight rw_fp32;
+    rw_fp32.init(weight, Int8QuantScheme::PerRow, true, RuntimePrecision::FP32);
+    ASSERT_TRUE(rw_fp32.hasDecodePacked());
+    expect_mat_close(rw_fp32.gemmNT(input), gemm(input, rw_fp32.active(), false, true), 1e-4f, 1e-5f, "runtime_weight_fp32_decode_pack");
 
-    rw.setPrecision(RuntimePrecision::FP32);
-    ASSERT_TRUE(rw.hasDecodePacked());
-    expect_mat_close(rw.gemmNT(input), gemm(input, rw.active(), false, true), 1e-4f, 1e-5f, "runtime_weight_fp32_decode_pack");
+    RuntimeWeight rw_fp16;
+    rw_fp16.init(weight, Int8QuantScheme::PerRow, true, RuntimePrecision::FP16);
+    expect_mat_close(rw_fp16.gemmNT(input), gemm(input, rw_fp16.active(), false, true), 5e-2f, 1e-2f, "runtime_weight_fp16_decode_pack");
 
-    rw.setPrecision(RuntimePrecision::FP16);
-    expect_mat_close(rw.gemmNT(input), gemm(input, rw.active(), false, true), 5e-2f, 1e-2f, "runtime_weight_fp16_decode_pack");
-
-    rw.setPrecision(RuntimePrecision::INT8);
-    expect_mat_close(rw.gemmNT(input),
-                     gemm(input, rw.active(), rw.int8Scales(), false, true),
+    RuntimeWeight rw_int8;
+    rw_int8.init(weight, Int8QuantScheme::PerRow, true, RuntimePrecision::INT8);
+    expect_mat_close(rw_int8.gemmNT(input),
+                     gemm(input, rw_int8.active(), rw_int8.int8Scales(), false, true),
                      2.5e-1f,
                      8e-2f,
                      "runtime_weight_int8_decode_pack");
+}
+
+TEST(Mat_TEST, runtime_weight_decode_pack_dispatches_for_small_matrix_rows)
+{
+    constexpr int K = 13;
+    constexpr int N = 17;
+
+    Mat input_small({1, 4, K}, DT_32F);
+    Mat input_large({1, 9, K}, DT_32F);
+    Mat weight({N, K}, DT_32F);
+
+    RuntimeWeight rw;
+    rw.init(weight, Int8QuantScheme::PerRow, true, RuntimePrecision::FP32);
+
+    ASSERT_TRUE(rw.hasDecodePacked());
+    EXPECT_TRUE(rw.shouldUseDecodePacked(input_small));
+    EXPECT_FALSE(rw.shouldUseDecodePacked(input_large));
+}
+
+TEST(Mat_TEST, runtime_weight_gemmNT_matches_reference_for_small_matrix_rows)
+{
+    constexpr int Seq = 4;
+    constexpr int K = 13;
+    constexpr int N = 17;
+
+    Mat input({1, Seq, K}, DT_32F);
+    Mat weight({N, K}, DT_32F);
+
+    float* input_data = reinterpret_cast<float*>(input.data);
+    float* weight_data = reinterpret_cast<float*>(weight.data);
+
+    for (int idx = 0; idx < Seq * K; ++idx)
+    {
+        input_data[idx] = std::sin(static_cast<float>(idx) * 0.23f) * 0.75f +
+                          std::cos(static_cast<float>(idx) * 0.04f) * 0.25f;
+    }
+
+    for (int idx = 0; idx < N * K; ++idx)
+    {
+        weight_data[idx] = std::sin(static_cast<float>(idx) * 0.07f) * 0.85f -
+                           std::cos(static_cast<float>(idx) * 0.11f) * 0.30f;
+    }
+
+    RuntimeWeight rw_fp32;
+    rw_fp32.init(weight, Int8QuantScheme::PerRow, true, RuntimePrecision::FP32);
+    ASSERT_TRUE(rw_fp32.shouldUseDecodePacked(input));
+    expect_mat_close(rw_fp32.gemmNT(input), gemm(input, rw_fp32.active(), false, true), 1e-4f, 1e-5f, "runtime_weight_fp32_small_m_decode_pack");
+
+    RuntimeWeight rw_fp16;
+    rw_fp16.init(weight, Int8QuantScheme::PerRow, true, RuntimePrecision::FP16);
+    ASSERT_TRUE(rw_fp16.shouldUseDecodePacked(input));
+    expect_mat_close(rw_fp16.gemmNT(input), gemm(input, rw_fp16.active(), false, true), 5e-2f, 1e-2f, "runtime_weight_fp16_small_m_decode_pack");
+
+    RuntimeWeight rw_int8;
+    rw_int8.init(weight, Int8QuantScheme::PerRow, true, RuntimePrecision::INT8);
+    ASSERT_TRUE(rw_int8.shouldUseDecodePacked(input));
+    expect_mat_close(rw_int8.gemmNT(input),
+                     gemm(input, rw_int8.active(), rw_int8.int8Scales(), false, true),
+                     2.5e-1f,
+                     8e-2f,
+                     "runtime_weight_int8_small_m_decode_pack");
 }
 
 TEST(Mat_TEST, test_mat_brodcast)

@@ -19,11 +19,17 @@ Mat project_with_runtime_weight(const Mat& input, const RuntimeWeight& weight)
 
 Mat rmsnorm_with_runtime_weight(const Mat& input, const RuntimeWeight& weight, float eps)
 {
+    Mat aligned_input = input;
+    if (weight.precision() != RuntimePrecision::FP32)
+    {
+        aligned_input = align_precision_sensitive_input(input, weight.precision());
+    }
+
     if (weight.usesInt8())
     {
-        return rmsnorm(input, weight.active(), weight.int8Scales(), eps);
+        return rmsnorm(aligned_input, weight.active(), weight.int8Scales(), eps);
     }
-    return rmsnorm(input, weight.active(), eps);
+    return rmsnorm(aligned_input, weight.active(), eps);
 }
 
 }  // namespace
@@ -57,11 +63,11 @@ AttentionLayer::AttentionLayer(const std::shared_ptr<AttentionLayerParams> param
     embd_dim_head = embd_dim / head_count;
     embd_dim_kv = embd_dim_head * head_count_kv;
 
-    norm.init(param->norm, Int8QuantScheme::PerTensor);
-    wq.init(canonicalize_linear_weight(param->wq, embd_dim, embd_dim), Int8QuantScheme::PerRow, true);
-    wk.init(canonicalize_linear_weight(param->wk, embd_dim_kv, embd_dim), Int8QuantScheme::PerRow, true);
-    wv.init(canonicalize_linear_weight(param->wv, embd_dim_kv, embd_dim), Int8QuantScheme::PerRow, true);
-    wout.init(canonicalize_linear_weight(param->wout, embd_dim, embd_dim), Int8QuantScheme::PerRow, true);
+    norm.init(param->norm, Int8QuantScheme::PerTensor, false, param->precision);
+    wq.init(canonicalize_linear_weight(param->wq, embd_dim, embd_dim), Int8QuantScheme::PerRow, true, param->precision);
+    wk.init(canonicalize_linear_weight(param->wk, embd_dim_kv, embd_dim), Int8QuantScheme::PerRow, true, param->precision);
+    wv.init(canonicalize_linear_weight(param->wv, embd_dim_kv, embd_dim), Int8QuantScheme::PerRow, true, param->precision);
+    wout.init(canonicalize_linear_weight(param->wout, embd_dim, embd_dim), Int8QuantScheme::PerRow, true, param->precision);
 
     param->bq.convertTo(bq, DT_32F);
     param->bk.convertTo(bk, DT_32F);
@@ -291,15 +297,18 @@ void AttentionLayer::forwardPrefill(const std::vector<Mat *> &input, std::vector
 
     // Step 7: Attention with causal mask
     Mat qk = gemm(x_q, x_k, false, true);
-    const size_t softmax_outer = qk.total() / (static_cast<size_t>(seq_len) * static_cast<size_t>(seq_len));
-    cpu::causal_masked_softmax_square_xsimd(reinterpret_cast<const float*>(qk.data),
-                                            reinterpret_cast<float*>(qk.data),
+    Mat qk_softmax = runtimePrecision == RuntimePrecision::FP32
+        ? qk
+        : align_precision_sensitive_input(qk, runtimePrecision);
+    const size_t softmax_outer = qk_softmax.total() / (static_cast<size_t>(seq_len) * static_cast<size_t>(seq_len));
+    cpu::causal_masked_softmax_square_xsimd(reinterpret_cast<const float*>(qk_softmax.data),
+                                            reinterpret_cast<float*>(qk_softmax.data),
                                             softmax_outer,
                                             seq_len,
                                             1.0f / sqrtf(embd_dim_head));
 
     // Step 8: score * V
-    Mat attn_out = gemm(qk, x_v);
+    Mat attn_out = gemm(qk_softmax, x_v);
 
     // Step 9: Transpose back and output linear
     Mat out = *output[0];
@@ -389,9 +398,12 @@ void AttentionLayer::forwardDecode(const std::vector<Mat *> &input, std::vector<
     // QK: [head_count, 1, total_len]
     Mat qk = gemm(q_t, k_attn, false, true);
     Mat qk_sqrt = qk / sqrtf(embd_dim_head);
+    Mat qk_softmax = runtimePrecision == RuntimePrecision::FP32
+        ? qk_sqrt
+        : align_precision_sensitive_input(qk_sqrt, runtimePrecision);
 
     // Decode phase: single query token attends to all cached tokens, no mask needed
-    Mat score = softmax(qk_sqrt);
+    Mat score = softmax(qk_softmax);
 
     // Step 8: score * V: [head_count, 1, embd_dim_head]
     Mat attn_out = gemm(score, v_attn);
@@ -410,12 +422,12 @@ void AttentionLayer::resetKVCache()
 
 void AttentionLayer::setRuntimePrecision(RuntimePrecision precision)
 {
-    Layer::setRuntimePrecision(precision);
     norm.setPrecision(precision);
     wq.setPrecision(precision);
     wk.setPrecision(precision);
     wv.setPrecision(precision);
     wout.setPrecision(precision);
+    Layer::setRuntimePrecision(precision);
 }
 
 }

@@ -1,0 +1,10 @@
+minfer gemm micro-kernel benchmark
+threads=32
+rows=1, hidden=1024, out=4096
+nt entry uses the simple path when rows <= 1 or blocked heuristics stay disabled
+nt entry fp32        avg=0.5187 ms p50=0.5194 ms p95=0.5319 ms throughput=16.17 GFLOP/s speedup=1.00x
+nt entry fp16        avg=2.1678 ms p50=2.1632 ms p95=2.2082 ms throughput=3.87 GFLOP/s speedup=0.24x
+nt entry int8        avg=1.4502 ms p50=1.4450 ms p95=1.4775 ms throughput=5.78 GFLOP/s speedup=0.36x
+rowpacked fp32       avg=0.2901 ms p50=0.2886 ms p95=0.3015 ms throughput=28.92 GFLOP/s speedup=1.00x
+rowpacked fp16       avg=1.1406 ms p50=1.1390 ms p95=1.1524 ms throughput=7.35 GFLOP/s speedup=0.25x
+rowpacked int8       avg=1.4052 ms p50=1.4165 ms p95=1.4234 ms throughput=5.97 GFLOP/s speedup=0.21x

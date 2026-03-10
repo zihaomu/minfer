@@ -1,0 +1,7 @@
+minfer runtime-weight gemm benchmark
+threads=32
+shape(batch, seq, hidden, out)=(1, 1, 512, 2048)
+decode_packed_eligible=true
+runtime fp32         avg=0.0843 ms p50=0.0804 ms p95=0.0984 ms throughput=24.86 GFLOP/s speedup=1.00x
+runtime fp16         avg=0.0811 ms p50=0.0804 ms p95=0.0858 ms throughput=25.87 GFLOP/s speedup=1.04x
+runtime int8         avg=0.3991 ms p50=0.3938 ms p95=0.4199 ms throughput=5.25 GFLOP/s speedup=0.21x

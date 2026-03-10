@@ -15,10 +15,10 @@ FeedForwardLayer::FeedForwardLayer(const std::shared_ptr<FeedForwardLayerParams>
     ffn_dim = param->ffn_dim;
     rms_eps = param->rms_eps;
 
-    norm.init(param->norm, Int8QuantScheme::PerTensor);
-    up.init(canonicalize_linear_weight(param->up, ffn_dim, embd_dim), Int8QuantScheme::PerRow, true);
-    gate.init(canonicalize_linear_weight(param->gate, ffn_dim, embd_dim), Int8QuantScheme::PerRow, true);
-    down.init(canonicalize_linear_weight(param->down, embd_dim, ffn_dim), Int8QuantScheme::PerRow, true);
+    norm.init(param->norm, Int8QuantScheme::PerTensor, false, param->precision);
+    up.init(canonicalize_linear_weight(param->up, ffn_dim, embd_dim), Int8QuantScheme::PerRow, true, param->precision);
+    gate.init(canonicalize_linear_weight(param->gate, ffn_dim, embd_dim), Int8QuantScheme::PerRow, true, param->precision);
+    down.init(canonicalize_linear_weight(param->down, embd_dim, ffn_dim), Int8QuantScheme::PerRow, true, param->precision);
 
     activateType = param->actType;
 #if ATTEN_DEBUG
@@ -62,9 +62,13 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
 
     // x1 = silu(self.linear1.forward(x))
     Mat x1 = gate.gemmNT(x_norm);
+    Mat x1_aligned = runtimePrecision == RuntimePrecision::FP32
+        ? x1
+        : align_precision_sensitive_input(x1, runtimePrecision);
 
     if (activateType == ActivateType::RELU)
     {
+        x1 = x1_aligned;
         float* p_x1 = (float*)x1.data;
         const size_t total_elements = x1.total();
         for (size_t i = 0; i < total_elements; i++)
@@ -74,7 +78,7 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
     }
     else if (activateType == ActivateType::SILU)
     {
-        silu(x1, x1);
+        silu(x1_aligned, x1);
     }
     else
     {
@@ -104,11 +108,11 @@ void FeedForwardLayer::finalize(const std::vector<Mat*>& input, std::vector<Mat*
 
 void FeedForwardLayer::setRuntimePrecision(RuntimePrecision precision)
 {
-    Layer::setRuntimePrecision(precision);
     norm.setPrecision(precision);
     gate.setPrecision(precision);
     up.setPrecision(precision);
     down.setPrecision(precision);
+    Layer::setRuntimePrecision(precision);
 }
 
 FeedForwardLayer::~FeedForwardLayer()

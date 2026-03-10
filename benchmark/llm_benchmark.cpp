@@ -23,6 +23,7 @@ struct BenchmarkOptions {
     std::string prompt = "Hello world! <s>";
     std::string prompt_file;
     std::vector<int> prompt_lens = {32, 128, 512};
+    RuntimePrecision precision = RuntimePrecision::FP16;
     int decode_tokens = 128;
     int warmup = 1;
     int runs = 5;
@@ -119,6 +120,7 @@ void print_usage(const char* prog) {
         << "  --prompt <text>         Prompt text for tokenizer\n"
         << "  --prompt-file <path>    Read prompt text from file\n"
         << "  --prompt-lens <csv>     Prompt lengths to benchmark, e.g. 32,128,512\n"
+        << "  --precision <name>      Runtime precision: fp32, fp16, int8\n"
         << "  --decode-tokens <n>     Decode tokens per run (default: 128)\n"
         << "  --warmup <n>            Warmup runs (default: 1)\n"
         << "  --runs <n>              Measured runs (default: 5)\n"
@@ -150,6 +152,8 @@ BenchmarkOptions parse_args(int argc, char** argv) {
             opts.prompt_file = need_value(arg);
         } else if (arg == "--prompt-lens") {
             opts.prompt_lens = parse_csv_ints(need_value(arg));
+        } else if (arg == "--precision") {
+            opts.precision = parse_runtime_precision(need_value(arg));
         } else if (arg == "--decode-tokens") {
             opts.decode_tokens = std::stoi(need_value(arg));
         } else if (arg == "--warmup") {
@@ -329,18 +333,19 @@ void print_results(const std::vector<CaseResult>& results) {
     }
 }
 
-void write_csv(const std::string& path, const std::vector<CaseResult>& results) {
+void write_csv(const std::string& path, RuntimePrecision precision, const std::vector<CaseResult>& results) {
     std::ofstream fout(path);
     if (!fout.is_open()) {
         throw std::runtime_error("Failed to write csv: " + path);
     }
 
-    fout << "prompt_len,decode_tokens,prefill_avg_ms,prefill_p50_ms,prefill_p90_ms,prefill_tps,"
+    fout << "precision,prompt_len,decode_tokens,prefill_avg_ms,prefill_p50_ms,prefill_p90_ms,prefill_tps,"
          << "decode_avg_ms,decode_p50_ms,decode_p90_ms,decode_p99_ms,decode_tps,ttft_avg_ms,e2e_tps\n";
 
     fout << std::fixed << std::setprecision(6);
     for (const auto& r : results) {
-        fout << r.prompt_len << ","
+        fout << runtime_precision_name(precision) << ","
+             << r.prompt_len << ","
              << r.decode_tokens << ","
              << r.prefill_avg_ms << ","
              << r.prefill_p50_ms << ","
@@ -365,6 +370,7 @@ int main(int argc, char** argv) {
         const int active_threads = configure_benchmark_threads(opts.threads);
 
         std::cout << "Model: " << opts.model_path << "\n";
+        std::cout << "Precision: " << runtime_precision_name(opts.precision) << "\n";
         std::cout << "Prompt lengths: ";
         for (size_t i = 0; i < opts.prompt_lens.size(); ++i) {
             std::cout << opts.prompt_lens[i];
@@ -378,7 +384,7 @@ int main(int argc, char** argv) {
         Net net;
 
         const double load_start_ms = now_ms();
-        net.readNet(opts.model_path);
+        net.readNet(opts.model_path, opts.precision);
         const double load_end_ms = now_ms();
         std::cout << "Model load time: " << std::fixed << std::setprecision(2)
                   << (load_end_ms - load_start_ms) << " ms\n";
@@ -400,7 +406,7 @@ int main(int argc, char** argv) {
         print_results(results);
 
         if (!opts.csv_path.empty()) {
-            write_csv(opts.csv_path, results);
+            write_csv(opts.csv_path, opts.precision, results);
             std::cout << "CSV saved to: " << opts.csv_path << "\n";
         }
     } catch (const std::exception& e) {

@@ -10,28 +10,57 @@
 namespace minfer
 {
 
-void RuntimeWeight::init(const Mat& fp32_weight, Int8QuantScheme scheme, bool enable_decode_pack)
+namespace {
+
+constexpr int kDecodePackMaxMatrixRows = 8;
+
+}
+
+void RuntimeWeight::init(const Mat& fp32_weight,
+                         Int8QuantScheme scheme,
+                         bool enable_decode_pack,
+                         RuntimePrecision precision)
 {
     scheme_ = scheme;
     enable_decode_pack_ = enable_decode_pack;
-    fp32_weight.convertTo(fp32_, DT_32F);
-    fp32_.convertTo(fp16_, DT_16F);
-    if (scheme_ == Int8QuantScheme::PerRow)
+    precision_ = precision;
+
+    weight_.release();
+    int8_scales_.release();
+    decode_kernel_packed_.release();
+    decode_packed_scales_.release();
+
+    Mat weight_fp32;
+    fp32_weight.convertTo(weight_fp32, DT_32F);
+
+    switch (precision_)
     {
-        quantize_int8_per_row(fp32_, int8_, int8_scales_);
+        case RuntimePrecision::FP16:
+            weight_fp32.convertTo(weight_, DT_16F);
+            break;
+        case RuntimePrecision::INT8:
+            if (scheme_ == Int8QuantScheme::PerRow)
+            {
+                quantize_int8_per_row(weight_fp32, weight_, int8_scales_);
+            }
+            else
+            {
+                quantize_int8_per_tensor(weight_fp32, weight_, int8_scales_);
+            }
+            break;
+        case RuntimePrecision::FP32:
+        default:
+            weight_ = weight_fp32;
+            break;
     }
-    else
-    {
-        quantize_int8_per_tensor(fp32_, int8_, int8_scales_);
-    }
-    precision_ = RuntimePrecision::FP32;
+
     rebuildDecodePacked();
 }
 
 void RuntimeWeight::setPrecision(RuntimePrecision precision)
 {
+    M_Assert(empty() || precision == precision_ && "RuntimeWeight precision is immutable after init");
     precision_ = precision;
-    rebuildDecodePacked();
 }
 
 RuntimePrecision RuntimeWeight::precision() const
@@ -41,7 +70,7 @@ RuntimePrecision RuntimeWeight::precision() const
 
 bool RuntimeWeight::empty() const
 {
-    return fp32_.empty();
+    return weight_.empty();
 }
 
 bool RuntimeWeight::usesInt8() const
@@ -51,21 +80,35 @@ bool RuntimeWeight::usesInt8() const
 
 bool RuntimeWeight::hasDecodePacked() const
 {
-    return !decode_packed_.empty();
+    return !decode_kernel_packed_.empty();
+}
+
+bool RuntimeWeight::shouldUseDecodePacked(const Mat& input) const
+{
+    if (!hasDecodePacked() || input.empty())
+    {
+        return false;
+    }
+
+    const MatShape in_shape = input.shape();
+    if (in_shape.size() < 2 || input.type() != DT_32F)
+    {
+        return false;
+    }
+
+    M_Assert(weight_.shape().size() == 2);
+    if (in_shape.back() != weight_.shape()[1])
+    {
+        return false;
+    }
+
+    const int matrix_rows = in_shape[in_shape.size() - 2];
+    return matrix_rows >= 1 && matrix_rows <= kDecodePackMaxMatrixRows;
 }
 
 const Mat& RuntimeWeight::active() const
 {
-    switch (precision_)
-    {
-        case RuntimePrecision::FP16:
-            return fp16_;
-        case RuntimePrecision::INT8:
-            return int8_;
-        case RuntimePrecision::FP32:
-        default:
-            return fp32_;
-    }
+    return weight_;
 }
 
 const Mat& RuntimeWeight::int8Scales() const
@@ -75,12 +118,13 @@ const Mat& RuntimeWeight::int8Scales() const
 
 const Mat& RuntimeWeight::fp32() const
 {
-    return fp32_;
+    M_Assert(precision_ == RuntimePrecision::FP32);
+    return weight_;
 }
 
 const Mat& RuntimeWeight::decodePacked() const
 {
-    return decode_packed_;
+    return decode_kernel_packed_;
 }
 
 Mat RuntimeWeight::materializeFp32() const
@@ -90,7 +134,7 @@ Mat RuntimeWeight::materializeFp32() const
         case RuntimePrecision::FP16:
         {
             Mat out;
-            fp16_.convertTo(out, DT_32F);
+            weight_.convertTo(out, DT_32F);
             return out;
         }
         case RuntimePrecision::INT8:
@@ -98,71 +142,59 @@ Mat RuntimeWeight::materializeFp32() const
             Mat out;
             if (scheme_ == Int8QuantScheme::PerRow)
             {
-                dequantize_int8_per_row(int8_, int8_scales_, out);
+                dequantize_int8_per_row(weight_, int8_scales_, out);
             }
             else
             {
-                dequantize_int8_per_tensor(int8_, int8_scales_, out);
+                dequantize_int8_per_tensor(weight_, int8_scales_, out);
             }
             return out;
         }
         case RuntimePrecision::FP32:
         default:
-            return fp32_;
+            return weight_;
     }
 }
 
 void RuntimeWeight::rebuildDecodePacked()
 {
-    decode_packed_.release();
     decode_kernel_packed_.release();
     decode_packed_scales_.release();
-    if (!enable_decode_pack_ || fp32_.empty())
+    if (!enable_decode_pack_ || weight_.empty())
     {
         return;
     }
 
-    M_Assert(fp32_.shape().size() == 2 && "Decode-packed weights require a 2D matrix");
+    M_Assert(weight_.shape().size() == 2 && "Decode-packed weights require a 2D matrix");
 
-    const Mat* src = &fp32_;
-    switch (precision_)
-    {
-        case RuntimePrecision::FP16:
-            src = &fp16_;
-            break;
-        case RuntimePrecision::INT8:
-            src = &int8_;
-            break;
-        case RuntimePrecision::FP32:
-        default:
-            src = &fp32_;
-            break;
-    }
-
-    decode_packed_ = transposeND(*src, {1, 0});
-
-    const int K = decode_packed_.shape()[0];
-    const int N = decode_packed_.shape()[1];
+    const int N = weight_.shape()[0];
+    const int K = weight_.shape()[1];
     const std::vector<int> packed_b_shape = {static_cast<int>(cpu::gemm_xsimd_packed_b_elements(N, K))};
     const std::vector<int> packed_scale_shape = {static_cast<int>(cpu::gemm_xsimd_packed_scale_elements(N))};
 
     switch (precision_)
     {
         case RuntimePrecision::FP16:
-            decode_kernel_packed_.create(packed_b_shape, DT_16F);
-            cpu::gemm_pack_xsimd_nn_fp16(reinterpret_cast<const hfloat*>(decode_packed_.data),
-                                         reinterpret_cast<hfloat*>(decode_kernel_packed_.data),
+        {
+            Mat decode_src_fp16 = transposeND(weight_, {1, 0});
+            Mat decode_src_fp32;
+            decode_src_fp16.convertTo(decode_src_fp32, DT_32F);
+            decode_kernel_packed_.create(packed_b_shape, DT_32F);
+            cpu::gemm_pack_xsimd_nn_fp32(reinterpret_cast<const float*>(decode_src_fp32.data),
+                                         reinterpret_cast<float*>(decode_kernel_packed_.data),
                                          N,
                                          K);
             break;
+        }
         case RuntimePrecision::INT8:
         {
+            Mat decode_src_int8 = transposeND(weight_, {1, 0});
             decode_kernel_packed_.create(packed_b_shape, DT_8S);
             decode_packed_scales_.create(packed_scale_shape, DT_32F);
 
             if (scheme_ == Int8QuantScheme::PerRow)
             {
-                cpu::gemm_pack_xsimd_nn_i8_rowwise(reinterpret_cast<const int8_t*>(decode_packed_.data),
+                cpu::gemm_pack_xsimd_nn_i8_rowwise(reinterpret_cast<const int8_t*>(decode_src_int8.data),
                                                    reinterpret_cast<const float*>(int8_scales_.data),
                                                    reinterpret_cast<int8_t*>(decode_kernel_packed_.data),
                                                    reinterpret_cast<float*>(decode_packed_scales_.data),
@@ -173,7 +205,7 @@ void RuntimeWeight::rebuildDecodePacked()
             {
                 std::vector<float> repeated_scales(static_cast<size_t>(N),
                                                    reinterpret_cast<const float*>(int8_scales_.data)[0]);
-                cpu::gemm_pack_xsimd_nn_i8_rowwise(reinterpret_cast<const int8_t*>(decode_packed_.data),
+                cpu::gemm_pack_xsimd_nn_i8_rowwise(reinterpret_cast<const int8_t*>(decode_src_int8.data),
                                                    repeated_scales.data(),
                                                    reinterpret_cast<int8_t*>(decode_kernel_packed_.data),
                                                    reinterpret_cast<float*>(decode_packed_scales_.data),
@@ -184,18 +216,21 @@ void RuntimeWeight::rebuildDecodePacked()
         }
         case RuntimePrecision::FP32:
         default:
+        {
+            Mat decode_src_fp32 = transposeND(weight_, {1, 0});
             decode_kernel_packed_.create(packed_b_shape, DT_32F);
-            cpu::gemm_pack_xsimd_nn_fp32(reinterpret_cast<const float*>(decode_packed_.data),
+            cpu::gemm_pack_xsimd_nn_fp32(reinterpret_cast<const float*>(decode_src_fp32.data),
                                          reinterpret_cast<float*>(decode_kernel_packed_.data),
                                          N,
                                          K);
             break;
+        }
     }
 }
 
 Mat RuntimeWeight::gemmNT(const Mat& input) const
 {
-    if (!hasDecodePacked() || decode_kernel_packed_.empty())
+    if (!shouldUseDecodePacked(input))
     {
         if (usesInt8())
         {
@@ -205,19 +240,9 @@ Mat RuntimeWeight::gemmNT(const Mat& input) const
     }
 
     const MatShape in_shape = input.shape();
-    M_Assert(in_shape.size() >= 2);
-    const int matrix_rows = in_shape[in_shape.size() - 2];
-    if (matrix_rows != 1)
-    {
-        if (usesInt8())
-        {
-            return gemm(input, active(), int8Scales(), false, true);
-        }
-        return gemm(input, active(), false, true);
-    }
-
-    const int K = decode_packed_.shape()[0];
-    const int N = decode_packed_.shape()[1];
+    M_Assert(weight_.shape().size() == 2);
+    const int N = weight_.shape()[0];
+    const int K = weight_.shape()[1];
     M_Assert(in_shape.back() == K);
 
     MatShape out_shape = in_shape;
@@ -240,8 +265,8 @@ Mat RuntimeWeight::gemmNT(const Mat& input) const
         switch (precision_)
         {
             case RuntimePrecision::FP16:
-                cpu::gemm_kernel_xsimd_row_packed_fp16(row_in,
-                                                       reinterpret_cast<const hfloat*>(decode_kernel_packed_.data),
+                cpu::gemm_kernel_xsimd_row_packed_fp32(row_in,
+                                                       reinterpret_cast<const float*>(decode_kernel_packed_.data),
                                                        row_out,
                                                        N,
                                                        K);

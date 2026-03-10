@@ -63,6 +63,7 @@ public:
 
 //    int layerId = -1;               // It will be set
     LayerType type;
+    RuntimePrecision precision = RuntimePrecision::FP32;
     std::vector<int> inputIndex;
     std::vector<int> outputIndex;
     std::vector<Mat> weights;

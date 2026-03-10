@@ -11,7 +11,7 @@ namespace minfer
 
 /// Net 类别
 /* 例子代码：
- * Net nets = readNet("llama.gguf");
+ * Net nets = readNet("llama.gguf", RuntimePrecision::FP32);
  * Mat input = toknizer_input("I have a pen for", 2048);
  * nets.setInput(input);
  * nets.init();
@@ -38,12 +38,16 @@ public:
     int createLayer(std::shared_ptr<LayerParams> param);
 
     void createNet(const std::vector<std::shared_ptr<LayerParams> >& netParams);
+    void createNet(const std::vector<std::shared_ptr<LayerParams> >& netParams, RuntimePrecision precision);
 
     /// 从模型文件中创建Net
     /// \param path
+    /// \param precision runtime precision used at model load time, default fp32
     /// \param modelType
     /// ⚠️目前只支持gguf一种模型格式
-    void readNet(const std::string path, const std::string modelType = "gguf");
+    void readNet(const std::string path,
+                 RuntimePrecision precision = RuntimePrecision::FP32,
+                 const std::string modelType = "gguf");
 
     /// set input data with given mat index
     /// \param input
@@ -73,9 +77,7 @@ public:
     /// 重置所有 AttentionLayer 的 KV Cache，开始新一轮对话
     void resetKVCache();
 
-    void setRuntimePrecision(RuntimePrecision precision);
-
-    RuntimePrecision getRuntimePrecision() const;
+    RuntimePrecision getPrecision() const;
 
     Mat forward();
 

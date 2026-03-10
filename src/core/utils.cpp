@@ -4,7 +4,32 @@
 
 #include "minfer/utils.h"
 
+#include <algorithm>
+#include <cctype>
+#include <cstring>
+#include <stdexcept>
+
 namespace minfer {
+
+namespace {
+
+void align_fp32_to_fp16_floor_fp32(const float* src, float* dst, size_t length)
+{
+    for (size_t i = 0; i < length; ++i)
+    {
+        dst[i] = static_cast<float>(hfloat(src[i]));
+    }
+}
+
+void align_fp16_to_fp32(const hfloat* src, float* dst, size_t length)
+{
+    for (size_t i = 0; i < length; ++i)
+    {
+        dst[i] = static_cast<float>(src[i]);
+    }
+}
+
+}  // namespace
 
 // based on https://gist.github.com/martin-kallman/5049614
 // float32
@@ -184,6 +209,99 @@ std::vector<int> argmax_tokens(const float* logits, int batch, int seq_len, int 
         token_ids[t] = best_id;
     }
     return token_ids;
+}
+
+const char* runtime_precision_name(RuntimePrecision precision)
+{
+    switch (precision)
+    {
+        case RuntimePrecision::FP16:
+            return "fp16";
+        case RuntimePrecision::INT8:
+            return "int8";
+        case RuntimePrecision::FP32:
+        default:
+            return "fp32";
+    }
+}
+
+bool parse_runtime_precision(const std::string& text, RuntimePrecision& precision)
+{
+    std::string lower = text;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+
+    if (lower == "fp32" || lower == "float32")
+    {
+        precision = RuntimePrecision::FP32;
+        return true;
+    }
+    if (lower == "fp16" || lower == "float16" || lower == "half")
+    {
+        precision = RuntimePrecision::FP16;
+        return true;
+    }
+    if (lower == "int8" || lower == "i8")
+    {
+        precision = RuntimePrecision::INT8;
+        return true;
+    }
+
+    return false;
+}
+
+RuntimePrecision parse_runtime_precision(const std::string& text)
+{
+    RuntimePrecision precision = RuntimePrecision::FP32;
+    if (!parse_runtime_precision(text, precision))
+    {
+        throw std::invalid_argument("Unsupported runtime precision: " + text);
+    }
+    return precision;
+}
+
+void align_precision_sensitive_input(const Mat& input, RuntimePrecision precision, Mat& output)
+{
+    M_Assert(!input.empty() && "Precision alignment input can not be empty!");
+    M_Assert((input.type() == DT_32F || input.type() == DT_16F) &&
+             "Precision alignment expects FP32/FP16 input!");
+
+    output.create(input.dims, input.size.p, DT_32F);
+
+    if (precision == RuntimePrecision::FP32)
+    {
+        if (input.type() == DT_32F)
+        {
+            memcpy(output.data, input.data, input.total() * sizeof(float));
+        }
+        else
+        {
+            align_fp16_to_fp32(reinterpret_cast<const hfloat*>(input.data),
+                               reinterpret_cast<float*>(output.data),
+                               input.total());
+        }
+        return;
+    }
+
+    if (input.type() == DT_16F)
+    {
+        align_fp16_to_fp32(reinterpret_cast<const hfloat*>(input.data),
+                           reinterpret_cast<float*>(output.data),
+                           input.total());
+    }
+    else
+    {
+        align_fp32_to_fp16_floor_fp32(reinterpret_cast<const float*>(input.data),
+                                      reinterpret_cast<float*>(output.data),
+                                      input.total());
+    }
+}
+
+Mat align_precision_sensitive_input(const Mat& input, RuntimePrecision precision)
+{
+    Mat output;
+    align_precision_sensitive_input(input, precision, output);
+    return output;
 }
 
 }

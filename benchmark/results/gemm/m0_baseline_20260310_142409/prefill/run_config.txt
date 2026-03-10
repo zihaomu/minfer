@@ -1,0 +1,12 @@
+timestamp=2026-03-10T14:26:38+08:00
+commit=df860ae223adf12fbe4f0e3631ff3641a1030f89
+cpu_model=AMD Ryzen 9 7950X 16-Core Processor
+build_type=Release
+binary=/home/moo/work/my_lab/minfer/build/minfer_op_benchmark
+group=prefill
+mode=both
+threads=32
+warmup=10
+iters=30
+filter=
+pwd=/home/moo/work/my_lab/minfer

@@ -14,6 +14,11 @@ using namespace minfer;
 
 namespace {
 
+std::string layer_data_path(const std::string& filename)
+{
+    return std::string(M_ROOT_PATH) + "/test/core/test_data/data/" + filename;
+}
+
 void fill_trig(Mat& mat, float scale = 1.0f, float bias = 0.0f)
 {
     float* data = reinterpret_cast<float*>(mat.data);
@@ -72,18 +77,43 @@ TEST(Layer_TEST, quantized_linear_runtime_precision_matches_fp32)
     fill_trig(weight, 0.5f);
     fill_trig(bias, 0.2f);
 
-    auto params = std::shared_ptr<LinearLayerParams>(new LinearLayerParams({0}, {1}, 8, 6, weight, bias));
-    auto layer = LinearLayer::create(params);
+    auto make_layer = [&](RuntimePrecision precision) {
+        auto params = std::shared_ptr<LinearLayerParams>(new LinearLayerParams({0}, {1}, 8, 6, weight, bias));
+        params->precision = precision;
+        return LinearLayer::create(params);
+    };
 
-    Mat fp32_out = run_layer(layer, input, {1, 3, 6});
-
-    layer->setRuntimePrecision(RuntimePrecision::FP16);
-    Mat fp16_out = run_layer(layer, input, {1, 3, 6});
+    Mat fp32_out = run_layer(make_layer(RuntimePrecision::FP32), input, {1, 3, 6});
+    Mat fp16_out = run_layer(make_layer(RuntimePrecision::FP16), input, {1, 3, 6});
     expect_close_stats(fp16_out, fp32_out, 3e-2f, 1.2e-1f, "linear_fp16");
 
-    layer->setRuntimePrecision(RuntimePrecision::INT8);
-    Mat int8_out = run_layer(layer, input, {1, 3, 6});
+    Mat int8_out = run_layer(make_layer(RuntimePrecision::INT8), input, {1, 3, 6});
     expect_close_stats(int8_out, fp32_out, 1.2e-1f, 5e-1f, "linear_int8");
+}
+
+TEST(Layer_TEST, quantized_linear_matches_python_precision_references)
+{
+    Mat input = readMatFromNpy(layer_data_path("linear_precision_input.npy"));
+    Mat weight = readMatFromNpy(layer_data_path("linear_precision_weight.npy"));
+    Mat bias = readMatFromNpy(layer_data_path("linear_precision_bias.npy"));
+    Mat ref_fp32 = readMatFromNpy(layer_data_path("linear_precision_fp32_o.npy"));
+    Mat ref_fp16 = readMatFromNpy(layer_data_path("linear_precision_fp16_o.npy"));
+    Mat ref_int8 = readMatFromNpy(layer_data_path("linear_precision_int8_o.npy"));
+
+    auto make_layer = [&](RuntimePrecision precision) {
+        auto params = std::shared_ptr<LinearLayerParams>(new LinearLayerParams({0}, {1}, 8, 6, weight, bias));
+        params->precision = precision;
+        return LinearLayer::create(params);
+    };
+
+    Mat fp32_out = run_layer(make_layer(RuntimePrecision::FP32), input, {1, 3, 6});
+    expect_close_stats(fp32_out, ref_fp32, 1e-6f, 1e-6f, "linear_python_fp32");
+
+    Mat fp16_out = run_layer(make_layer(RuntimePrecision::FP16), input, {1, 3, 6});
+    expect_close_stats(fp16_out, ref_fp16, 2e-3f, 1e-2f, "linear_python_fp16");
+
+    Mat int8_out = run_layer(make_layer(RuntimePrecision::INT8), input, {1, 3, 6});
+    expect_close_stats(int8_out, ref_int8, 2e-3f, 1e-2f, "linear_python_int8");
 }
 
 TEST(Layer_TEST, quantized_embedding_rmsnorm_ffn_attention_match_fp32)
@@ -115,40 +145,37 @@ TEST(Layer_TEST, quantized_embedding_rmsnorm_ffn_attention_match_fp32)
     fill_trig(up, 0.2f);
     fill_trig(down, 0.2f);
 
-    auto embedding = EmbeddingLayer::create(std::shared_ptr<EmbeddingLayerParams>(
-        new EmbeddingLayerParams({0}, {1}, vocab, embd, emb_w)));
-    auto attention = AttentionLayer::create(std::shared_ptr<AttentionLayerParams>(
-        new AttentionLayerParams({1}, {2}, 8, embd, heads, heads, 1e-6f, norm_w, wq, wk, wv, wout)));
-    auto ffn = FeedForwardLayer::create(std::shared_ptr<FeedForwardLayerParams>(
-        new FeedForwardLayerParams({2}, {3}, ActivateType::SILU, embd, ffn_dim, 1e-6f, norm_w, gate, up, down)));
-    auto rms = RMSNormLayer::create(std::shared_ptr<RMSNormLayerParams>(
-        new RMSNormLayerParams({3}, {4}, embd, 1e-6f, norm_w)));
+    auto run_stack = [&](RuntimePrecision precision) {
+        auto embedding_params = std::shared_ptr<EmbeddingLayerParams>(
+            new EmbeddingLayerParams({0}, {1}, vocab, embd, emb_w));
+        auto attention_params = std::shared_ptr<AttentionLayerParams>(
+            new AttentionLayerParams({1}, {2}, 8, embd, heads, heads, 1e-6f, norm_w, wq, wk, wv, wout));
+        auto ffn_params = std::shared_ptr<FeedForwardLayerParams>(
+            new FeedForwardLayerParams({2}, {3}, ActivateType::SILU, embd, ffn_dim, 1e-6f, norm_w, gate, up, down));
+        auto rms_params = std::shared_ptr<RMSNormLayerParams>(
+            new RMSNormLayerParams({3}, {4}, embd, 1e-6f, norm_w));
 
-    Mat emb_out = run_layer(embedding, ids, {1, seq_len, embd});
-    attention->resetKVCache();
-    Mat attn_out = run_layer(attention, emb_out, {1, seq_len, embd});
-    Mat ffn_out = run_layer(ffn, attn_out, {1, seq_len, embd});
-    Mat fp32_out = run_layer(rms, ffn_out, {1, seq_len, embd});
+        embedding_params->precision = precision;
+        attention_params->precision = precision;
+        ffn_params->precision = precision;
+        rms_params->precision = precision;
 
-    embedding->setRuntimePrecision(RuntimePrecision::FP16);
-    attention->setRuntimePrecision(RuntimePrecision::FP16);
-    ffn->setRuntimePrecision(RuntimePrecision::FP16);
-    rms->setRuntimePrecision(RuntimePrecision::FP16);
-    Mat emb_out_fp16 = run_layer(embedding, ids, {1, seq_len, embd});
-    attention->resetKVCache();
-    Mat attn_out_fp16 = run_layer(attention, emb_out_fp16, {1, seq_len, embd});
-    Mat ffn_out_fp16 = run_layer(ffn, attn_out_fp16, {1, seq_len, embd});
-    Mat fp16_out = run_layer(rms, ffn_out_fp16, {1, seq_len, embd});
+        auto embedding = EmbeddingLayer::create(embedding_params);
+        auto attention = AttentionLayer::create(attention_params);
+        auto ffn = FeedForwardLayer::create(ffn_params);
+        auto rms = RMSNormLayer::create(rms_params);
+
+        Mat emb_out = run_layer(embedding, ids, {1, seq_len, embd});
+        attention->resetKVCache();
+        Mat attn_out = run_layer(attention, emb_out, {1, seq_len, embd});
+        Mat ffn_out = run_layer(ffn, attn_out, {1, seq_len, embd});
+        return run_layer(rms, ffn_out, {1, seq_len, embd});
+    };
+
+    Mat fp32_out = run_stack(RuntimePrecision::FP32);
+    Mat fp16_out = run_stack(RuntimePrecision::FP16);
     expect_close_stats(fp16_out, fp32_out, 8e-2f, 4e-1f, "stack_fp16");
 
-    embedding->setRuntimePrecision(RuntimePrecision::INT8);
-    attention->setRuntimePrecision(RuntimePrecision::INT8);
-    ffn->setRuntimePrecision(RuntimePrecision::INT8);
-    rms->setRuntimePrecision(RuntimePrecision::INT8);
-    Mat emb_out_int8 = run_layer(embedding, ids, {1, seq_len, embd});
-    attention->resetKVCache();
-    Mat attn_out_int8 = run_layer(attention, emb_out_int8, {1, seq_len, embd});
-    Mat ffn_out_int8 = run_layer(ffn, attn_out_int8, {1, seq_len, embd});
-    Mat int8_out = run_layer(rms, ffn_out_int8, {1, seq_len, embd});
+    Mat int8_out = run_stack(RuntimePrecision::INT8);
     expect_close_stats(int8_out, fp32_out, 2.5e-1f, 1.5f, "stack_int8");
 }

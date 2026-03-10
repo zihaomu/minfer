@@ -6,6 +6,8 @@
 #define MINFER_UTILS_H
 
 #include <cstdint> // uint32_t, uint64_t, etc.
+#include <string>
+#include "context.h"
 #include "mat.h"
 
 namespace minfer{
@@ -26,6 +28,13 @@ MatShape get_gemm_shape(const MatShape&A, const MatShape& B);
 
 // get the argmax tokens from the logits
 std::vector<int> argmax_tokens(const float* logits, int batch, int seq_len, int vocab_size);
+
+const char* runtime_precision_name(RuntimePrecision precision);
+bool parse_runtime_precision(const std::string& text, RuntimePrecision& precision);
+RuntimePrecision parse_runtime_precision(const std::string& text);
+
+void align_precision_sensitive_input(const Mat& input, RuntimePrecision precision, Mat& output);
+Mat align_precision_sensitive_input(const Mat& input, RuntimePrecision precision);
 
 }
 

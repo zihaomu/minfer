@@ -1,0 +1,14 @@
+group	mode	name	batch	seq_len	hidden	gemm_out	log
+prefill	entry	prefill_m16_h512_ffn	1	16	512	2048	/home/moo/work/my_lab/minfer/benchmark/results/gemm/m0_baseline_20260310_142409/prefill/entry_prefill_prefill_m16_h512_ffn.log
+prefill	micro	prefill_m16_h512_ffn	1	16	512	2048	/home/moo/work/my_lab/minfer/benchmark/results/gemm/m0_baseline_20260310_142409/prefill/micro_prefill_prefill_m16_h512_ffn.log
+prefill	entry	prefill_m32_h1024_ffn	1	32	1024	4096	/home/moo/work/my_lab/minfer/benchmark/results/gemm/m0_baseline_20260310_142409/prefill/entry_prefill_prefill_m32_h1024_ffn.log
+prefill	micro	prefill_m32_h1024_ffn	1	32	1024	4096	/home/moo/work/my_lab/minfer/benchmark/results/gemm/m0_baseline_20260310_142409/prefill/micro_prefill_prefill_m32_h1024_ffn.log
+prefill	entry	prefill_m64_h2048_ffn	1	64	2048	8192	/home/moo/work/my_lab/minfer/benchmark/results/gemm/m0_baseline_20260310_142409/prefill/entry_prefill_prefill_m64_h2048_ffn.log
+prefill	micro	prefill_m64_h2048_ffn	1	64	2048	8192	/home/moo/work/my_lab/minfer/benchmark/results/gemm/m0_baseline_20260310_142409/prefill/micro_prefill_prefill_m64_h2048_ffn.log
+prefill	entry	prefill_m128_h2048_ffn	1	128	2048	8192	/home/moo/work/my_lab/minfer/benchmark/results/gemm/m0_baseline_20260310_142409/prefill/entry_prefill_prefill_m128_h2048_ffn.log
+prefill	micro	prefill_m128_h2048_ffn	1	128	2048	8192	/home/moo/work/my_lab/minfer/benchmark/results/gemm/m0_baseline_20260310_142409/prefill/micro_prefill_prefill_m128_h2048_ffn.log
+prefill	entry	prefill_m256_h4096_ffn	1	256	4096	16384	/home/moo/work/my_lab/minfer/benchmark/results/gemm/m0_baseline_20260310_142409/prefill/entry_prefill_prefill_m256_h4096_ffn.log
+prefill	micro	prefill_m256_h4096_ffn	1	256	4096	16384	/home/moo/work/my_lab/minfer/benchmark/results/gemm/m0_baseline_20260310_142409/prefill/micro_prefill_prefill_m256_h4096_ffn.log
+prefill	entry	prefill_m512_h4096_ffn	1	512	4096	16384	/home/moo/work/my_lab/minfer/benchmark/results/gemm/m0_baseline_20260310_142409/prefill/entry_prefill_prefill_m512_h4096_ffn.log
+prefill	micro	prefill_m512_h4096_ffn	1	512	4096	16384	/home/moo/work/my_lab/minfer/benchmark/results/gemm/m0_baseline_20260310_142409/prefill/micro_prefill_prefill_m512_h4096_ffn.log
+prefill	micro	prefill_m512_h4096_ffn	1	512	4096	16384	/home/moo/work/my_lab/minfer/benchmark/results/gemm/m0_baseline_20260310_142409/prefill/micro_prefill_prefill_m512_h4096_ffn.log

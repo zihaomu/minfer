@@ -7,7 +7,7 @@ using namespace minfer;
 int main()
 {
     Net net;
-    net.readNet(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16.gguf");
+    net.readNet(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16.gguf", RuntimePrecision::FP32);
 
     // Tokenizer 编码
     std::string prompt = "Who are";

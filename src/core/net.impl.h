@@ -37,7 +37,7 @@ public:
     ~NetImpl();
 
     // 内部需要解析多个模型结构
-    void readNet(const std::string path, const std::string modelType);
+    void readNet(const std::string path, RuntimePrecision precision, const std::string modelType);
 
     void setInput(const Mat input, const int mIndx);
 
@@ -49,6 +49,7 @@ public:
     int createLayer(std::shared_ptr<LayerParams> param);
 
     void createNet(const std::vector<std::shared_ptr<LayerParams> >& allLayerParams);
+    void createNet(const std::vector<std::shared_ptr<LayerParams> >& allLayerParams, RuntimePrecision precision);
 
     void init(); // 初始化之后，调用系统中已经注册好的全局Backend变量。
 
@@ -60,10 +61,10 @@ public:
     Mat prefill(const std::vector<int>& token_ids);
     Mat step(int token_id);
     void resetKVCache();
-    void setRuntimePrecision(RuntimePrecision precision);
     RuntimePrecision getRuntimePrecision() const;
 
 private:
+    void setRuntimePrecision(RuntimePrecision precision);
     void createLayerRecurve(int layerIdx, std::vector<int>& isLayerCreated, const std::map<int,
             std::vector<int> >& layer2Parent, const std::vector<std::shared_ptr<LayerParams> >& allLayerParams);
 
@@ -91,6 +92,7 @@ private:
 
     InferenceContext ctx_; // 推理上下文，用于 chat 生成
     RuntimePrecision runtimePrecision_ = RuntimePrecision::FP32;
+    bool graphCreated_ = false;
 };
 
 }

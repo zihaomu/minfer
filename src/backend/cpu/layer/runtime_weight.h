@@ -19,13 +19,15 @@ public:
 
     void init(const Mat& fp32_weight,
               Int8QuantScheme scheme = Int8QuantScheme::PerTensor,
-              bool enable_decode_pack = false);
+              bool enable_decode_pack = false,
+              RuntimePrecision precision = RuntimePrecision::FP32);
     void setPrecision(RuntimePrecision precision);
 
     RuntimePrecision precision() const;
     bool empty() const;
     bool usesInt8() const;
     bool hasDecodePacked() const;
+    bool shouldUseDecodePacked(const Mat& input) const;
 
     const Mat& active() const;
     const Mat& int8Scales() const;
@@ -40,11 +42,8 @@ private:
     Int8QuantScheme scheme_ = Int8QuantScheme::PerTensor;
     RuntimePrecision precision_ = RuntimePrecision::FP32;
     bool enable_decode_pack_ = false;
-    Mat fp32_;
-    Mat fp16_;
-    Mat int8_;
+    Mat weight_;
     Mat int8_scales_;
-    Mat decode_packed_;
     Mat decode_kernel_packed_;
     Mat decode_packed_scales_;
 };

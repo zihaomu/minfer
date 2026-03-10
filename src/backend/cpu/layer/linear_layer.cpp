@@ -15,7 +15,10 @@ LinearLayer::LinearLayer(const std::shared_ptr<LinearLayerParams> param)
     in_features = param->in_features;
     out_features = param->out_features;
 
-    w.init(canonicalize_linear_weight(param->w, out_features, in_features), Int8QuantScheme::PerRow, true);
+    w.init(canonicalize_linear_weight(param->w, out_features, in_features),
+           Int8QuantScheme::PerRow,
+           true,
+           param->precision);
 
     if (!param->b.empty())
     {
@@ -71,8 +74,8 @@ void LinearLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &out
 
 void LinearLayer::setRuntimePrecision(RuntimePrecision precision)
 {
-    Layer::setRuntimePrecision(precision);
     w.setPrecision(precision);
+    Layer::setRuntimePrecision(precision);
 }
 
 std::shared_ptr<LinearLayer> LinearLayer::create(const std::shared_ptr<LayerParams> param)

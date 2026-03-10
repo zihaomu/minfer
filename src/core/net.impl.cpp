@@ -22,8 +22,9 @@ Net::NetImpl::~NetImpl()
 
 }
 
-void Net::NetImpl::readNet(const std::string path, const std::string modelType)
+void Net::NetImpl::readNet(const std::string path, RuntimePrecision precision, const std::string modelType)
 {
+    setRuntimePrecision(precision);
     // TODO Add model model type supported!
     std::vector<std::shared_ptr<LayerParams> > netParams;
     M_Assert(modelType == "gguf" && "Only GGUF model has been supported!");
@@ -233,6 +234,7 @@ void Net::NetImpl::createLayerRecurve(int layerIdx, std::vector<int>& isLayerCre
 // 此部分代码有待测试
 void Net::NetImpl::createNet(const std::vector<std::shared_ptr<LayerParams> >& allLayerParams)
 {
+    M_Assert(!graphCreated_ && "Net has already been created, precision can not change after createNet/readNet.");
     // find every layer's parent layer index.
     std::vector<int> outLayerIndex;
     std::map<int, std::vector<int> > layer2Parent; // 建立layer -> parent 的映射
@@ -273,6 +275,12 @@ void Net::NetImpl::createNet(const std::vector<std::shared_ptr<LayerParams> >& a
     }
 }
 
+void Net::NetImpl::createNet(const std::vector<std::shared_ptr<LayerParams> >& allLayerParams, RuntimePrecision precision)
+{
+    setRuntimePrecision(precision);
+    createNet(allLayerParams);
+}
+
 int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
 {
     AutoLock lk(mutex);
@@ -284,14 +292,13 @@ int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
 
     LayerData ld = {};
     int layerId = lds.size();
+    param->precision = runtimePrecision_;
     std::shared_ptr<Layer> layer = runtime->createLayer(param);
 
     if (!layer)
     {
         M_Error_(Error::Code::StsBadType, ("Fail to create layer instance with type = %d!", (int)param->type));
     }
-    layer->setRuntimePrecision(runtimePrecision_);
-
     // 对输入输出对特殊处理
     // 输入将会在setinput中进行初始化。
     if (param->type == LayerType::Input)
@@ -338,6 +345,7 @@ int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
     ld.outputsIdx = param->outputIndex;
 
     lds.push_back(ld);
+    graphCreated_ = true;
     // Create the layer.
     return layerId;
 }
@@ -381,14 +389,9 @@ void Net::NetImpl::encode(const std::string text, std::vector<int> &out_ids)
 
 void Net::NetImpl::setRuntimePrecision(RuntimePrecision precision)
 {
+    M_Assert(!graphCreated_ &&
+             "Net precision is immutable after createNet/readNet");
     runtimePrecision_ = precision;
-    for (auto& ld : lds)
-    {
-        if (ld.layer)
-        {
-            ld.layer->setRuntimePrecision(precision);
-        }
-    }
 }
 
 RuntimePrecision Net::NetImpl::getRuntimePrecision() const

@@ -31,7 +31,7 @@ int last_argmax_token(const Mat& logits) {
 TEST(Net_TEST, prefill_matches_forward_argmax)
 {
     Net net;
-    net.readNet(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16.gguf");
+    net.readNet(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16.gguf", RuntimePrecision::FP32);
 
     const std::string root = std::string(M_ROOT_PATH) + "/test/layers/test_data/data/";
     const int num_tests = 4;
@@ -61,7 +61,7 @@ TEST(Net_TEST, prefill_matches_forward_argmax)
 TEST(Net_TEST, decode_step_matches_full_forward_next_token)
 {
     Net net;
-    net.readNet(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16.gguf");
+    net.readNet(std::string(M_ROOT_PATH) + "/test/big_models/Lite-Oute-1-65M-FP16.gguf", RuntimePrecision::FP32);
 
     const std::string root = std::string(M_ROOT_PATH) + "/test/layers/test_data/data/";
     const int num_tests = 4;

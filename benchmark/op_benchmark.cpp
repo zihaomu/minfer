@@ -1,4 +1,6 @@
 #include "minfer.h"
+#include "backend/cpu/kernel/gemm_kernel_xsimd.h"
+#include "backend/cpu/layer/runtime_weight.h"
 
 #include <algorithm>
 #include <chrono>
@@ -31,6 +33,8 @@ struct BenchmarkOptions
     int head_count_kv = 4;
     int threads = 0;
     bool gemm_only = false;
+    bool gemm_micro_only = false;
+    bool gemm_runtime_only = false;
 };
 
 BenchmarkOptions parse_args(int argc, char** argv)
@@ -68,6 +72,10 @@ BenchmarkOptions parse_args(int argc, char** argv)
             opts.threads = std::stoi(need_value(arg));
         else if (arg == "--gemm-only")
             opts.gemm_only = true;
+        else if (arg == "--gemm-micro-only")
+            opts.gemm_micro_only = true;
+        else if (arg == "--gemm-runtime-only")
+            opts.gemm_runtime_only = true;
         else if (arg == "--help" || arg == "-h")
         {
             std::cout
@@ -81,7 +89,9 @@ BenchmarkOptions parse_args(int argc, char** argv)
                 << "  --head-count <n>\n"
                 << "  --head-count-kv <n>\n"
                 << "  --threads <n>\n"
-                << "  --gemm-only\n";
+                << "  --gemm-only\n"
+                << "  --gemm-micro-only\n"
+                << "  --gemm-runtime-only\n";
             std::exit(0);
         }
         else
@@ -109,6 +119,13 @@ BenchmarkOptions parse_args(int argc, char** argv)
     if (opts.gemm_out == 0)
     {
         opts.gemm_out = opts.hidden * 4;
+    }
+    const int gemm_mode_count = static_cast<int>(opts.gemm_only) +
+                                static_cast<int>(opts.gemm_micro_only) +
+                                static_cast<int>(opts.gemm_runtime_only);
+    if (gemm_mode_count > 1)
+    {
+        throw std::runtime_error("Only one of --gemm-only, --gemm-micro-only, --gemm-runtime-only may be set");
     }
 
     return opts;
@@ -225,6 +242,11 @@ void print_gemm_result(const std::string& name, const BenchmarkStats& stats, dou
               << std::endl;
 }
 
+Mat transpose_last_two_2d(const Mat& input)
+{
+    return transposeND(input, {1, 0});
+}
+
 }  // namespace
 
 int main(int argc, char** argv)
@@ -247,6 +269,115 @@ int main(int argc, char** argv)
         gemm_w.convertTo(gemm_w_fp16, DT_16F);
         quantize_int8_per_row(gemm_w, gemm_w_int8, gemm_w_int8_scales);
 
+        RuntimeWeight rw_fp32;
+        RuntimeWeight rw_fp16;
+        RuntimeWeight rw_int8;
+        rw_fp32.init(gemm_w, Int8QuantScheme::PerRow, true, RuntimePrecision::FP32);
+        rw_fp16.init(gemm_w, Int8QuantScheme::PerRow, true, RuntimePrecision::FP16);
+        rw_int8.init(gemm_w, Int8QuantScheme::PerRow, true, RuntimePrecision::INT8);
+
+        if (opts.gemm_micro_only)
+        {
+            const int rows = opts.batch * opts.seq_len;
+            const double kernel_flops = 2.0 * static_cast<double>(rows) * static_cast<double>(opts.gemm_out) *
+                                        static_cast<double>(opts.hidden);
+
+            Mat gemm_w_kn = transpose_last_two_2d(gemm_w);
+            Mat gemm_w_kn_fp16 = transpose_last_two_2d(gemm_w_fp16);
+            Mat gemm_w_kn_int8 = transpose_last_two_2d(gemm_w_int8);
+
+            std::vector<float> packed_b_fp32(cpu::gemm_xsimd_packed_b_elements(opts.gemm_out, opts.hidden));
+            std::vector<hfloat> packed_b_fp16(cpu::gemm_xsimd_packed_b_elements(opts.gemm_out, opts.hidden));
+            std::vector<int8_t> packed_b_int8(cpu::gemm_xsimd_packed_b_elements(opts.gemm_out, opts.hidden));
+            std::vector<float> packed_scales(cpu::gemm_xsimd_packed_scale_elements(opts.gemm_out));
+            std::vector<float> out_nt(static_cast<size_t>(rows) * static_cast<size_t>(opts.gemm_out));
+            std::vector<float> out_row_packed(static_cast<size_t>(rows) * static_cast<size_t>(opts.gemm_out));
+
+            cpu::gemm_pack_xsimd_nn_fp32(reinterpret_cast<const float*>(gemm_w_kn.data),
+                                         packed_b_fp32.data(),
+                                         opts.gemm_out,
+                                         opts.hidden);
+            cpu::gemm_pack_xsimd_nn_fp16(reinterpret_cast<const hfloat*>(gemm_w_kn_fp16.data),
+                                         packed_b_fp16.data(),
+                                         opts.gemm_out,
+                                         opts.hidden);
+            cpu::gemm_pack_xsimd_nn_i8_rowwise(reinterpret_cast<const int8_t*>(gemm_w_kn_int8.data),
+                                               reinterpret_cast<const float*>(gemm_w_int8_scales.data),
+                                               packed_b_int8.data(),
+                                               packed_scales.data(),
+                                               opts.gemm_out,
+                                               opts.hidden);
+
+            const float* a_ptr = reinterpret_cast<const float*>(gemm_a.data);
+            const float* w_fp32_ptr = reinterpret_cast<const float*>(gemm_w.data);
+            const hfloat* w_fp16_ptr = reinterpret_cast<const hfloat*>(gemm_w_fp16.data);
+            const int8_t* w_int8_ptr = reinterpret_cast<const int8_t*>(gemm_w_int8.data);
+            const float* w_int8_scales_ptr = reinterpret_cast<const float*>(gemm_w_int8_scales.data);
+
+            const BenchmarkStats nt_fp32_stats = benchmark_stats(opts, [&]() {
+                cpu::gemm_kernel_xsimd_nt(a_ptr, w_fp32_ptr, out_nt.data(), rows, opts.gemm_out, opts.hidden);
+            });
+            const BenchmarkStats nt_fp16_stats = benchmark_stats(opts, [&]() {
+                cpu::gemm_kernel_xsimd_nt_fp16(a_ptr, w_fp16_ptr, out_nt.data(), rows, opts.gemm_out, opts.hidden);
+            });
+            const BenchmarkStats nt_int8_stats = benchmark_stats(opts, [&]() {
+                cpu::gemm_kernel_xsimd_nt_i8_rowwise(a_ptr, w_int8_ptr, w_int8_scales_ptr, out_nt.data(), rows, opts.gemm_out, opts.hidden);
+            });
+
+            const BenchmarkStats row_packed_fp32_stats = benchmark_stats(opts, [&]() {
+                for (int row = 0; row < rows; ++row)
+                {
+                    cpu::gemm_kernel_xsimd_row_packed_fp32(a_ptr + static_cast<size_t>(row) * opts.hidden,
+                                                           packed_b_fp32.data(),
+                                                           out_row_packed.data() + static_cast<size_t>(row) * opts.gemm_out,
+                                                           opts.gemm_out,
+                                                           opts.hidden);
+                }
+            });
+            const BenchmarkStats row_packed_fp16_stats = benchmark_stats(opts, [&]() {
+                for (int row = 0; row < rows; ++row)
+                {
+                    cpu::gemm_kernel_xsimd_row_packed_fp16(a_ptr + static_cast<size_t>(row) * opts.hidden,
+                                                           packed_b_fp16.data(),
+                                                           out_row_packed.data() + static_cast<size_t>(row) * opts.gemm_out,
+                                                           opts.gemm_out,
+                                                           opts.hidden);
+                }
+            });
+            const BenchmarkStats row_packed_int8_stats = benchmark_stats(opts, [&]() {
+                for (int row = 0; row < rows; ++row)
+                {
+                    cpu::gemm_kernel_xsimd_row_packed_i8_rowwise(a_ptr + static_cast<size_t>(row) * opts.hidden,
+                                                                 packed_b_int8.data(),
+                                                                 packed_scales.data(),
+                                                                 out_row_packed.data() + static_cast<size_t>(row) * opts.gemm_out,
+                                                                 opts.gemm_out,
+                                                                 opts.hidden);
+                }
+            });
+
+            const double nt_fp32_gflops = kernel_flops / (nt_fp32_stats.avg_ms * 1e6);
+            const double nt_fp16_gflops = kernel_flops / (nt_fp16_stats.avg_ms * 1e6);
+            const double nt_int8_gflops = kernel_flops / (nt_int8_stats.avg_ms * 1e6);
+            const double row_packed_fp32_gflops = kernel_flops / (row_packed_fp32_stats.avg_ms * 1e6);
+            const double row_packed_fp16_gflops = kernel_flops / (row_packed_fp16_stats.avg_ms * 1e6);
+            const double row_packed_int8_gflops = kernel_flops / (row_packed_int8_stats.avg_ms * 1e6);
+
+            std::cout << "minfer gemm micro-kernel benchmark" << std::endl;
+            std::cout << "threads=" << active_threads << std::endl;
+            std::cout << "rows=" << rows << ", hidden=" << opts.hidden << ", out=" << opts.gemm_out << std::endl;
+            std::cout << "nt entry uses the simple path when rows <= 1 or blocked heuristics stay disabled" << std::endl;
+            print_gemm_result("nt entry fp32", nt_fp32_stats, nt_fp32_gflops, 1.0);
+            print_gemm_result("nt entry fp16", nt_fp16_stats, nt_fp16_gflops, nt_fp32_stats.avg_ms / nt_fp16_stats.avg_ms);
+            print_gemm_result("nt entry int8", nt_int8_stats, nt_int8_gflops, nt_fp32_stats.avg_ms / nt_int8_stats.avg_ms);
+            print_gemm_result("rowpacked fp32", row_packed_fp32_stats, row_packed_fp32_gflops, 1.0);
+            print_gemm_result("rowpacked fp16", row_packed_fp16_stats, row_packed_fp16_gflops,
+                              row_packed_fp32_stats.avg_ms / row_packed_fp16_stats.avg_ms);
+            print_gemm_result("rowpacked int8", row_packed_int8_stats, row_packed_int8_gflops,
+                              row_packed_fp32_stats.avg_ms / row_packed_int8_stats.avg_ms);
+            return 0;
+        }
+
         const BenchmarkStats gemm_fp32_stats = benchmark_stats(opts, [&]() {
             Mat out = gemm(gemm_a, gemm_w, false, true);
             (void)out;
@@ -267,6 +398,40 @@ int main(int argc, char** argv)
         const double gemm_fp32_gflops = gemm_flops / (gemm_fp32_stats.avg_ms * 1e6);
         const double gemm_fp16_gflops = gemm_flops / (gemm_fp16_stats.avg_ms * 1e6);
         const double gemm_int8_gflops = gemm_flops / (gemm_int8_stats.avg_ms * 1e6);
+
+        if (opts.gemm_runtime_only)
+        {
+            const BenchmarkStats runtime_fp32_stats = benchmark_stats(opts, [&]() {
+                Mat out = rw_fp32.gemmNT(gemm_a);
+                (void)out;
+            });
+
+            const BenchmarkStats runtime_fp16_stats = benchmark_stats(opts, [&]() {
+                Mat out = rw_fp16.gemmNT(gemm_a);
+                (void)out;
+            });
+
+            const BenchmarkStats runtime_int8_stats = benchmark_stats(opts, [&]() {
+                Mat out = rw_int8.gemmNT(gemm_a);
+                (void)out;
+            });
+
+            const double runtime_fp32_gflops = gemm_flops / (runtime_fp32_stats.avg_ms * 1e6);
+            const double runtime_fp16_gflops = gemm_flops / (runtime_fp16_stats.avg_ms * 1e6);
+            const double runtime_int8_gflops = gemm_flops / (runtime_int8_stats.avg_ms * 1e6);
+
+            std::cout << "minfer runtime-weight gemm benchmark" << std::endl;
+            std::cout << "threads=" << active_threads << std::endl;
+            std::cout << "shape(batch, seq, hidden, out)=(" << opts.batch << ", " << opts.seq_len
+                      << ", " << opts.hidden << ", " << opts.gemm_out << ")" << std::endl;
+            std::cout << "decode_packed_eligible=" << (rw_fp32.shouldUseDecodePacked(gemm_a) ? "true" : "false") << std::endl;
+            print_gemm_result("runtime fp32", runtime_fp32_stats, runtime_fp32_gflops, 1.0);
+            print_gemm_result("runtime fp16", runtime_fp16_stats, runtime_fp16_gflops,
+                              runtime_fp32_stats.avg_ms / runtime_fp16_stats.avg_ms);
+            print_gemm_result("runtime int8", runtime_int8_stats, runtime_int8_gflops,
+                              runtime_fp32_stats.avg_ms / runtime_int8_stats.avg_ms);
+            return 0;
+        }
 
         if (opts.gemm_only)
         {

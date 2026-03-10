@@ -18,7 +18,10 @@ EmbeddingLayer::EmbeddingLayer(const std::shared_ptr<EmbeddingLayerParams> param
     MatShape w_shape = param->w.shape();
     M_Assert(w_shape.size() == 2);
 
-    w.init(canonicalize_lookup_weight(param->w, vocab_dim, embd_dim), Int8QuantScheme::PerRow);
+    w.init(canonicalize_lookup_weight(param->w, vocab_dim, embd_dim),
+           Int8QuantScheme::PerRow,
+           false,
+           param->precision);
 
     MatShape w_shape2 = w.active().shape();
     M_Assert(w_shape2[0] == vocab_dim);
@@ -138,8 +141,8 @@ void EmbeddingLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &
 
 void EmbeddingLayer::setRuntimePrecision(RuntimePrecision precision)
 {
-    Layer::setRuntimePrecision(precision);
     w.setPrecision(precision);
+    Layer::setRuntimePrecision(precision);
 }
 
 std::shared_ptr<EmbeddingLayer> EmbeddingLayer::create(const std::shared_ptr<LayerParams> param)
