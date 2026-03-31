@@ -5,9 +5,16 @@
 #ifndef MINFER_ATTENTION_LAYER_H
 #define MINFER_ATTENTION_LAYER_H
 
+#include <memory>
+
 #include "minfer.h"
 #include "common_layer.h"
 #include "runtime_weight.h"
+
+namespace mobilekv
+{
+class KVCacheStorage;
+}
 
 namespace minfer {
 
@@ -74,9 +81,15 @@ private:
     int start_pos = 0;     // 标志从哪里开始开始推理
 
     // ====== KV Cache ======
+    // Fallback local cache path (used when mobilekv is not configured).
     Mat k_cache; // shape: [head_count_kv, max_seq_len, embd_dim_head]
     Mat v_cache; // shape: [head_count_kv, max_seq_len, embd_dim_head]
     int cached_len = 0; // 已缓存的 token 数
+
+    // MobileKV ring-buffer path.
+    std::shared_ptr<mobilekv::KVCacheStorage> kv_storage = nullptr;
+    int kv_cache_layer_id = -1;
+    bool use_mobilekv = false;
 
     // 内部辅助方法
     void forwardPrefill(const std::vector<Mat*>& input, std::vector<Mat*>& output, const InferenceContext& ctx);

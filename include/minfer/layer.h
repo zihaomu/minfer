@@ -5,10 +5,16 @@
 #ifndef MINFER_LAYER_H
 #define MINFER_LAYER_H
 
+#include <memory>
 #include <string>
 #include <vector>
 #include "mat.h"
 #include "context.h"
+
+namespace mobilekv
+{
+class KVCacheStorage;
+}
 
 namespace minfer
 {
@@ -156,6 +162,10 @@ public:
     Mat bk;
     Mat bv;
     Mat bout;
+
+    // Optional shared mobilekv storage (set by Net at graph-build time).
+    std::shared_ptr<mobilekv::KVCacheStorage> kv_storage = nullptr;
+    int kv_cache_layer_id = -1;
 };
 
 class FeedForwardLayerParams : public LayerParams

@@ -35,10 +35,13 @@ void Net::createNet(const std::vector<std::shared_ptr<LayerParams> > &netParams,
     return impl->createNet(netParams, precision);
 }
 
-void Net::readNet(const std::string path, RuntimePrecision precision, const std::string modelType)
+void Net::readNet(const std::string path,
+                  RuntimePrecision precision,
+                  const std::string modelType,
+                  const std::string kv_cache_cfg_path)
 {
     M_Assert(impl != nullptr);
-    return impl->readNet(path, precision, modelType);
+    return impl->readNet(path, precision, modelType, kv_cache_cfg_path);
 }
 
 void Net::setInput(const Mat input, const int mIndx)
@@ -100,6 +103,12 @@ void Net::resetKVCache()
 {
     M_Assert(impl != nullptr);
     return impl->resetKVCache();
+}
+
+void Net::setKVCacheConfigPath(const std::string& cfg_path)
+{
+    M_Assert(impl != nullptr);
+    return impl->setKVCacheConfigPath(cfg_path);
 }
 
 RuntimePrecision Net::getPrecision() const

@@ -44,10 +44,12 @@ public:
     /// \param path
     /// \param precision runtime precision used at model load time, default fp32
     /// \param modelType
+    /// \param kv_cache_cfg_path optional mobilekv cfg path, must be set before graph create.
     /// ⚠️目前只支持gguf一种模型格式
     void readNet(const std::string path,
                  RuntimePrecision precision = RuntimePrecision::FP32,
-                 const std::string modelType = "gguf");
+                 const std::string modelType = "gguf",
+                 const std::string kv_cache_cfg_path = "");
 
     /// set input data with given mat index
     /// \param input
@@ -76,6 +78,9 @@ public:
 
     /// 重置所有 AttentionLayer 的 KV Cache，开始新一轮对话
     void resetKVCache();
+
+    /// 设置 mobilekv cfg 路径（需在 readNet 前调用）
+    void setKVCacheConfigPath(const std::string& cfg_path);
 
     RuntimePrecision getPrecision() const;
 

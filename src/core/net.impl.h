@@ -14,6 +14,11 @@
 #include <map>
 #include <vector>
 
+namespace mobilekv
+{
+class KVCacheStorage;
+}
+
 namespace minfer
 {
 
@@ -37,7 +42,10 @@ public:
     ~NetImpl();
 
     // 内部需要解析多个模型结构
-    void readNet(const std::string path, RuntimePrecision precision, const std::string modelType);
+    void readNet(const std::string path,
+                 RuntimePrecision precision,
+                 const std::string modelType,
+                 const std::string kv_cache_cfg_path);
 
     void setInput(const Mat input, const int mIndx);
 
@@ -61,9 +69,17 @@ public:
     Mat prefill(const std::vector<int>& token_ids);
     Mat step(int token_id);
     void resetKVCache();
+    void setKVCacheConfigPath(const std::string& cfg_path);
     RuntimePrecision getRuntimePrecision() const;
 
 private:
+    void buildMobileKVStorage(std::vector<std::shared_ptr<LayerParams> >& netParams);
+    std::string maybeCreateAutoMobileKVCfgText(
+        int num_attention_layers,
+        int num_heads_kv,
+        int head_dim,
+        int max_seq_len) const;
+
     void setRuntimePrecision(RuntimePrecision precision);
     void createLayerRecurve(int layerIdx, std::vector<int>& isLayerCreated, const std::map<int,
             std::vector<int> >& layer2Parent, const std::vector<std::shared_ptr<LayerParams> >& allLayerParams);
@@ -93,6 +109,10 @@ private:
     InferenceContext ctx_; // 推理上下文，用于 chat 生成
     RuntimePrecision runtimePrecision_ = RuntimePrecision::FP32;
     bool graphCreated_ = false;
+
+    std::string kv_cache_cfg_path_;
+    std::string kv_cache_cfg_text_;
+    std::shared_ptr<mobilekv::KVCacheStorage> kv_storage_;
 };
 
 }

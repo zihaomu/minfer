@@ -4,6 +4,10 @@
 
 #include "net.impl.h"
 #include "gguf_model/gguf_loader.h"
+#include "mobilekv/kv_cache.h"
+
+#include <algorithm>
+#include <cstdlib>
 
 namespace minfer
 {
@@ -22,16 +26,133 @@ Net::NetImpl::~NetImpl()
 
 }
 
-void Net::NetImpl::readNet(const std::string path, RuntimePrecision precision, const std::string modelType)
+void Net::NetImpl::readNet(const std::string path,
+                           RuntimePrecision precision,
+                           const std::string modelType,
+                           const std::string kv_cache_cfg_path)
 {
     setRuntimePrecision(precision);
+    if (!kv_cache_cfg_path.empty())
+    {
+        kv_cache_cfg_path_ = kv_cache_cfg_path;
+        kv_cache_cfg_text_.clear();
+    }
     // TODO Add model model type supported!
     std::vector<std::shared_ptr<LayerParams> > netParams;
     M_Assert(modelType == "gguf" && "Only GGUF model has been supported!");
 
     readGGUF(path, netParams, gguf_vocab);
+    buildMobileKVStorage(netParams);
 
     createNet(netParams);
+}
+
+std::string Net::NetImpl::maybeCreateAutoMobileKVCfgText(int num_attention_layers,
+                                                          int num_heads_kv,
+                                                          int head_dim,
+                                                          int max_seq_len) const
+{
+    M_Assert(num_attention_layers > 0);
+    M_Assert(num_heads_kv > 0);
+    M_Assert(head_dim > 0);
+    M_Assert(max_seq_len > 0);
+
+    std::string cfg_text;
+    cfg_text += "model num_heads=" + std::to_string(num_heads_kv) + " head_dim=" + std::to_string(head_dim) + "\n";
+    cfg_text += "storage default_alignment=64 thread_safe=false default_max_seq_capacity=" +
+                std::to_string(max_seq_len) + "\n";
+    cfg_text += "defaults k_type=fp32 v_type=fp32 initial=" + std::to_string(max_seq_len) +
+                " max=" + std::to_string(max_seq_len) + "\n";
+    cfg_text += "group 0-" + std::to_string(num_attention_layers - 1) + "\n";
+    return cfg_text;
+}
+
+void Net::NetImpl::buildMobileKVStorage(std::vector<std::shared_ptr<LayerParams> >& netParams)
+{
+    kv_storage_.reset();
+
+    const char* kv_backend = std::getenv("MINFER_KV_BACKEND");
+    if (kv_backend && std::string(kv_backend) == "legacy")
+    {
+        kv_cache_cfg_text_.clear();
+        return;
+    }
+
+    std::vector<std::shared_ptr<AttentionLayerParams> > attn_params;
+    attn_params.reserve(netParams.size());
+    for (auto& param : netParams)
+    {
+        if (param->type != LayerType::Attention)
+        {
+            continue;
+        }
+        auto attn = std::dynamic_pointer_cast<AttentionLayerParams>(param);
+        M_Assert(attn);
+        attn_params.push_back(attn);
+    }
+    if (attn_params.empty())
+    {
+        return;
+    }
+
+    const auto& first = attn_params[0];
+    M_Assert(first->head_count > 0);
+    M_Assert(first->head_count_kv > 0);
+    M_Assert(first->embd_dim % first->head_count == 0);
+
+    const int num_attention_layers = static_cast<int>(attn_params.size());
+    const int num_heads_kv = first->head_count_kv;
+    const int head_dim = first->embd_dim / first->head_count;
+    const int max_seq_len = first->max_seq_len;
+
+    for (const auto& attn : attn_params)
+    {
+        M_Assert(attn->head_count > 0);
+        M_Assert(attn->head_count_kv == num_heads_kv);
+        M_Assert(attn->embd_dim % attn->head_count == 0);
+        M_Assert(attn->embd_dim / attn->head_count == head_dim);
+        M_Assert(attn->max_seq_len == max_seq_len);
+    }
+
+    std::string cfg_error;
+    std::unique_ptr<mobilekv::KVCacheStorage> kv_storage_unique;
+    const std::string cfg_path = kv_cache_cfg_path_;
+    if (!cfg_path.empty())
+    {
+        kv_storage_unique = mobilekv::create_storage_from_config_file(cfg_path, &cfg_error);
+        if (!kv_storage_unique)
+        {
+            M_Error_(Error::StsError, ("create_storage_from_config_file failed: path=%s, error=%s",
+                                       cfg_path.c_str(), cfg_error.c_str()));
+        }
+    }
+    else
+    {
+        kv_cache_cfg_text_ = maybeCreateAutoMobileKVCfgText(
+            num_attention_layers, num_heads_kv, head_dim, max_seq_len);
+        kv_storage_unique = mobilekv::create_storage_from_config_string(kv_cache_cfg_text_, &cfg_error);
+        if (!kv_storage_unique)
+        {
+            M_Error_(Error::StsError, ("create_storage_from_config_string failed: error=%s",
+                                       cfg_error.c_str()));
+        }
+    }
+
+    if (!kv_storage_unique)
+    {
+        M_Error_(Error::StsError, ("Fail to build mobilekv storage."));
+    }
+    M_Assert(kv_storage_unique);
+
+    kv_storage_ = std::shared_ptr<mobilekv::KVCacheStorage>(std::move(kv_storage_unique));
+    M_Assert(kv_storage_);
+
+    for (int i = 0; i < num_attention_layers; ++i)
+    {
+        M_Assert(kv_storage_->has_layer(static_cast<uint32_t>(i)));
+        attn_params[i]->kv_storage = kv_storage_;
+        attn_params[i]->kv_cache_layer_id = i;
+    }
 }
 
 void Net::NetImpl::setInput(const Mat input, const int _mIndx)
@@ -397,6 +518,14 @@ void Net::NetImpl::setRuntimePrecision(RuntimePrecision precision)
 RuntimePrecision Net::NetImpl::getRuntimePrecision() const
 {
     return runtimePrecision_;
+}
+
+void Net::NetImpl::setKVCacheConfigPath(const std::string& cfg_path)
+{
+    M_Assert(!graphCreated_ &&
+             "KV cache cfg path is immutable after createNet/readNet");
+    kv_cache_cfg_path_ = cfg_path;
+    kv_cache_cfg_text_.clear();
 }
 
 // ====== Chat 生成接口实现 ======

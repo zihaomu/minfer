@@ -41,6 +41,7 @@ add_definitions(-DM_ROOT_PATH="${CMAKE_CURRENT_LIST_DIR}")
 
 include_directories(
         ${CMAKE_CURRENT_LIST_DIR}/3rdparty/
+        ${CMAKE_CURRENT_LIST_DIR}/3rdparty/mobilekv/include
         ${CMAKE_CURRENT_LIST_DIR}/3rdparty/xsimd/include
         ${CMAKE_CURRENT_LIST_DIR}/include/
         ${CMAKE_CURRENT_LIST_DIR}/src/
@@ -51,6 +52,9 @@ include_directories(
 FILE(GLOB_RECURSE M_Core_SRC
         ${CMAKE_CURRENT_LIST_DIR}/src/core/*.cpp
         ${CMAKE_CURRENT_LIST_DIR}/src/core/gguf_mode/*.cpp
+    )
+list(APPEND M_Core_SRC
+        ${CMAKE_CURRENT_LIST_DIR}/3rdparty/mobilekv/src/kv_cache.cpp
     )
 
 add_library(M_Core OBJECT ${M_Core_SRC})
