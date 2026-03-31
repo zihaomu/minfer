@@ -14,6 +14,10 @@
 
 ## 文件夹结构
 - 3rdparty 第三方依赖
+  - googletest # 测试框架
+  - libnpy # python对齐的核心框架
+  - xsimd  # 跨平台simd指令框架
+  - mobilekv # 动态kv管理框架
 - code_test 一些实验性代码
 - include 引擎的接口头文件
 - src 源码
@@ -36,6 +40,10 @@
 - 支持fp32格式
 - 支持int8格式
 - 支持fp16格式
+
+## KV cache支持方案
+使用端侧灵活kvcache管理器：https://github.com/zihaomu/mobilekv
+在Net层做一个整体的cache的内存申请，然后每一层都进行配置，这个版本的kv cache默认使用ring buffer的版本。基于这个设计去实现。
 
 ## Benchmark
 项目提供 `minfer_benchmark` 用于评估 LLM 推理速度，并且将 `prefill` 与 `decode` 分开统计。

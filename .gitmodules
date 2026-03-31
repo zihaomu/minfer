@@ -1,0 +1,3 @@
+[submodule "3rdparty/mobilekv"]
+	path = 3rdparty/mobilekv
+	url = https://github.com/zihaomu/mobilekv
