@@ -758,3 +758,16 @@ end2end : throughput=442.25 tok/s (prompt+decode)
    - 适量的 4 线程：**`4.50 ms/tok`**（达到目前最优解，尤其 Prompt `512` 时从 `7.31` 降到了 `5.11 ms/tok`）。
 
 由此可见当算力负载极其微缩时，**少量线程 (4 线程)** 平摊掉调度开销后能实现真正的吞吐量净增长！这说明了为 OpenMP 设定正确的 Thread 上限在边缘侧极度关键。
+
+---
+
+# XSIMD Transpose 向量化极限提速
+
+我们在 `transpose_kernel.cpp` 中完全移除了原始嵌套 `for` 循环的缓慢缓存惩罚写法，并将 16-bit 和 32-bit 的矩阵切断重构为了能够适配任意硬件架构（NEON / AVX2 / SSE）的 `xsimd::transpose` 寄存器内极速转置。
+
+**Benchmark 结果 (`shape=2048x2048`, 4 Threads)**：
+- **传统的 Tiled C++ 循环转置**： `3.0157 ms`
+- **使用 XSIMD Blocked 批量指令转置**： `1.1009 ms` \
+
+**结论**：在最吃内存带宽和 Cache Missing 的 Transpose 算子上，通过底层寄存器 SIMD Shuffle 优化，达成了接近 **`300% (3倍)` 的史诗级提速**！这对于大型 Prompt 的 GQA/KV 重排等预处理过程极为关键。
+

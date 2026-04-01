@@ -7,6 +7,10 @@
 #include <sstream>
 #include <stdarg.h>
 
+#if defined(_OPENMP)
+#include <omp.h>
+#endif
+
 namespace minfer
 {
 
@@ -91,6 +95,25 @@ std::string format( const char* fmt, ... )
         buf[bsize - 1] = 0;
         return std::string(buf.data(), len);
     }
+}
+
+void set_num_threads(int threads)
+{
+#if defined(_OPENMP)
+    if (threads > 0)
+    {
+        omp_set_num_threads(threads);
+    }
+#endif
+}
+
+int get_num_threads()
+{
+#if defined(_OPENMP)
+    return omp_get_max_threads();
+#else
+    return 1;
+#endif
 }
 
 Exception::Exception()
