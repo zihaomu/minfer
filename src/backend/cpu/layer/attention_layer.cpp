@@ -9,11 +9,52 @@
 
 #include <algorithm>
 #include <cstring>  // for memcpy
+#include <cmath>
+#include <cfloat>
+
+#if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__aarch64__) || defined(_M_ARM64)
+#ifndef XSIMD_ENABLE_WASM
+#define XSIMD_ENABLE_WASM 0
+#endif
+#endif
+#include "xsimd/xsimd.hpp"
 
 #define ATTEN_DEBUG 0
 namespace minfer {
 
 namespace {
+
+inline float xsimd_dot_fp32(const float* a, const float* b, int N) {
+    using batch_type = xsimd::batch<float>;
+    int inc = batch_type::size;
+    batch_type sum(0.0f);
+    int i = 0;
+    for (; i + inc <= N; i += inc) {
+        sum = xsimd::fma(batch_type::load_unaligned(a + i), batch_type::load_unaligned(b + i), sum);
+    }
+    float res = xsimd::reduce_add(sum);
+    for (; i < N; ++i) {
+        res += a[i] * b[i];
+    }
+    return res;
+}
+
+inline void xsimd_fmadd_inplace(float* out, float exp_diff, float exp_qk, const float* v, int N) {
+    using batch_type = xsimd::batch<float>;
+    int inc = batch_type::size;
+    batch_type b_exp_diff(exp_diff);
+    batch_type b_exp_qk(exp_qk);
+    int i = 0;
+    for (; i + inc <= N; i += inc) {
+        batch_type b_out = batch_type::load_unaligned(out + i);
+        batch_type b_v = batch_type::load_unaligned(v + i);
+        batch_type res = xsimd::fma(b_v, b_exp_qk, b_out * b_exp_diff);
+        res.store_unaligned(out + i);
+    }
+    for (; i < N; ++i) {
+        out[i] = out[i] * exp_diff + exp_qk * v[i];
+    }
+}
 
 Mat project_with_runtime_weight(const Mat& input, const RuntimeWeight& weight)
 {
@@ -78,34 +119,63 @@ void write_plain_fp32_tokens_to_mobilekv(mobilekv::KVPlane& plane,
     }
 }
 
-void read_plain_fp32_tokens_from_mobilekv(const mobilekv::KVPlane& plane,
-                                          uint32_t layer_id,
-                                          uint32_t begin_seq,
-                                          uint32_t token_count,
-                                          int num_heads,
-                                          int head_dim,
-                                          float* dst)
+// ---------------------------------------------------------------------------
+// Ring-buffer segment descriptor
+// ---------------------------------------------------------------------------
+// The PlainKVTemplate stores data in [S, H, D] (seq-major) order.
+// When the ring-buffer has wrapped (write_head > 0) the valid tokens are
+// split into two physically-contiguous slabs:
+//   Segment A (older tokens): base[ write_head .. max_cap )  length = sa
+//   Segment B (newer tokens): base[ 0          .. write_head) length = sb
+//
+// Logically the sequence is A followed by B.
+// When not wrapped (write_head == 0) only segment B is non-empty.
+// ---------------------------------------------------------------------------
+
+struct RingSegments {
+    const float* base;   // raw pointer to plane data()
+    int sa;              // segment-A length  (older, high physical address)
+    int sb;              // segment-B length  (newer, low  physical address)
+    int write_head;      // physical start of segment B
+    int num_heads;       // Hkv
+    int head_dim;        // D
+    int total;           // sa + sb
+};
+
+static RingSegments get_ring_segments(const mobilekv::KVPlane& plane)
 {
-    M_Assert(dst);
-    const uint8_t* base = static_cast<const uint8_t*>(plane.data());
+    const auto& stats = plane.stats();
+    const float* base = static_cast<const float*>(plane.data());
     M_Assert(base);
 
-    const size_t dst_seq_stride = static_cast<size_t>(num_heads) * static_cast<size_t>(head_dim);
-    for (uint32_t t = 0; t < token_count; ++t)
-    {
-        const uint32_t seq = begin_seq + t;
-        for (int h = 0; h < num_heads; ++h)
-        {
-            const auto addr = plane.locate(mobilekv::LogicalCoord(layer_id, seq, static_cast<uint32_t>(h), 0));
-            M_Assert(addr.valid);
+    RingSegments seg;
+    seg.base      = base;
+    seg.num_heads = static_cast<int>(plane.templ().shape().num_heads);
+    seg.head_dim  = static_cast<int>(plane.templ().shape().head_dim);
+    seg.total     = static_cast<int>(stats.seq_length);
 
-            float* dst_ptr = dst + (static_cast<size_t>(t) * dst_seq_stride +
-                                    static_cast<size_t>(h) * static_cast<size_t>(head_dim));
-            std::memcpy(dst_ptr, base + addr.byte_offset, static_cast<size_t>(head_dim) * sizeof(float));
-        }
+    if (stats.is_ring_buffer && stats.max_seq_capacity > 0 &&
+        stats.seq_length == stats.max_seq_capacity && stats.write_head > 0)
+    {
+        // Ring is full and has wrapped: valid data spans two physical slabs.
+        //   Segment A (older): rows [write_head, max_cap)  length = sa
+        //   Segment B (newer): rows [0,          write_head) length = sb
+        seg.write_head = static_cast<int>(stats.write_head);
+        seg.sa = static_cast<int>(stats.max_seq_capacity) - seg.write_head;
+        seg.sb = seg.write_head;
     }
+    else
+    {
+        // Ring is not full, or write_head has not yet wrapped.
+        // All valid data is in one contiguous physical region [0, seq_length).
+        seg.write_head = 0;
+        seg.sa         = 0;
+        seg.sb         = seg.total;
+    }
+    return seg;
 }
 
+// Gather one KV-head's data from a [S, Hkv, D] slab for a given segment.
 }  // namespace
 
 #if ATTEN_DEBUG
@@ -172,8 +242,8 @@ AttentionLayer::AttentionLayer(const std::shared_ptr<AttentionLayerParams> param
     }
     else
     {
-        // 预分配 fallback 本地 KV Cache
-        std::vector<int> cache_shape = {head_count_kv, max_seq_len, embd_dim_head};
+        // 预分配 fallback 本地 KV Cache, seq-major layout: [max_seq_len, head_count_kv, embd_dim_head]
+        std::vector<int> cache_shape = {max_seq_len, head_count_kv, embd_dim_head};
         k_cache = Mat(cache_shape, DT_32F, 0);
         v_cache = Mat(cache_shape, DT_32F, 0);
         cached_len = 0;
@@ -396,18 +466,13 @@ void AttentionLayer::forwardPrefill(const std::vector<Mat *> &input, std::vector
     else
     {
         // fallback local cache path
-        Mat x_k_t = transposeND(x_k, {1, 0, 2}); // [head_count_kv, seq_len, embd_dim_head]
-        Mat x_v_t = transposeND(x_v, {1, 0, 2});
+        // x_k & x_v are already [seq_len, head_count_kv, embd_dim_head]
+        float* dst_k = reinterpret_cast<float*>(k_cache.data) + static_cast<size_t>(ctx.start_pos) * head_count_kv * embd_dim_head;
+        float* dst_v = reinterpret_cast<float*>(v_cache.data) + static_cast<size_t>(ctx.start_pos) * head_count_kv * embd_dim_head;
+        const size_t copy_bytes = static_cast<size_t>(seq_len) * head_count_kv * embd_dim_head * sizeof(float);
+        memcpy(dst_k, x_k.data, copy_bytes);
+        memcpy(dst_v, x_v.data, copy_bytes);
 
-        for (int h = 0; h < head_count_kv; h++)
-        {
-            float* dst_k = (float*)k_cache.data + h * max_seq_len * embd_dim_head + ctx.start_pos * embd_dim_head;
-            float* dst_v = (float*)v_cache.data + h * max_seq_len * embd_dim_head + ctx.start_pos * embd_dim_head;
-            float* src_k = (float*)x_k_t.data + h * seq_len * embd_dim_head;
-            float* src_v = (float*)x_v_t.data + h * seq_len * embd_dim_head;
-            memcpy(dst_k, src_k, seq_len * embd_dim_head * sizeof(float));
-            memcpy(dst_v, src_v, seq_len * embd_dim_head * sizeof(float));
-        }
         cached_len = ctx.start_pos + seq_len;
     }
 
@@ -464,6 +529,12 @@ void AttentionLayer::forwardDecode(const std::vector<Mat *> &input, std::vector<
     Mat v_slice;
     int total_len = 0;
 
+    // ---------------------------------------------------------------
+    // UNIFIED DECODE: Dual-segment direct matmul with Online Softmax (Flash Attention B=1)
+    // Works identically for MobileKV and Fallback paths relying on uniform [S, Hkv, D] layout.
+    // ---------------------------------------------------------------
+    RingSegments kseg, vseg;
+
     if (use_mobilekv)
     {
         auto& layer_storage = kv_storage->layer(static_cast<uint32_t>(kv_cache_layer_id));
@@ -478,122 +549,106 @@ void AttentionLayer::forwardDecode(const std::vector<Mat *> &input, std::vector<
             k_plane,
             static_cast<uint32_t>(kv_cache_layer_id),
             reinterpret_cast<const float*>(x_k.data),
-            1,
-            0,
+            1, 0,
             dst_begin,
-            1,
-            head_count_kv,
-            embd_dim_head);
+            1, head_count_kv, embd_dim_head);
         write_plain_fp32_tokens_to_mobilekv(
             v_plane,
             static_cast<uint32_t>(kv_cache_layer_id),
             reinterpret_cast<const float*>(x_v.data),
-            1,
-            0,
+            1, 0,
             dst_begin,
-            1,
-            head_count_kv,
-            embd_dim_head);
+            1, head_count_kv, embd_dim_head);
 
         total_len = static_cast<int>(new_len);
         cached_len = total_len;
 
-        Mat k_seq_major({total_len, head_count_kv, embd_dim_head}, DT_32F);
-        Mat v_seq_major({total_len, head_count_kv, embd_dim_head}, DT_32F);
-        read_plain_fp32_tokens_from_mobilekv(
-            k_plane,
-            static_cast<uint32_t>(kv_cache_layer_id),
-            0,
-            new_len,
-            head_count_kv,
-            embd_dim_head,
-            reinterpret_cast<float*>(k_seq_major.data));
-        read_plain_fp32_tokens_from_mobilekv(
-            v_plane,
-            static_cast<uint32_t>(kv_cache_layer_id),
-            0,
-            new_len,
-            head_count_kv,
-            embd_dim_head,
-            reinterpret_cast<float*>(v_seq_major.data));
-
-        k_slice = transposeND(k_seq_major, {1, 0, 2}); // [head_count_kv, total_len, embd_dim_head]
-        v_slice = transposeND(v_seq_major, {1, 0, 2});
+        kseg = get_ring_segments(k_plane);
+        vseg = get_ring_segments(v_plane);
     }
     else
     {
-        // Step 3: Write new K, V to cache at position cur_pos
+        // Step 3: Write new K, V to local fallback cache at position cur_pos
         // x_k/x_v shape: [1, head_count_kv, embd_dim_head]
-        for (int h = 0; h < head_count_kv; h++)
-        {
-            float* dst_k = (float*)k_cache.data + h * max_seq_len * embd_dim_head + cur_pos * embd_dim_head;
-            float* dst_v = (float*)v_cache.data + h * max_seq_len * embd_dim_head + cur_pos * embd_dim_head;
-            float* src_k = (float*)x_k.data + h * embd_dim_head;
-            float* src_v = (float*)x_v.data + h * embd_dim_head;
-            memcpy(dst_k, src_k, embd_dim_head * sizeof(float));
-            memcpy(dst_v, src_v, embd_dim_head * sizeof(float));
-        }
+        float* dst_k = reinterpret_cast<float*>(k_cache.data) + static_cast<size_t>(cur_pos) * head_count_kv * embd_dim_head;
+        float* dst_v = reinterpret_cast<float*>(v_cache.data) + static_cast<size_t>(cur_pos) * head_count_kv * embd_dim_head;
+        const size_t copy_bytes = static_cast<size_t>(head_count_kv) * embd_dim_head * sizeof(float);
+        memcpy(dst_k, x_k.data, copy_bytes);
+        memcpy(dst_v, x_v.data, copy_bytes);
+
         cached_len = cur_pos + 1;
+        total_len = cached_len;
 
-        total_len = cached_len; // total KV sequence length including this token
+        // Construct contiguous Segments mimicking ring properties
+        kseg.base = reinterpret_cast<const float*>(k_cache.data);
+        kseg.write_head = 0;
+        kseg.sa = 0;
+        kseg.sb = total_len;
+        kseg.total = total_len;
 
-        // Step 5: Get full K, V from cache for attention: [head_count_kv, total_len, embd_dim_head]
-        // Slice cache to [head_count_kv, total_len, embd_dim_head]
-        k_slice = Mat({head_count_kv, total_len, embd_dim_head}, DT_32F);
-        v_slice = Mat({head_count_kv, total_len, embd_dim_head}, DT_32F);
-        for (int h = 0; h < head_count_kv; h++)
-        {
-            float* src_k = (float*)k_cache.data + h * max_seq_len * embd_dim_head;
-            float* src_v = (float*)v_cache.data + h * max_seq_len * embd_dim_head;
-            float* dst_k = (float*)k_slice.data + h * total_len * embd_dim_head;
-            float* dst_v = (float*)v_slice.data + h * total_len * embd_dim_head;
-            memcpy(dst_k, src_k, total_len * embd_dim_head * sizeof(float));
-            memcpy(dst_v, src_v, total_len * embd_dim_head * sizeof(float));
+        vseg.base = reinterpret_cast<const float*>(v_cache.data);
+        vseg.write_head = 0;
+        vseg.sa = 0;
+        vseg.sb = total_len;
+        vseg.total = total_len;
+    }
+
+    M_Assert(kseg.total == total_len && vseg.total == total_len);
+    M_Assert(kseg.sa == vseg.sa && kseg.sb == vseg.sb);
+
+    const int sa = kseg.sa;
+    const int sb = kseg.sb;
+    const float scale = 1.0f / sqrtf(static_cast<float>(embd_dim_head));
+
+    // Q after transpose: [head_count, 1, embd_dim_head]
+    Mat q_t = transposeND(x_q, {1, 0, 2});
+
+    // Output of attention: [head_count, 1, embd_dim_head]
+    Mat attn_out({head_count, 1, embd_dim_head}, DT_32F, 0.f);
+
+    const float* k_base = reinterpret_cast<const float*>(kseg.base);
+    const float* v_base = reinterpret_cast<const float*>(vseg.base);
+    float* out_base = reinterpret_cast<float*>(attn_out.data);
+    const float* q_base = reinterpret_cast<const float*>(q_t.data);
+
+    for (int h = 0; h < head_count; ++h)
+    {
+        const int h_kv = h / repeat_kv;
+        const float* q_ptr = q_base + static_cast<size_t>(h) * embd_dim_head;
+        float* out_ptr = out_base + static_cast<size_t>(h) * embd_dim_head;
+
+        float m_curr = -1e30f; // very small float strictly negative
+        float l_curr = 0.0f;
+
+        auto process_token = [&](const float* k_ptr, const float* v_ptr) {
+            float qk = xsimd_dot_fp32(q_ptr, k_ptr, embd_dim_head) * scale;
+            float m_new = std::max(m_curr, qk);
+            float exp_diff = std::exp(m_curr - m_new);
+            float exp_qk = std::exp(qk - m_new);
+            l_curr = l_curr * exp_diff + exp_qk;
+            xsimd_fmadd_inplace(out_ptr, exp_diff, exp_qk, v_ptr, embd_dim_head);
+            m_curr = m_new;
+        };
+
+        // Segment A
+        const int sa_end = kseg.write_head + sa;
+        for (int t = kseg.write_head; t < sa_end; ++t) {
+            const float* k_ptr = k_base + (static_cast<size_t>(t) * head_count_kv + h_kv) * embd_dim_head;
+            const float* v_ptr = v_base + (static_cast<size_t>(t) * head_count_kv + h_kv) * embd_dim_head;
+            process_token(k_ptr, v_ptr);
+        }
+        // Segment B
+        for (int t = 0; t < sb; ++t) {
+            const float* k_ptr = k_base + (static_cast<size_t>(t) * head_count_kv + h_kv) * embd_dim_head;
+            const float* v_ptr = v_base + (static_cast<size_t>(t) * head_count_kv + h_kv) * embd_dim_head;
+            process_token(k_ptr, v_ptr);
+        }
+
+        // Normalize
+        for (int d = 0; d < embd_dim_head; ++d) {
+            out_ptr[d] /= l_curr;
         }
     }
-
-    // Step 6: Repeat KV for GQA, then transpose
-    // k_slice: [head_count_kv, total_len, embd_dim_head]
-    // Need to expand to [head_count, total_len, embd_dim_head] if GQA
-    Mat k_attn, v_attn;
-    if (repeat_kv > 1)
-    {
-        k_attn = Mat({head_count, total_len, embd_dim_head}, DT_32F);
-        v_attn = Mat({head_count, total_len, embd_dim_head}, DT_32F);
-        for (int h = 0; h < head_count; h++)
-        {
-            int kv_head = h / repeat_kv;
-            memcpy((float*)k_attn.data + h * total_len * embd_dim_head,
-                   (float*)k_slice.data + kv_head * total_len * embd_dim_head,
-                   total_len * embd_dim_head * sizeof(float));
-            memcpy((float*)v_attn.data + h * total_len * embd_dim_head,
-                   (float*)v_slice.data + kv_head * total_len * embd_dim_head,
-                   total_len * embd_dim_head * sizeof(float));
-        }
-    }
-    else
-    {
-        k_attn = k_slice;
-        v_attn = v_slice;
-    }
-
-    // Step 7: Compute attention
-    // Q: [1, head_count, embd_dim_head] -> transpose to [head_count, 1, embd_dim_head]
-    Mat q_t = transposeND(x_q, {1, 0, 2}); // [head_count, 1, embd_dim_head]
-    // K: [head_count, total_len, embd_dim_head] (already in right format)
-
-    // QK: [head_count, 1, total_len]
-    Mat qk = gemm(q_t, k_attn, false, true);
-    Mat qk_sqrt = qk / sqrtf(embd_dim_head);
-    Mat qk_softmax = runtimePrecision == RuntimePrecision::FP32
-        ? qk_sqrt
-        : align_precision_sensitive_input(qk_sqrt, runtimePrecision);
-
-    // Decode phase: single query token attends to all cached tokens, no mask needed
-    Mat score = softmax(qk_softmax);
-
-    // Step 8: score * V: [head_count, 1, embd_dim_head]
-    Mat attn_out = gemm(score, v_attn);
 
     Mat out = *output[0];
     project_output_and_add_residual(attn_out, wout, 1, head_count, embd_dim_head, x, out);
