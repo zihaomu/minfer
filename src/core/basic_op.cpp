@@ -462,7 +462,7 @@ Mat transposeND(const Mat& input, const std::vector<int> order)
 }
 
 /****************************************************************************************\
-*                                  Mat normalization Implementation                                *
+*                                  Mat normalization Implementation                      *
 \****************************************************************************************/
 template<typename _Tp> static double
 norm_(const _Tp* src1, const _Tp* src2, size_t total, int normType, double startval)

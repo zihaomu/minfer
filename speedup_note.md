@@ -692,3 +692,69 @@ decode  : avg=7.31 ms/tok, p50=7.28, p90=7.60, p99=9.33, throughput=136.88 tok/s
 ttft    : avg=1161.58 ms
 end2end : throughput=306.35 tok/s (prompt+decode)
 '''
+
+# 引入 OpenMP 并行后的最新架构基准测试
+我们按照 `openmp_plan.md` 增加了 `#pragma omp parallel for`，特别对 `forwardDecode` 中的 `head_count` 迭代以及 `repeat_kv_if_needed` 内存搬运过程启用了多核。再次运行了 `./minfer_benchmark`，结果如下反思：
+
+'''
+=== Benchmark Results ===
+[prompt_len=32, decode_tokens=128]
+prefill : avg=148.09 ms, p50=150.67 ms, p90=163.06 ms, throughput=216.09 tok/s
+decode  : avg=6.21 ms/tok, p50=4.72, p90=9.10, p99=18.63, throughput=161.13 tok/s
+ttft    : avg=156.68 ms
+end2end : throughput=169.76 tok/s (prompt+decode)
+
+[prompt_len=128, decode_tokens=128]
+prefill : avg=357.22 ms, p50=352.20 ms, p90=372.19 ms, throughput=358.32 tok/s
+decode  : avg=6.08 ms/tok, p50=4.66, p90=8.60, p99=19.41, throughput=164.41 tok/s
+ttft    : avg=374.61 ms
+end2end : throughput=225.40 tok/s (prompt+decode)
+
+[prompt_len=512, decode_tokens=128]
+prefill : avg=1123.86 ms, p50=1099.56 ms, p90=1206.11 ms, throughput=455.57 tok/s
+decode  : avg=7.72 ms/tok, p50=5.16, p90=11.09, p99=42.26, throughput=129.51 tok/s
+ttft    : avg=1152.61 ms
+end2end : throughput=303.00 tok/s (prompt+decode)
+'''
+
+**结论异常总结（Performance Degraded）**：
+- OpenMP 未并发前：32 提示词时 Decode = 4.58 ms/tok。
+- OpenMP 满负载 (32核) 并发后：32 提示词时 Decode = 6.21 ms/tok (大幅度负向衰减)。
+
+**分析：多线程编排的“假共享 (False Sharing)” 和 “开销掩蔽 (Overhead Domination)”**
+因为 B=1 (每帧 1 个 query token) 时，即便序列长度 `S` == 512，每个 Head 计算任务仅约 $512 \times 64 = 32000$ 个浮点乘加（MACs）。这种极其微观且在 L1 Cache 不可思议般热的计算，交由 `omp` 开辟 16 个线程或者使用屏障同步，它的多线程**唤醒/调度消耗**完全掩盖并且数百倍碾压了并行执行省下的时间。
+
+---
+
+# 测试 `Threads=4` 时的最佳甜点 (Sweet Spot)
+为了验证是否是线程挂载过度导致的调度开销（Overhead），我们在命令行施加了 `--threads 4` 测试仅仅使用 4 个工作线程来服务 16 个 Head，使得每个线程分摊 4 个完整的 Head 计算：
+
+'''
+=== Benchmark Results (Threads=4) ===
+[prompt_len=32, decode_tokens=128]
+prefill : avg=60.20 ms, p50=60.36 ms, p90=60.42 ms, throughput=531.59 tok/s
+decode  : avg=4.51 ms/tok, p50=4.44, p90=4.83, p99=5.47, throughput=221.92 tok/s
+ttft    : avg=64.90 ms
+end2end : throughput=251.19 tok/s (prompt+decode)
+
+[prompt_len=128, decode_tokens=128]
+prefill : avg=166.76 ms, p50=166.88 ms, p90=167.46 ms, throughput=767.59 tok/s
+decode  : avg=4.50 ms/tok, p50=4.46, p90=4.75, p99=5.19, throughput=222.21 tok/s
+ttft    : avg=171.98 ms
+end2end : throughput=344.65 tok/s (prompt+decode)
+
+[prompt_len=512, decode_tokens=128]
+prefill : avg=792.77 ms, p50=791.91 ms, p90=795.69 ms, throughput=645.84 tok/s
+decode  : avg=5.11 ms/tok, p50=4.96, p90=5.62, p99=6.85, throughput=195.61 tok/s
+ttft    : avg=798.45 ms
+end2end : throughput=442.25 tok/s (prompt+decode)
+'''
+
+**最终结论：**
+1. **Prefill 实现大跃进**：长 Prompt (`512`) 的 Prefill 原为 `1153 ms`，4 线程下直接干到了 **`792.77 ms`**！
+2. **Decode 重回巅峰并反超**：
+   - 满载 32 线程：`6.21 ms/tok`
+   - 单线程无 OMP：`4.58 ms/tok`
+   - 适量的 4 线程：**`4.50 ms/tok`**（达到目前最优解，尤其 Prompt `512` 时从 `7.31` 降到了 `5.11 ms/tok`）。
+
+由此可见当算力负载极其微缩时，**少量线程 (4 线程)** 平摊掉调度开销后能实现真正的吞吐量净增长！这说明了为 OpenMP 设定正确的 Thread 上限在边缘侧极度关键。

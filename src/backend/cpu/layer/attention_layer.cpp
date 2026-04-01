@@ -102,6 +102,7 @@ void write_plain_fp32_tokens_to_mobilekv(mobilekv::KVPlane& plane,
     M_Assert(base);
 
     const size_t token_stride = static_cast<size_t>(num_heads) * static_cast<size_t>(head_dim);
+#pragma omp parallel for
     for (uint32_t t = 0; t < token_count; ++t)
     {
         const int src_t = src_begin + static_cast<int>(t);
@@ -373,6 +374,7 @@ static void repeat_kv_if_needed(Mat& x_k,
     float* k_dst = (float*)x_k_repeated.data;
     float* v_dst = (float*)x_v_repeated.data;
 
+#pragma omp parallel for
     for (int s = 0; s < seq_len; s++)
     {
         for (int h = 0; h < head_count; h++)
@@ -611,6 +613,7 @@ void AttentionLayer::forwardDecode(const std::vector<Mat *> &input, std::vector<
     float* out_base = reinterpret_cast<float*>(attn_out.data);
     const float* q_base = reinterpret_cast<const float*>(q_t.data);
 
+#pragma omp parallel for
     for (int h = 0; h < head_count; ++h)
     {
         const int h_kv = h / repeat_kv;
