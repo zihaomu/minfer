@@ -402,9 +402,18 @@ static void project_output_and_add_residual(const Mat& qkv,
                                             Mat& out)
 {
     Mat x_out = Mat(out.size.dims() - 1, out.size.p + 1, out.type(), out.data);
-    Mat qkv_t = transposeND(qkv, {1, 0, 2});
-    qkv_t = qkv_t.reshape({seq_len, head_count * embd_dim_head});
-    project_with_runtime_weight(qkv_t, wout).copyTo(x_out);
+    Mat qkv_for_proj;
+    if (seq_len == 1)
+    {
+        // [H, 1, D] and [1, H, D] have the same linear layout when seq_len == 1.
+        qkv_for_proj = qkv.reshape({seq_len, head_count * embd_dim_head});
+    }
+    else
+    {
+        Mat qkv_t = transposeND(qkv, {1, 0, 2});
+        qkv_for_proj = qkv_t.reshape({seq_len, head_count * embd_dim_head});
+    }
+    project_with_runtime_weight(qkv_for_proj, wout).copyTo(x_out);
     out += residual;
 }
 
@@ -602,8 +611,8 @@ void AttentionLayer::forwardDecode(const std::vector<Mat *> &input, std::vector<
     const int sb = kseg.sb;
     const float scale = 1.0f / sqrtf(static_cast<float>(embd_dim_head));
 
-    // Q after transpose: [head_count, 1, embd_dim_head]
-    Mat q_t = transposeND(x_q, {1, 0, 2});
+    // x_q is [1, head_count, embd_dim_head], reshape avoids a copy for seq_len == 1.
+    Mat q_t = x_q.reshape({head_count, 1, embd_dim_head});
 
     // Output of attention: [head_count, 1, embd_dim_head]
     Mat attn_out({head_count, 1, embd_dim_head}, DT_32F, 0.f);

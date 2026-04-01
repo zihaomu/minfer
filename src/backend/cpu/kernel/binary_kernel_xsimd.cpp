@@ -98,5 +98,136 @@ void binary_broadcast_xsimd(BinaryKernelOp op,
     }
 }
 
+void binary_add_weighted_xsimd(const float* lhs,
+                               const float* rhs,
+                               float* out,
+                               size_t total,
+                               float alpha,
+                               float beta)
+{
+    const Batch alpha_batch(alpha);
+    const Batch beta_batch(beta);
+
+#ifdef _OPENMP
+#pragma omp parallel for if(should_parallelize_1d_loop(total / kLanes, kLanes, 1LL << 16, 2))
+#endif
+    for (long long i = 0; i <= static_cast<long long>(total) - static_cast<long long>(kLanes); i += static_cast<long long>(kLanes))
+    {
+        const auto idx = static_cast<size_t>(i);
+        const Batch a = Batch::load_unaligned(lhs + idx);
+        const Batch b = Batch::load_unaligned(rhs + idx);
+        const Batch y = xsimd::fma(a, alpha_batch, b * beta_batch);
+        y.store_unaligned(out + idx);
+    }
+
+    const size_t vec_end = (total / kLanes) * kLanes;
+    for (size_t i = vec_end; i < total; ++i)
+    {
+        out[i] = lhs[i] * alpha + rhs[i] * beta;
+    }
+}
+
+void binary_add_weighted_xsimd(const int32_t* lhs,
+                               const int32_t* rhs,
+                               int32_t* out,
+                               size_t total,
+                               float alpha,
+                               float beta)
+{
+    using IntBatch = xsimd::batch<int32_t>;
+    using FloatBatch = xsimd::batch<float>;
+    constexpr size_t int_lanes = IntBatch::size;
+    const FloatBatch alpha_batch(alpha);
+    const FloatBatch beta_batch(beta);
+
+#ifdef _OPENMP
+#pragma omp parallel for if(should_parallelize_1d_loop(total / int_lanes, int_lanes, 1LL << 16, 2))
+#endif
+    for (long long i = 0; i <= static_cast<long long>(total) - static_cast<long long>(int_lanes); i += static_cast<long long>(int_lanes))
+    {
+        const auto idx = static_cast<size_t>(i);
+        const IntBatch a_i = IntBatch::load_unaligned(lhs + idx);
+        const IntBatch b_i = IntBatch::load_unaligned(rhs + idx);
+        const FloatBatch a = xsimd::to_float(a_i);
+        const FloatBatch b = xsimd::to_float(b_i);
+        const FloatBatch y = xsimd::fma(a, alpha_batch, b * beta_batch);
+        const IntBatch y_i = xsimd::to_int(xsimd::trunc(y));
+        y_i.store_unaligned(out + idx);
+    }
+
+    const size_t vec_end = (total / int_lanes) * int_lanes;
+    for (size_t i = vec_end; i < total; ++i)
+    {
+        out[i] = static_cast<int32_t>(lhs[i] * alpha + rhs[i] * beta);
+    }
+}
+
+void unary_negate_xsimd(const float* src, float* dst, size_t total)
+{
+    const xsimd::batch<int32_t> sign_i(0x80000000u);
+    const Batch sign_mask = xsimd::bitwise_cast<float>(sign_i);
+    const bool parallel = should_parallelize_1d_loop(total / kLanes, kLanes, 1LL << 16, 2);
+
+    if (!parallel)
+    {
+        // Keep single-thread latency low for this memory-bound unary op.
+        for (size_t i = 0; i < total; ++i)
+        {
+            dst[i] = -src[i];
+        }
+        return;
+    }
+
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+    for (long long i = 0; i <= static_cast<long long>(total) - static_cast<long long>(kLanes); i += static_cast<long long>(kLanes))
+    {
+        const auto idx = static_cast<size_t>(i);
+        const Batch x = Batch::load_unaligned(src + idx);
+        const Batch y = xsimd::bitwise_xor(x, sign_mask);
+        y.store_unaligned(dst + idx);
+    }
+
+    const size_t vec_end = (total / kLanes) * kLanes;
+    for (size_t i = vec_end; i < total; ++i)
+    {
+        dst[i] = -src[i];
+    }
+}
+
+void unary_negate_xsimd(const int32_t* src, int32_t* dst, size_t total)
+{
+    using IntBatch = xsimd::batch<int32_t>;
+    constexpr size_t int_lanes = IntBatch::size;
+    const bool parallel = should_parallelize_1d_loop(total / int_lanes, int_lanes, 1LL << 16, 2);
+
+    if (!parallel)
+    {
+        for (size_t i = 0; i < total; ++i)
+        {
+            dst[i] = -src[i];
+        }
+        return;
+    }
+
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+    for (long long i = 0; i <= static_cast<long long>(total) - static_cast<long long>(int_lanes); i += static_cast<long long>(int_lanes))
+    {
+        const auto idx = static_cast<size_t>(i);
+        const IntBatch x = IntBatch::load_unaligned(src + idx);
+        const IntBatch y = -x;
+        y.store_unaligned(dst + idx);
+    }
+
+    const size_t vec_end = (total / int_lanes) * int_lanes;
+    for (size_t i = vec_end; i < total; ++i)
+    {
+        dst[i] = -src[i];
+    }
+}
+
 }  // namespace cpu
 }  // namespace minfer

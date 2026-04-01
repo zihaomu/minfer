@@ -5,6 +5,8 @@
 #include "backend/cpu/kernel/rope_kernel.h"
 #include "backend/cpu/kernel/transpose_kernel.h"
 
+#include <xsimd/xsimd.hpp>
+
 namespace minfer
 {
 
@@ -62,20 +64,14 @@ void addWeighted(const Mat& a, double alpha, const Mat& b, double beta, Mat& c)
         const float* ap = (const float*)a.data;
         const float* bp = (const float*)b.data;
         float* cp = (float*)c.data;
-        for (size_t i = 0; i < totalSize; i++)
-        {
-            cp[i] = (float )(ap[i] * alpha + bp[i] * beta);
-        }
+        cpu::binary_add_weighted_xsimd(ap, bp, cp, totalSize, static_cast<float>(alpha), static_cast<float>(beta));
     }
     else if (type == DT_32S)
     {
         const int* ap = (const int*)a.data;
         const int* bp = (const int*)b.data;
         int* cp = (int*)c.data;
-        for (size_t i = 0; i < totalSize; i++)
-        {
-            cp[i] = (int )(ap[i] * alpha + bp[i] * beta);
-        }
+        cpu::binary_add_weighted_xsimd(ap, bp, cp, totalSize, static_cast<float>(alpha), static_cast<float>(beta));
     }
     else
         M_Error_(Error::Code::StsBadType, ("Unsupported format at function \" addWeighted \" type = %d!", type));
@@ -103,19 +99,13 @@ void subtract(const Mat& a, Mat& c)
     {
         const float* ap = (const float*)a.data;
         float* cp = (float*)c.data;
-        for (size_t i = 0; i < totalSize; i++)
-        {
-            cp[i] = -ap[i];
-        }
+        cpu::unary_negate_xsimd(ap, cp, totalSize);
     }
     else if (type == DT_32S)
     {
         const int* ap = (const int*)a.data;
         int* cp = (int*)c.data;
-        for (size_t i = 0; i < totalSize; i++)
-        {
-            cp[i] = -ap[i];
-        }
+        cpu::unary_negate_xsimd(ap, cp, totalSize);
     }
     else
         M_Error_(Error::Code::StsBadType, ("Unsupported format at function \" subtract \" type = %d!", type));
@@ -351,6 +341,46 @@ Mat transposeND(const Mat& input, const std::vector<int> order)
         newShape[i] = oldShape[order[i]];
     }
 
+    auto transpose_blocked = [&](int rows, int cols, size_t elem_size, size_t batch) {
+        Mat out = Mat(newShape, input.type());
+        const size_t plane_bytes = static_cast<size_t>(rows) * cols * elem_size;
+        const unsigned char* src = input.data;
+        unsigned char* dst = out.data;
+        for (size_t batch_idx = 0; batch_idx < batch; ++batch_idx)
+        {
+            cpu::transpose2d_kernel_blocked(src + batch_idx * plane_bytes,
+                                            dst + batch_idx * plane_bytes,
+                                            rows,
+                                            cols,
+                                            elem_size);
+        }
+        return out;
+    };
+
+    bool is_first_two_swap = order.size() >= 2;
+    if (is_first_two_swap && (order[0] != 1 || order[1] != 0))
+        is_first_two_swap = false;
+    for (int i = 2; i < order.size() && is_first_two_swap; ++i)
+    {
+        if (order[i] != i)
+            is_first_two_swap = false;
+    }
+
+    // Fast path for [A, B, ...] -> [B, A, ...], where tail dims stay contiguous.
+    // Typical attention case: [seq_len, head, dim] -> [head, seq_len, dim].
+    if (is_first_two_swap)
+    {
+        const int rows = oldShape[0];
+        const int cols = oldShape[1];
+        size_t block_elems = 1;
+        for (int i = 2; i < oldShape.size(); ++i)
+        {
+            block_elems *= static_cast<size_t>(oldShape[i]);
+        }
+        const size_t block_bytes = block_elems * static_cast<size_t>(DT_ELEM_SIZE(input.type()));
+        return transpose_blocked(rows, cols, block_bytes, 1);
+    }
+
     Mat out = Mat(newShape, input.type());
 
     bool is_last_two_swap = order.size() >= 2;
@@ -371,21 +401,8 @@ Mat transposeND(const Mat& input, const std::vector<int> order)
         const int rows = oldShape[oldShape.size() - 2];
         const int cols = oldShape[oldShape.size() - 1];
         const size_t elem_size = DT_ELEM_SIZE(input.type());
-        const size_t plane_bytes = static_cast<size_t>(rows) * cols * elem_size;
         const size_t batch = input.total() / static_cast<size_t>(rows * cols);
-
-        const unsigned char* src = input.data;
-        unsigned char* dst = out.data;
-        for (size_t batch_idx = 0; batch_idx < batch; ++batch_idx)
-        {
-            cpu::transpose2d_kernel_blocked(src + batch_idx * plane_bytes,
-                                            dst + batch_idx * plane_bytes,
-                                            rows,
-                                            cols,
-                                            elem_size);
-        }
-
-        return out;
+        return transpose_blocked(rows, cols, elem_size, batch);
     }
 
     int continuous_idx = 0;
@@ -464,6 +481,131 @@ Mat transposeND(const Mat& input, const std::vector<int> order)
 /****************************************************************************************\
 *                                  Mat normalization Implementation                      *
 \****************************************************************************************/
+static double norm_diff_fp32_xsimd(const float* src1, const float* src2, size_t total, int normType)
+{
+    using Batch = xsimd::batch<float>;
+    constexpr size_t kLanes = Batch::size;
+
+    size_t i = 0;
+    if (normType == NORM_INF)
+    {
+        Batch max_vec(0.0f);
+        for (; i + kLanes <= total; i += kLanes)
+        {
+            const Batch a = Batch::load_unaligned(src1 + i);
+            const Batch b = Batch::load_unaligned(src2 + i);
+            const Batch d = xsimd::abs(a - b);
+            max_vec = xsimd::max(max_vec, d);
+        }
+
+        double result = static_cast<double>(xsimd::reduce_max(max_vec));
+        for (; i < total; ++i)
+        {
+            result = std::max(result, std::abs(static_cast<double>(src1[i]) - static_cast<double>(src2[i])));
+        }
+        return result;
+    }
+    if (normType == NORM_L1)
+    {
+        Batch sum_vec(0.0f);
+        for (; i + kLanes <= total; i += kLanes)
+        {
+            const Batch a = Batch::load_unaligned(src1 + i);
+            const Batch b = Batch::load_unaligned(src2 + i);
+            sum_vec += xsimd::abs(a - b);
+        }
+
+        double result = static_cast<double>(xsimd::reduce_add(sum_vec));
+        for (; i < total; ++i)
+        {
+            result += std::abs(static_cast<double>(src1[i]) - static_cast<double>(src2[i]));
+        }
+        return result;
+    }
+    if (normType == NORM_L2)
+    {
+        Batch sum_sq_vec(0.0f);
+        for (; i + kLanes <= total; i += kLanes)
+        {
+            const Batch a = Batch::load_unaligned(src1 + i);
+            const Batch b = Batch::load_unaligned(src2 + i);
+            const Batch d = a - b;
+            sum_sq_vec = xsimd::fma(d, d, sum_sq_vec);
+        }
+
+        double result = static_cast<double>(xsimd::reduce_add(sum_sq_vec));
+        for (; i < total; ++i)
+        {
+            const double d = static_cast<double>(src1[i]) - static_cast<double>(src2[i]);
+            result += d * d;
+        }
+        return result;
+    }
+
+    M_Error(Error::StsBadArg, "Unknown/unsupported norm type");
+    return 0.0;
+}
+
+static double norm_fp32_xsimd(const float* src1, size_t total, int normType)
+{
+    using Batch = xsimd::batch<float>;
+    constexpr size_t kLanes = Batch::size;
+
+    size_t i = 0;
+    if (normType == NORM_INF)
+    {
+        Batch max_vec(0.0f);
+        for (; i + kLanes <= total; i += kLanes)
+        {
+            const Batch a = Batch::load_unaligned(src1 + i);
+            max_vec = xsimd::max(max_vec, xsimd::abs(a));
+        }
+
+        double result = static_cast<double>(xsimd::reduce_max(max_vec));
+        for (; i < total; ++i)
+        {
+            result = std::max(result, std::abs(static_cast<double>(src1[i])));
+        }
+        return result;
+    }
+    if (normType == NORM_L1)
+    {
+        Batch sum_vec(0.0f);
+        for (; i + kLanes <= total; i += kLanes)
+        {
+            const Batch a = Batch::load_unaligned(src1 + i);
+            sum_vec += xsimd::abs(a);
+        }
+
+        double result = static_cast<double>(xsimd::reduce_add(sum_vec));
+        for (; i < total; ++i)
+        {
+            result += std::abs(static_cast<double>(src1[i]));
+        }
+        return result;
+    }
+    if (normType == NORM_L2)
+    {
+        Batch sum_sq_vec(0.0f);
+        for (; i + kLanes <= total; i += kLanes)
+        {
+            const Batch a = Batch::load_unaligned(src1 + i);
+            sum_sq_vec = xsimd::fma(a, a, sum_sq_vec);
+        }
+
+        double result = static_cast<double>(xsimd::reduce_add(sum_sq_vec));
+        for (; i < total; ++i)
+        {
+            const double a = static_cast<double>(src1[i]);
+            result += a * a;
+        }
+        return result;
+    }
+
+    M_Error(Error::StsBadArg, "Unknown/unsupported norm type");
+    return 0.0;
+}
+
 template<typename _Tp> static double
 norm_(const _Tp* src1, const _Tp* src2, size_t total, int normType, double startval)
 {
@@ -534,7 +676,7 @@ double norm(const Mat& a, const Mat& b, int normType)
             result = norm_((const int*)a.data, (const int*)b.data, total_size, normType, 0);
             break;
         case DT_32F:
-            result = norm_((const float*)a.data, (const float*)b.data, total_size, normType, 0);
+            result = norm_diff_fp32_xsimd((const float*)a.data, (const float*)b.data, total_size, normType);
             break;
         case DT_64F:
             result = norm_((const double*)a.data, (const double*)b.data, total_size, normType, 0);
@@ -607,7 +749,7 @@ double norm(const Mat& a, int normType)
             result = norm_((const int*)a.data, total_size, normType, 0);
             break;
         case DT_32F:
-            result = norm_((const float*)a.data, total_size, normType, 0);
+            result = norm_fp32_xsimd((const float*)a.data, total_size, normType);
             break;
         case DT_64F:
             result = norm_((const double*)a.data, total_size, normType, 0);

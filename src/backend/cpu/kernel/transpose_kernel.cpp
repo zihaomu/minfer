@@ -119,7 +119,9 @@ void transpose2d_kernel_blocked(const unsigned char* src,
             transpose2d_xsimd<uint16_t>(src, dst, rows, cols);
             break;
         case 4:
-            transpose2d_xsimd<uint32_t>(src, dst, rows, cols);
+            // uint32_t path can be architecture-sensitive in xsimd transpose;
+            // float batches use the stable SIMD transpose implementation.
+            transpose2d_xsimd<float>(src, dst, rows, cols);
             break;
         case 8:
             transpose2d_tiled<uint64_t>(src, dst, rows, cols);
