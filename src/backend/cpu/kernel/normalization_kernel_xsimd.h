@@ -17,6 +17,14 @@ void causal_masked_softmax_square_xsimd(const float* input,
                                         size_t seq_len,
                                         float scale = 1.0f);
 
+void causal_softmax_weighted_sum_square_xsimd(const float* qk,
+                                              const float* v,
+                                              float* out,
+                                              size_t outer,
+                                              size_t seq_len,
+                                              size_t head_dim,
+                                              float scale = 1.0f);
+
 void rmsnorm_lastdim_xsimd_fp16_weight(const float* input,
                                        const hfloat* weight,
                                        float* output,

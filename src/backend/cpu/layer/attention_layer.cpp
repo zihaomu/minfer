@@ -5,12 +5,14 @@
 #include "attention_layer.h"
 #include "autobuffer.h"
 #include "backend/cpu/kernel/normalization_kernel_xsimd.h"
+#include "backend/cpu/kernel/openmp_utils.h"
 #include "mobilekv/kv_cache.h"
 
 #include <algorithm>
 #include <cstring>  // for memcpy
 #include <cmath>
 #include <cfloat>
+#include <cstdlib>
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(__aarch64__) || defined(_M_ARM64)
 #ifndef XSIMD_ENABLE_WASM
@@ -356,41 +358,82 @@ static QKVHeads compute_qkv_heads(const Mat& x,
     return {x_q, x_k, x_v};
 }
 
-static void repeat_kv_if_needed(Mat& x_k,
-                                Mat& x_v,
-                                int seq_len,
-                                int head_count,
-                                int head_count_kv,
-                                int embd_dim_head,
-                                int repeat_kv)
+static Mat repeat_kv_and_transpose_for_attention(const Mat& x_kv,
+                                                 int seq_len,
+                                                 int head_count,
+                                                 int head_count_kv,
+                                                 int embd_dim_head,
+                                                 int repeat_kv)
 {
-    if (repeat_kv <= 1) return;
+    M_Assert(repeat_kv > 1);
 
-    Mat x_k_repeated({seq_len, head_count, embd_dim_head}, x_k.type());
-    Mat x_v_repeated({seq_len, head_count, embd_dim_head}, x_v.type());
-
-    float* k_src = (float*)x_k.data;
-    float* v_src = (float*)x_v.data;
-    float* k_dst = (float*)x_k_repeated.data;
-    float* v_dst = (float*)x_v_repeated.data;
+    Mat x_kv_hsd({head_count, seq_len, embd_dim_head}, x_kv.type());
+    const float* src = reinterpret_cast<const float*>(x_kv.data);  // [S, Hkv, D]
+    float* dst = reinterpret_cast<float*>(x_kv_hsd.data);          // [H, S, D]
 
 #pragma omp parallel for
-    for (int s = 0; s < seq_len; s++)
+    for (int h = 0; h < head_count; ++h)
     {
-        for (int h = 0; h < head_count; h++)
+        const int kv_head = h / repeat_kv;
+        float* dst_h = dst + static_cast<size_t>(h) * static_cast<size_t>(seq_len) * static_cast<size_t>(embd_dim_head);
+        for (int s = 0; s < seq_len; ++s)
         {
-            int kv_head = h / repeat_kv;
-            memcpy(k_dst + (s * head_count + h) * embd_dim_head,
-                   k_src + (s * head_count_kv + kv_head) * embd_dim_head,
-                   embd_dim_head * sizeof(float));
-            memcpy(v_dst + (s * head_count + h) * embd_dim_head,
-                   v_src + (s * head_count_kv + kv_head) * embd_dim_head,
-                   embd_dim_head * sizeof(float));
+            const float* src_ptr = src + (static_cast<size_t>(s) * static_cast<size_t>(head_count_kv) +
+                                          static_cast<size_t>(kv_head)) * static_cast<size_t>(embd_dim_head);
+            std::memcpy(dst_h + static_cast<size_t>(s) * static_cast<size_t>(embd_dim_head),
+                        src_ptr,
+                        static_cast<size_t>(embd_dim_head) * sizeof(float));
         }
     }
 
-    x_k = x_k_repeated;
-    x_v = x_v_repeated;
+    return x_kv_hsd;
+}
+
+static Mat repeat_kv_for_attention_legacy(const Mat& x_kv,
+                                          int seq_len,
+                                          int head_count,
+                                          int head_count_kv,
+                                          int embd_dim_head,
+                                          int repeat_kv)
+{
+    M_Assert(repeat_kv > 1);
+    Mat x_kv_repeated({seq_len, head_count, embd_dim_head}, x_kv.type());
+    const float* src = reinterpret_cast<const float*>(x_kv.data);    // [S, Hkv, D]
+    float* rep = reinterpret_cast<float*>(x_kv_repeated.data);       // [S, H, D]
+
+#pragma omp parallel for
+    for (int s = 0; s < seq_len; ++s)
+    {
+        for (int h = 0; h < head_count; ++h)
+        {
+            const int kv_head = h / repeat_kv;
+            std::memcpy(rep + (static_cast<size_t>(s) * head_count + h) * embd_dim_head,
+                        src + (static_cast<size_t>(s) * head_count_kv + kv_head) * embd_dim_head,
+                        static_cast<size_t>(embd_dim_head) * sizeof(float));
+        }
+    }
+
+    return x_kv_repeated;
+}
+
+static bool fused_gqa_layout_enabled()
+{
+    const char* disable_env = std::getenv("MINFER_DISABLE_FUSED_GQA_LAYOUT");
+    if (!disable_env || disable_env[0] == '\0')
+    {
+        return true;
+    }
+    return disable_env[0] == '0';
+}
+
+static bool fused_prefill_sdp_enabled()
+{
+    const char* disable_env = std::getenv("MINFER_DISABLE_FUSED_PREFILL_SDP");
+    if (!disable_env || disable_env[0] == '\0')
+    {
+        return true;
+    }
+    return disable_env[0] == '0';
 }
 
 static void project_output_and_add_residual(const Mat& qkv,
@@ -487,30 +530,69 @@ void AttentionLayer::forwardPrefill(const std::vector<Mat *> &input, std::vector
         cached_len = ctx.start_pos + seq_len;
     }
 
-    // Step 5: Repeat KV for GQA
-    repeat_kv_if_needed(x_k, x_v, seq_len, head_count, head_count_kv, embd_dim_head, repeat_kv);
+    // Step 5: Prepare attention layout [head, seq, dim].
+    Mat x_q_hsd = transposeND(x_q, {1, 0, 2});
+    Mat x_k_hsd;
+    Mat x_v_hsd;
+    const bool use_fused_gqa_layout = fused_gqa_layout_enabled();
+    if (repeat_kv <= 1)
+    {
+        // Keep the original non-GQA path unchanged for numerical stability.
+        x_k_hsd = transposeND(x_k, {1, 0, 2});
+        x_v_hsd = transposeND(x_v, {1, 0, 2});
+    }
+    else if (!use_fused_gqa_layout)
+    {
+        Mat x_k_repeated = repeat_kv_for_attention_legacy(x_k, seq_len, head_count, head_count_kv, embd_dim_head, repeat_kv);
+        Mat x_v_repeated = repeat_kv_for_attention_legacy(x_v, seq_len, head_count, head_count_kv, embd_dim_head, repeat_kv);
+        x_k_hsd = transposeND(x_k_repeated, {1, 0, 2});
+        x_v_hsd = transposeND(x_v_repeated, {1, 0, 2});
+    }
+    else
+    {
+        // GQA path: fuse repeat + transpose in one pass to avoid the intermediate repeated [seq, head, dim].
+        x_k_hsd = repeat_kv_and_transpose_for_attention(x_k, seq_len, head_count, head_count_kv, embd_dim_head, repeat_kv);
+        x_v_hsd = repeat_kv_and_transpose_for_attention(x_v, seq_len, head_count, head_count_kv, embd_dim_head, repeat_kv);
+    }
 
-    // Step 6: Transpose for attention
-    x_q = transposeND(x_q, {1, 0, 2}); // [head_count, seq_len, embd_dim_head]
-    x_k = transposeND(x_k, {1, 0, 2});
-    x_v = transposeND(x_v, {1, 0, 2});
-
-    // Step 7: Attention with causal mask
-    Mat qk = gemm(x_q, x_k, false, true);
-    Mat qk_softmax = runtimePrecision == RuntimePrecision::FP32
+    // Step 6: Attention with causal mask
+    Mat qk = gemm(x_q_hsd, x_k_hsd, false, true);
+    Mat qk_aligned = runtimePrecision == RuntimePrecision::FP32
         ? qk
         : align_precision_sensitive_input(qk, runtimePrecision);
-    const size_t softmax_outer = qk_softmax.total() / (static_cast<size_t>(seq_len) * static_cast<size_t>(seq_len));
-    cpu::causal_masked_softmax_square_xsimd(reinterpret_cast<const float*>(qk_softmax.data),
-                                            reinterpret_cast<float*>(qk_softmax.data),
-                                            softmax_outer,
-                                            seq_len,
-                                            1.0f / sqrtf(embd_dim_head));
+    const size_t softmax_outer = qk_aligned.total() / (static_cast<size_t>(seq_len) * static_cast<size_t>(seq_len));
+    const bool use_fused_prefill_sdp =
+        fused_prefill_sdp_enabled() &&
+        cpu::should_parallelize_1d_loop(softmax_outer * static_cast<size_t>(seq_len),
+                                        static_cast<size_t>(seq_len) * static_cast<size_t>(embd_dim_head),
+                                        1LL << 15,
+                                        2);
+    Mat attn_out;
+    if (use_fused_prefill_sdp)
+    {
+        // Fuse causal softmax + score*V to avoid materializing [H, S, S] softmax probabilities.
+        attn_out.create({head_count, seq_len, embd_dim_head}, DT_32F);
+        cpu::causal_softmax_weighted_sum_square_xsimd(reinterpret_cast<const float*>(qk_aligned.data),
+                                                      reinterpret_cast<const float*>(x_v_hsd.data),
+                                                      reinterpret_cast<float*>(attn_out.data),
+                                                      softmax_outer,
+                                                      seq_len,
+                                                      static_cast<size_t>(embd_dim_head),
+                                                      1.0f / sqrtf(embd_dim_head));
+    }
+    else
+    {
+        cpu::causal_masked_softmax_square_xsimd(reinterpret_cast<const float*>(qk_aligned.data),
+                                                reinterpret_cast<float*>(qk_aligned.data),
+                                                softmax_outer,
+                                                seq_len,
+                                                1.0f / sqrtf(embd_dim_head));
 
-    // Step 8: score * V
-    Mat attn_out = gemm(qk_softmax, x_v);
+        // Step 7: score * V
+        attn_out = gemm(qk_aligned, x_v_hsd);
+    }
 
-    // Step 9: Transpose back and output linear
+    // Step 8: Transpose back and output linear
     Mat out = *output[0];
     project_output_and_add_residual(attn_out, wout, seq_len, head_count, embd_dim_head, x, out);
 }
