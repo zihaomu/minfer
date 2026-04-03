@@ -36,26 +36,24 @@ inline float rms_scale_xsimd(const float* input_row, size_t channels, float eps)
     return 1.0f / std::sqrt(sum_sq / static_cast<float>(channels) + eps);
 }
 
-inline void online_weighted_accumulate_xsimd(float* out_row,
-                                             const float* v_row,
-                                             size_t head_dim,
-                                             float exp_diff,
-                                             float exp_weight)
+inline void weighted_accumulate_row_xsimd(float* out_row,
+                                          const float* v_row,
+                                          size_t head_dim,
+                                          float weight)
 {
-    const XSimdBatch diff_vec(exp_diff);
-    const XSimdBatch weight_vec(exp_weight);
+    const XSimdBatch weight_vec(weight);
 
     size_t idx = 0;
     for (; idx + kXSimdBatchSize <= head_dim; idx += kXSimdBatchSize)
     {
         const XSimdBatch out_vec = XSimdBatch::load_unaligned(out_row + idx);
         const XSimdBatch v_vec = XSimdBatch::load_unaligned(v_row + idx);
-        const XSimdBatch updated = xsimd::fma(v_vec, weight_vec, out_vec * diff_vec);
+        const XSimdBatch updated = xsimd::fma(v_vec, weight_vec, out_vec);
         updated.store_unaligned(out_row + idx);
     }
     for (; idx < head_dim; ++idx)
     {
-        out_row[idx] = out_row[idx] * exp_diff + v_row[idx] * exp_weight;
+        out_row[idx] += v_row[idx] * weight;
     }
 }
 
@@ -219,6 +217,7 @@ void causal_softmax_weighted_sum_square_xsimd(const float* qk,
 {
     const size_t rows_total = outer * seq_len;
     const long long rows_total_ll = static_cast<long long>(rows_total);
+    const XSimdBatch scale_vec(scale);
 
 #ifdef _OPENMP
 #pragma omp parallel for if(should_parallelize_1d_loop(rows_total, seq_len * head_dim, 1LL << 15, 2))
@@ -233,29 +232,32 @@ void causal_softmax_weighted_sum_square_xsimd(const float* qk,
         const float* qk_row = qk_mat + row * seq_len;
         const float* v_mat = v + outer_i * seq_len * head_dim;
         float* out_row = out + row_idx * head_dim;
+        const size_t valid_cols = row + 1;
 
-        std::fill(out_row, out_row + head_dim, 0.0f);
-
-        float m_curr = -std::numeric_limits<float>::infinity();
-        float l_curr = 0.0f;
-
-        for (size_t col = 0; col <= row; ++col)
+        XSimdBatch max_vec(std::numeric_limits<float>::lowest());
+        size_t col = 0;
+        for (; col + kXSimdBatchSize <= valid_cols; col += kXSimdBatchSize)
         {
-            const float qk_scaled = qk_row[col] * scale;
-            const float m_new = std::max(m_curr, qk_scaled);
-            const float exp_diff = std::exp(m_curr - m_new);
-            const float exp_qk = std::exp(qk_scaled - m_new);
-
-            l_curr = l_curr * exp_diff + exp_qk;
-
-            const float* v_row = v_mat + col * head_dim;
-            online_weighted_accumulate_xsimd(out_row, v_row, head_dim, exp_diff, exp_qk);
-
-            m_curr = m_new;
+            const XSimdBatch scaled = XSimdBatch::load_unaligned(qk_row + col) * scale_vec;
+            max_vec = xsimd::max(max_vec, scaled);
+        }
+        float max_val = xsimd::reduce_max(max_vec);
+        for (; col < valid_cols; ++col)
+        {
+            max_val = std::max(max_val, qk_row[col] * scale);
         }
 
-        const float inv_l = 1.0f / l_curr;
-        scale_row_xsimd(out_row, head_dim, inv_l);
+        std::fill(out_row, out_row + head_dim, 0.0f);
+        float sum_val = 0.0f;
+        for (size_t c = 0; c < valid_cols; ++c)
+        {
+            const float weight = std::exp(qk_row[c] * scale - max_val);
+            sum_val += weight;
+            weighted_accumulate_row_xsimd(out_row, v_mat + c * head_dim, head_dim, weight);
+        }
+
+        const float inv_sum = 1.0f / sum_val;
+        scale_row_xsimd(out_row, head_dim, inv_sum);
     }
 }
 
