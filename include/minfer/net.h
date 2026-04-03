@@ -84,6 +84,15 @@ public:
 
     RuntimePrecision getPrecision() const;
 
+    /// 启用/禁用逐层 benchmark 模式（默认关闭）
+    void enableBenchmark(bool enable = true);
+
+    /// 打印当前累积的逐层 benchmark 报告到 stdout
+    void printBenchmark() const;
+
+    /// 重置所有计时数据（不改变 enable 状态）
+    void resetBenchmark();
+
     Mat forward();
 
 private:

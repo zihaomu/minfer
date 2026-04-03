@@ -117,4 +117,22 @@ RuntimePrecision Net::getPrecision() const
     return impl->getRuntimePrecision();
 }
 
+void Net::enableBenchmark(bool enable)
+{
+    M_Assert(impl != nullptr);
+    impl->enableBenchmark(enable);
+}
+
+void Net::printBenchmark() const
+{
+    M_Assert(impl != nullptr);
+    impl->printBenchmark();
+}
+
+void Net::resetBenchmark()
+{
+    M_Assert(impl != nullptr);
+    impl->resetBenchmark();
+}
+
 }

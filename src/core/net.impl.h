@@ -10,6 +10,7 @@
 #include "minfer/mat.h"
 
 #include "runtime.h"
+#include "benchmark_profiler.h"
 
 #include <map>
 #include <vector>
@@ -72,6 +73,11 @@ public:
     void setKVCacheConfigPath(const std::string& cfg_path);
     RuntimePrecision getRuntimePrecision() const;
 
+    // Benchmark profiling
+    void enableBenchmark(bool enable);
+    void printBenchmark() const;
+    void resetBenchmark();
+
 private:
     void buildMobileKVStorage(std::vector<std::shared_ptr<LayerParams> >& netParams);
     std::string maybeCreateAutoMobileKVCfgText(
@@ -113,6 +119,10 @@ private:
     std::string kv_cache_cfg_path_;
     std::string kv_cache_cfg_text_;
     std::shared_ptr<mobilekv::KVCacheStorage> kv_storage_;
+
+    // Benchmark profiling
+    BenchmarkProfiler profiler_;
+    bool benchmarkEnabled_ = false;
 };
 
 }

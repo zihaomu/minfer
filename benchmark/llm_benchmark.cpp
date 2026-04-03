@@ -30,6 +30,7 @@ struct BenchmarkOptions {
     int progress_interval = 32;
     int threads = 0;
     std::string csv_path;
+    bool layer_profile = false;
 };
 
 struct CaseResult {
@@ -127,6 +128,7 @@ void print_usage(const char* prog) {
         << "  --progress-interval <n> Print decode progress every n tokens (default: 32)\n"
         << "  --threads <n>           Thread count to use (default: all platform threads)\n"
         << "  --csv <path>            Save result table to csv\n"
+        << "  --layer-profile          Enable per-layer timing breakdown\n"
         << "  --help                  Show help\n";
 }
 
@@ -166,6 +168,8 @@ BenchmarkOptions parse_args(int argc, char** argv) {
             opts.threads = std::stoi(need_value(arg));
         } else if (arg == "--csv") {
             opts.csv_path = need_value(arg);
+        } else if (arg == "--layer-profile") {
+            opts.layer_profile = true;
         } else {
             throw std::runtime_error("Unknown argument: " + arg);
         }
@@ -389,6 +393,11 @@ int main(int argc, char** argv) {
         std::cout << "Model load time: " << std::fixed << std::setprecision(2)
                   << (load_end_ms - load_start_ms) << " ms\n";
 
+        if (opts.layer_profile) {
+            net.enableBenchmark(true);
+            std::cout << "Layer profiling: ENABLED\n";
+        }
+
         std::vector<int> seed_ids;
         net.encode(opts.prompt, seed_ids);
         if (seed_ids.empty()) {
@@ -408,6 +417,10 @@ int main(int argc, char** argv) {
         if (!opts.csv_path.empty()) {
             write_csv(opts.csv_path, opts.precision, results);
             std::cout << "CSV saved to: " << opts.csv_path << "\n";
+        }
+
+        if (opts.layer_profile) {
+            net.printBenchmark();
         }
     } catch (const std::exception& e) {
         std::cerr << "Benchmark failed: " << e.what() << "\n";

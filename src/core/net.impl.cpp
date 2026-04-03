@@ -7,6 +7,7 @@
 #include "mobilekv/kv_cache.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 
 namespace minfer
@@ -209,10 +210,20 @@ void Net::NetImpl::forward(Mat& out)
 
 Mat Net::NetImpl::forward()
 {
-    // TODO 完成这一步实现
     for (auto it = lds.begin(); it != lds.end(); it++)
     {
-        it->layer->forward(it->inputs, it->outputs);
+        if (benchmarkEnabled_)
+        {
+            auto t0 = std::chrono::steady_clock::now();
+            it->layer->forward(it->inputs, it->outputs);
+            auto t1 = std::chrono::steady_clock::now();
+            double us = std::chrono::duration<double, std::micro>(t1 - t0).count();
+            profiler_.recordForward(it->layerId, us);
+        }
+        else
+        {
+            it->layer->forward(it->inputs, it->outputs);
+        }
     }
 
     M_Assert(outputMatId.size() == 1);
@@ -326,6 +337,13 @@ void Net::NetImpl::init()
         // }
     }
     hasInit = true;
+
+    // Initialize profiler with layer info
+    profiler_.resize((int)lds.size());
+    for (const auto& ld : lds)
+    {
+        profiler_.setLayerInfo(ld.layerId, ld.layer->getName(), ld.layer->getType());
+    }
 }
 
 void Net::NetImpl::createLayerRecurve(int layerIdx, std::vector<int>& isLayerCreated, const std::map<int,
@@ -467,6 +485,9 @@ int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
 
     lds.push_back(ld);
     graphCreated_ = true;
+
+    // Register layer info for profiler
+    profiler_.setLayerInfo(layerId, layer->getName(), layer->getType());
     // Create the layer.
     return layerId;
 }
@@ -556,7 +577,18 @@ Mat Net::NetImpl::prefill(const std::vector<int>& token_ids)
     // 遍历所有层，使用带 context 的 forward
     for (auto it = lds.begin(); it != lds.end(); it++)
     {
-        it->layer->forward(it->inputs, it->outputs, ctx_);
+        if (benchmarkEnabled_)
+        {
+            auto t0 = std::chrono::steady_clock::now();
+            it->layer->forward(it->inputs, it->outputs, ctx_);
+            auto t1 = std::chrono::steady_clock::now();
+            double us = std::chrono::duration<double, std::micro>(t1 - t0).count();
+            profiler_.record(it->layerId, InferPhase::Prefill, us);
+        }
+        else
+        {
+            it->layer->forward(it->inputs, it->outputs, ctx_);
+        }
     }
 
     // 更新 start_pos
@@ -607,7 +639,18 @@ Mat Net::NetImpl::step(int token_id)
     // 遍历所有层，使用带 context 的 forward
     for (auto it = lds.begin(); it != lds.end(); it++)
     {
-        it->layer->forward(it->inputs, it->outputs, ctx_);
+        if (benchmarkEnabled_)
+        {
+            auto t0 = std::chrono::steady_clock::now();
+            it->layer->forward(it->inputs, it->outputs, ctx_);
+            auto t1 = std::chrono::steady_clock::now();
+            double us = std::chrono::duration<double, std::micro>(t1 - t0).count();
+            profiler_.record(it->layerId, InferPhase::Decode, us);
+        }
+        else
+        {
+            it->layer->forward(it->inputs, it->outputs, ctx_);
+        }
     }
 
     // 更新 start_pos
@@ -629,6 +672,23 @@ void Net::NetImpl::resetKVCache()
     {
         it->layer->resetKVCache();
     }
+}
+
+// ====== Benchmark Profiling ======
+
+void Net::NetImpl::enableBenchmark(bool enable)
+{
+    benchmarkEnabled_ = enable;
+}
+
+void Net::NetImpl::printBenchmark() const
+{
+    profiler_.printReport();
+}
+
+void Net::NetImpl::resetBenchmark()
+{
+    profiler_.reset();
 }
 
 }
