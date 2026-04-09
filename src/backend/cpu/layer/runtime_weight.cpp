@@ -176,12 +176,15 @@ void RuntimeWeight::rebuildDecodePacked()
     {
         case RuntimePrecision::FP16:
         {
-            Mat decode_src_fp16 = transposeND(weight_, {1, 0});
-            Mat decode_src_fp32;
-            decode_src_fp16.convertTo(decode_src_fp32, DT_32F);
-            decode_kernel_packed_.create(packed_b_shape, DT_32F);
-            cpu::gemm_pack_xsimd_nn_fp32(reinterpret_cast<const float*>(decode_src_fp32.data),
-                                         reinterpret_cast<float*>(decode_kernel_packed_.data),
+            // Convert first, then transpose, to avoid potential 16-bit transpose artifacts.
+            Mat weight_fp32;
+            weight_.convertTo(weight_fp32, DT_32F);
+            Mat decode_src_fp32 = transposeND(weight_fp32, {1, 0});
+            Mat decode_src_fp16;
+            decode_src_fp32.convertTo(decode_src_fp16, DT_16F);
+            decode_kernel_packed_.create(packed_b_shape, DT_16F);
+            cpu::gemm_pack_xsimd_nn_fp16(reinterpret_cast<const hfloat*>(decode_src_fp16.data),
+                                         reinterpret_cast<hfloat*>(decode_kernel_packed_.data),
                                          N,
                                          K);
             break;
@@ -253,6 +256,43 @@ Mat RuntimeWeight::gemmNT(const Mat& input) const
     const float* input_ptr = reinterpret_cast<const float*>(input.data);
     float* output_ptr = reinterpret_cast<float*>(out.data);
 
+    // ── M=1 fast path: parallel GEMV across N dimension ──
+    // When outer==1 (decode step), the old per-row OMP loop had only 1 iteration
+    // → single-threaded.  The parallel GEMV kernel distributes column-blocks
+    // across all threads, giving ~Nx speedup for large N (e.g. vocab projection).
+    if (outer == 1)
+    {
+        switch (precision_)
+        {
+            case RuntimePrecision::FP32:
+                cpu::gemv_parallel_packed_fp32(input_ptr,
+                                               reinterpret_cast<const float*>(decode_kernel_packed_.data),
+                                               output_ptr,
+                                               N,
+                                               K);
+                break;
+            case RuntimePrecision::INT8:
+                cpu::gemv_parallel_packed_i8_rowwise(input_ptr,
+                                                     reinterpret_cast<const int8_t*>(decode_kernel_packed_.data),
+                                                     reinterpret_cast<const float*>(decode_packed_scales_.data),
+                                                     output_ptr,
+                                                     N,
+                                                     K);
+                break;
+            case RuntimePrecision::FP16:
+                cpu::gemv_parallel_packed_fp16(input_ptr,
+                                               reinterpret_cast<const hfloat*>(decode_kernel_packed_.data),
+                                               output_ptr,
+                                               N,
+                                               K);
+                break;
+            default:
+                break;
+        }
+        return out;
+    }
+
+    // ── M>1 path: existing per-row OMP loop ──
     const long long outer_ll = static_cast<long long>(outer);
 #ifdef _OPENMP
 #pragma omp parallel for if(cpu::should_parallelize_1d_loop(outer, static_cast<size_t>(N) * static_cast<size_t>(K), 1LL << 16, 2))
@@ -265,8 +305,8 @@ Mat RuntimeWeight::gemmNT(const Mat& input) const
         switch (precision_)
         {
             case RuntimePrecision::FP16:
-                cpu::gemm_kernel_xsimd_row_packed_fp32(row_in,
-                                                       reinterpret_cast<const float*>(decode_kernel_packed_.data),
+                cpu::gemm_kernel_xsimd_row_packed_fp16(row_in,
+                                                       reinterpret_cast<const hfloat*>(decode_kernel_packed_.data),
                                                        row_out,
                                                        N,
                                                        K);

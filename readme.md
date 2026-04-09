@@ -104,3 +104,24 @@ C++对应算子实现放到`src/backend/cpu/kernel`中去。而上一步测试�
 
 ### GEMM 微内核优化
 GEMM是llm模型的最主要的算子，需要的是不是简单的并行，而是针对平台，计算精度，以及原始矩阵规模设定一个完整的并行策略。
+
+### 性能门禁（P4）
+新增性能门禁脚本：`benchmark/perf_gate.sh`，用于在本地或 CI 做关键回归检查。
+
+默认检查项：
+- `threads=4` 的 decode `avg(ms/tok)` 上限
+- `threads=16` 的 decode `avg(ms/tok)` 上限
+- `threads=4` + `--layer-profile` 下 `LinearLayer_19` 的 decode `Avg(ms)` 上限
+
+示例：
+```bash
+./benchmark/perf_gate.sh
+```
+
+可覆盖阈值：
+```bash
+MINFER_GATE_DECODE_T4_MAX_MS=2.20 \
+MINFER_GATE_DECODE_T16_MAX_MS=1.35 \
+MINFER_GATE_LINEAR_DECODE_MAX_MS=0.62 \
+./benchmark/perf_gate.sh
+```

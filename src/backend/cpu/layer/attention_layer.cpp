@@ -104,9 +104,19 @@ void write_plain_fp32_tokens_to_mobilekv(mobilekv::KVPlane& plane,
     M_Assert(base);
 
     const size_t token_stride = static_cast<size_t>(num_heads) * static_cast<size_t>(head_dim);
-#pragma omp parallel for
-    for (uint32_t t = 0; t < token_count; ++t)
+    const size_t token_count_sz = static_cast<size_t>(token_count);
+    const bool parallel_tokens = cpu::should_parallelize_1d_loop(
+        token_count_sz,
+        token_stride,
+        1LL << 14,
+        1);
+    const long long token_count_ll = static_cast<long long>(token_count);
+#ifdef _OPENMP
+#pragma omp parallel for if(parallel_tokens)
+#endif
+    for (long long t_ll = 0; t_ll < token_count_ll; ++t_ll)
     {
+        const uint32_t t = static_cast<uint32_t>(t_ll);
         const int src_t = src_begin + static_cast<int>(t);
         M_Assert(src_t >= 0 && src_t < src_seq_len);
         const uint32_t dst_t = dst_begin + t;
@@ -371,7 +381,14 @@ static Mat repeat_kv_and_transpose_for_attention(const Mat& x_kv,
     const float* src = reinterpret_cast<const float*>(x_kv.data);  // [S, Hkv, D]
     float* dst = reinterpret_cast<float*>(x_kv_hsd.data);          // [H, S, D]
 
-#pragma omp parallel for
+    const bool parallel_heads = cpu::should_parallelize_1d_loop(
+        static_cast<size_t>(head_count),
+        static_cast<size_t>(seq_len) * static_cast<size_t>(embd_dim_head),
+        1LL << 14,
+        1);
+#ifdef _OPENMP
+#pragma omp parallel for if(parallel_heads)
+#endif
     for (int h = 0; h < head_count; ++h)
     {
         const int kv_head = h / repeat_kv;
@@ -401,7 +418,14 @@ static Mat repeat_kv_for_attention_legacy(const Mat& x_kv,
     const float* src = reinterpret_cast<const float*>(x_kv.data);    // [S, Hkv, D]
     float* rep = reinterpret_cast<float*>(x_kv_repeated.data);       // [S, H, D]
 
-#pragma omp parallel for
+    const bool parallel_seq = cpu::should_parallelize_1d_loop(
+        static_cast<size_t>(seq_len),
+        static_cast<size_t>(head_count) * static_cast<size_t>(embd_dim_head),
+        1LL << 14,
+        1);
+#ifdef _OPENMP
+#pragma omp parallel for if(parallel_seq)
+#endif
     for (int s = 0; s < seq_len; ++s)
     {
         for (int h = 0; h < head_count; ++h)
@@ -704,7 +728,14 @@ void AttentionLayer::forwardDecode(const std::vector<Mat *> &input, std::vector<
     float* out_base = reinterpret_cast<float*>(attn_out.data);
     const float* q_base = reinterpret_cast<const float*>(q_t.data);
 
-#pragma omp parallel for
+    const bool parallel_decode_heads = cpu::should_parallelize_1d_loop(
+        static_cast<size_t>(head_count),
+        static_cast<size_t>(std::max(total_len, 1)) * static_cast<size_t>(embd_dim_head),
+        1LL << 14,
+        1);
+#ifdef _OPENMP
+#pragma omp parallel for if(parallel_decode_heads)
+#endif
     for (int h = 0; h < head_count; ++h)
     {
         const int h_kv = h / repeat_kv;

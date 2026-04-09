@@ -1,0 +1,16 @@
+phase,threshold,threads,runtime_fp32_ms,log
+fp32_runtime,1,4,1.0533,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th1_t4.log
+fp32_runtime,1,8,0.8512,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th1_t8.log
+fp32_runtime,1,16,0.1241,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th1_t16.log
+fp32_runtime,32768,4,1.0041,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th32768_t4.log
+fp32_runtime,32768,8,0.8430,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th32768_t8.log
+fp32_runtime,32768,16,0.1720,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th32768_t16.log
+fp32_runtime,131072,4,1.2068,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th131072_t4.log
+fp32_runtime,131072,8,0.9378,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th131072_t8.log
+fp32_runtime,131072,16,0.1423,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th131072_t16.log
+fp32_runtime,524288,4,0.9319,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th524288_t4.log
+fp32_runtime,524288,8,0.8830,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th524288_t8.log
+fp32_runtime,524288,16,0.1281,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th524288_t16.log
+fp32_runtime,999999999,4,1.8783,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th999999999_t4.log
+fp32_runtime,999999999,8,1.8200,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th999999999_t8.log
+fp32_runtime,999999999,16,1.9746,benchmark/results/threshold_sweep_20260409_095926/fp32_runtime_th999999999_t16.log

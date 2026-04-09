@@ -41,6 +41,16 @@ void gemm_kernel_xsimd_row_packed_fp16(const float* a, const hfloat* packed_b, f
 void gemm_kernel_xsimd_row_packed_i8_rowwise(const float* a, const int8_t* packed_b, const float* packed_scales,
                                              float* c, int n, int k);
 
+// ── Parallel GEMV micro-kernels (M=1, parallelized across N dimension) ──
+// These are specialized for the decode path where M=1 and N is large (e.g. vocab projection).
+// Unlike the row_packed kernels which are called per-row in an outer OMP loop,
+// these kernels distribute column-blocks across threads internally.
+
+void gemv_parallel_packed_fp32(const float* a, const float* packed_b, float* c, int n, int k);
+void gemv_parallel_packed_fp16(const float* a, const hfloat* packed_b, float* c, int n, int k);
+void gemv_parallel_packed_i8_rowwise(const float* a, const int8_t* packed_b, const float* packed_scales,
+                                    float* c, int n, int k);
+
 }  // namespace cpu
 }  // namespace minfer
 

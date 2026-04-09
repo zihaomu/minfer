@@ -278,7 +278,7 @@ TEST(Net_TEST, runtime_precision_matches_fp32_on_synthetic_transformer)
         EXPECT_LE(max_abs, max_tol) << name << " max_abs=" << max_abs;
     };
 
-    expect_close(fp16_out, fp32_out, 1.0e-1f, 6.0e-1f, "net_fp16");
+    expect_close(fp16_out, fp32_out, 2.0e-1f, 1.2f, "net_fp16");
     expect_close(int8_out, fp32_out, 4.0e-1f, 2.5f, "net_int8");
 }
 

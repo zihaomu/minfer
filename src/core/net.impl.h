@@ -79,6 +79,9 @@ public:
     void resetBenchmark();
 
 private:
+    void initPhaseThreadPolicy();
+    void applyPhaseThreads(InferPhase phase);
+
     void buildMobileKVStorage(std::vector<std::shared_ptr<LayerParams> >& netParams);
     std::string maybeCreateAutoMobileKVCfgText(
         int num_attention_layers,
@@ -123,6 +126,13 @@ private:
     // Benchmark profiling
     BenchmarkProfiler profiler_;
     bool benchmarkEnabled_ = false;
+
+    // Phase-aware thread policy (prefill/decode may use different OMP thread counts)
+    bool phaseThreadPolicyInited_ = false;
+    bool phaseThreadPolicyEnabled_ = false;
+    int prefillThreads_ = 0;
+    int decodeThreads_ = 0;
+    int activePhaseThreads_ = -1;
 };
 
 }

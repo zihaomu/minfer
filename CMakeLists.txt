@@ -76,7 +76,3 @@ target_link_libraries(minfer_benchmark ${M_TARGETS})
 # Operator benchmark
 add_executable(minfer_op_benchmark ${CMAKE_CURRENT_LIST_DIR}/benchmark/op_benchmark.cpp)
 target_link_libraries(minfer_op_benchmark ${M_TARGETS})
-
-# Diagnostic test
-add_executable(diag_test /tmp/diag_test.cpp)
-target_link_libraries(diag_test ${M_TARGETS})

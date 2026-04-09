@@ -9,9 +9,58 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <cctype>
+#include <climits>
+#include <string>
 
 namespace minfer
 {
+
+namespace {
+
+int parse_positive_int_env(const char* name)
+{
+    const char* value = std::getenv(name);
+    if (!value || value[0] == '\0')
+    {
+        return 0;
+    }
+
+    char* end = nullptr;
+    const long parsed = std::strtol(value, &end, 10);
+    if (end == value || *end != '\0' || parsed <= 0 || parsed > INT_MAX)
+    {
+        return 0;
+    }
+    return static_cast<int>(parsed);
+}
+
+bool env_policy_enabled()
+{
+    const char* policy = std::getenv("MINFER_PHASE_THREAD_POLICY");
+    if (!policy || policy[0] == '\0')
+    {
+        return true;  // default auto policy
+    }
+
+    std::string policy_str(policy);
+    std::transform(policy_str.begin(), policy_str.end(), policy_str.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    return !(policy_str == "0" || policy_str == "off" || policy_str == "false" || policy_str == "no");
+}
+
+int clamp_threads(int threads, int base_threads)
+{
+    const int base = std::max(base_threads, 1);
+    if (threads <= 0)
+    {
+        return base;
+    }
+    return std::max(1, std::min(threads, base));
+}
+
+}  // namespace
 
 Net::NetImpl::NetImpl()
 {
@@ -549,6 +598,56 @@ void Net::NetImpl::setKVCacheConfigPath(const std::string& cfg_path)
     kv_cache_cfg_text_.clear();
 }
 
+void Net::NetImpl::initPhaseThreadPolicy()
+{
+    if (phaseThreadPolicyInited_)
+    {
+        return;
+    }
+    phaseThreadPolicyInited_ = true;
+
+    const int base_threads = std::max(get_num_threads(), 1);
+    phaseThreadPolicyEnabled_ = env_policy_enabled();
+    if (!phaseThreadPolicyEnabled_)
+    {
+        prefillThreads_ = base_threads;
+        decodeThreads_ = base_threads;
+        return;
+    }
+
+    const int prefill_env = parse_positive_int_env("MINFER_PREFILL_THREADS");
+    const int decode_env = parse_positive_int_env("MINFER_DECODE_THREADS");
+
+    const int prefill_auto = std::min(base_threads, 8);
+    const int decode_auto = std::min(base_threads, 16);
+
+    prefillThreads_ = clamp_threads(prefill_env > 0 ? prefill_env : prefill_auto, base_threads);
+    decodeThreads_ = clamp_threads(decode_env > 0 ? decode_env : decode_auto, base_threads);
+
+    if (prefillThreads_ == base_threads && decodeThreads_ == base_threads)
+    {
+        phaseThreadPolicyEnabled_ = false;
+    }
+}
+
+void Net::NetImpl::applyPhaseThreads(InferPhase phase)
+{
+    initPhaseThreadPolicy();
+    if (!phaseThreadPolicyEnabled_)
+    {
+        return;
+    }
+
+    const int target_threads = (phase == InferPhase::Prefill) ? prefillThreads_ : decodeThreads_;
+    if (target_threads <= 0 || activePhaseThreads_ == target_threads)
+    {
+        return;
+    }
+
+    set_num_threads(target_threads);
+    activePhaseThreads_ = target_threads;
+}
+
 // ====== Chat 生成接口实现 ======
 
 Mat Net::NetImpl::prefill(const std::vector<int>& token_ids)
@@ -560,6 +659,8 @@ Mat Net::NetImpl::prefill(const std::vector<int>& token_ids)
     ctx_.phase = InferPhase::Prefill;
     ctx_.start_pos = 0;
     ctx_.seq_len = seq_len;
+
+    applyPhaseThreads(InferPhase::Prefill);
 
     // 构造输入 Mat: token ids as int Mat [1, seq_len]
     std::vector<int> input_shape = {1, seq_len};
@@ -605,6 +706,8 @@ Mat Net::NetImpl::step(int token_id)
     // 设置推理上下文
     ctx_.phase = InferPhase::Decode;
     ctx_.seq_len = 1;
+
+    applyPhaseThreads(InferPhase::Decode);
 
     // 构造输入 Mat: single token id [1, 1]
     std::vector<int> input_shape = {1, 1};

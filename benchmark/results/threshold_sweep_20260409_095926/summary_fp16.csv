@@ -1,0 +1,16 @@
+phase,threshold,threads,decode_ms_per_tok,linear19_decode_avg_ms,log
+fp16,1,4,2.15,0.599,benchmark/results/threshold_sweep_20260409_095926/fp16_th1_t4.log
+fp16,1,8,1.94,0.563,benchmark/results/threshold_sweep_20260409_095926/fp16_th1_t8.log
+fp16,1,16,1.41,0.331,benchmark/results/threshold_sweep_20260409_095926/fp16_th1_t16.log
+fp16,32768,4,2.16,0.617,benchmark/results/threshold_sweep_20260409_095926/fp16_th32768_t4.log
+fp16,32768,8,1.91,0.570,benchmark/results/threshold_sweep_20260409_095926/fp16_th32768_t8.log
+fp16,32768,16,1.41,0.332,benchmark/results/threshold_sweep_20260409_095926/fp16_th32768_t16.log
+fp16,131072,4,2.13,0.581,benchmark/results/threshold_sweep_20260409_095926/fp16_th131072_t4.log
+fp16,131072,8,1.90,0.555,benchmark/results/threshold_sweep_20260409_095926/fp16_th131072_t8.log
+fp16,131072,16,1.40,0.331,benchmark/results/threshold_sweep_20260409_095926/fp16_th131072_t16.log
+fp16,524288,4,2.52,0.603,benchmark/results/threshold_sweep_20260409_095926/fp16_th524288_t4.log
+fp16,524288,8,2.27,0.566,benchmark/results/threshold_sweep_20260409_095926/fp16_th524288_t8.log
+fp16,524288,16,1.77,0.346,benchmark/results/threshold_sweep_20260409_095926/fp16_th524288_t16.log
+fp16,999999999,4,4.36,1.167,benchmark/results/threshold_sweep_20260409_095926/fp16_th999999999_t4.log
+fp16,999999999,8,4.49,1.496,benchmark/results/threshold_sweep_20260409_095926/fp16_th999999999_t8.log
+fp16,999999999,16,4.35,1.347,benchmark/results/threshold_sweep_20260409_095926/fp16_th999999999_t16.log

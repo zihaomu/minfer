@@ -771,3 +771,87 @@ end2end : throughput=442.25 tok/s (prompt+decode)
 
 **结论**：在最吃内存带宽和 Cache Missing 的 Transpose 算子上，通过底层寄存器 SIMD Shuffle 优化，达成了接近 **`300% (3倍)` 的史诗级提速**！这对于大型 Prompt 的 GQA/KV 重排等预处理过程极为关键。
 
+
+## Speed up decode
+
+
+=== Benchmark Results ===
+[prompt_len=32, decode_tokens=128]
+prefill : avg=59.97 ms, p50=59.56 ms, p90=61.24 ms, throughput=533.63 tok/s
+decode  : avg=2.13 ms/tok, p50=2.10, p90=2.35, p99=2.59, throughput=468.99 tok/s
+ttft    : avg=62.57 ms
+end2end : throughput=480.63 tok/s (prompt+decode)
+
+[prompt_len=128, decode_tokens=128]
+prefill : avg=165.37 ms, p50=165.37 ms, p90=166.84 ms, throughput=774.04 tok/s
+decode  : avg=2.29 ms/tok, p50=2.24, p90=2.51, p99=3.10, throughput=436.84 tok/s
+ttft    : avg=168.50 ms
+end2end : throughput=558.49 tok/s (prompt+decode)
+
+[prompt_len=512, decode_tokens=128]
+prefill : avg=763.34 ms, p50=765.19 ms, p90=767.37 ms, throughput=670.74 tok/s
+decode  : avg=2.93 ms/tok, p50=2.87, p90=3.25, p99=3.62, throughput=341.03 tok/s
+ttft    : avg=766.88 ms
+end2end : throughput=562.06 tok/s (prompt+decode)
+
+
+╔══════════════════════════════════════════════════════════════════════════╗
+║                     Per-Layer Benchmark Report                          ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+  ── Prefill ──
+  Layer               │  Calls │   Total(ms) │    Avg(ms) │      %
+  ────────────────────┼────────┼─────────────┼────────────┼────────
+  InputLayer_0        │     18 │     0.007   │    0.000   │   0.0%
+  EmbeddingLayer_1    │     18 │     1.300   │    0.072   │   0.0%
+  AttentionLayer_2    │     18 │   301.546   │   16.753   │   5.1%
+  FeedForwardLayer_3  │     18 │   315.110   │   17.506   │   5.3%
+  AttentionLayer_4    │     18 │   272.766   │   15.154   │   4.6%
+  FeedForwardLayer_5  │     18 │   309.975   │   17.221   │   5.2%
+  AttentionLayer_6    │     18 │   268.029   │   14.890   │   4.5%
+  FeedForwardLayer_7  │     18 │   309.946   │   17.219   │   5.2%
+  AttentionLayer_8    │     18 │   268.451   │   14.914   │   4.5%
+  FeedForwardLayer_9  │     18 │   311.153   │   17.286   │   5.2%
+  AttentionLayer_10   │     18 │   270.192   │   15.011   │   4.5%
+  FeedForwardLayer_11 │     18 │   311.764   │   17.320   │   5.2%
+  AttentionLayer_12   │     18 │   272.101   │   15.117   │   4.6%
+  FeedForwardLayer_13 │     18 │   310.735   │   17.263   │   5.2%
+  AttentionLayer_14   │     18 │   272.078   │   15.115   │   4.6%
+  FeedForwardLayer_15 │     18 │   311.283   │   17.293   │   5.2%
+  AttentionLayer_16   │     18 │   275.711   │   15.317   │   4.6%
+  FeedForwardLayer_17 │     18 │   313.281   │   17.404   │   5.3%
+  RMSNormLayer_18     │     18 │     3.813   │    0.212   │   0.1%
+  LinearLayer_19      │     18 │  1062.278   │   59.015   │  17.9%
+  OutputLayer_20      │     18 │   180.902   │   10.050   │   3.0%
+  ────────────────────┼────────┼─────────────┼────────────┼────────
+  TOTAL               │        │  5942.420   │            │ 100.0%
+
+
+  ── Decode ──
+  Layer               │  Calls │   Total(ms) │    Avg(ms) │      %
+  ────────────────────┼────────┼─────────────┼────────────┼────────
+  InputLayer_0        │   2304 │     0.277   │    0.000   │   0.0%
+  EmbeddingLayer_1    │   2304 │     2.399   │    0.001   │   0.0%
+  AttentionLayer_2    │   2304 │   211.303   │    0.092   │   3.7%
+  FeedForwardLayer_3  │   2304 │   315.120   │    0.137   │   5.5%
+  AttentionLayer_4    │   2304 │   209.911   │    0.091   │   3.7%
+  FeedForwardLayer_5  │   2304 │   306.706   │    0.133   │   5.4%
+  AttentionLayer_6    │   2304 │   208.687   │    0.091   │   3.7%
+  FeedForwardLayer_7  │   2304 │   306.453   │    0.133   │   5.4%
+  AttentionLayer_8    │   2304 │   209.867   │    0.091   │   3.7%
+  FeedForwardLayer_9  │   2304 │   308.319   │    0.134   │   5.4%
+  AttentionLayer_10   │   2304 │   208.522   │    0.091   │   3.7%
+  FeedForwardLayer_11 │   2304 │   308.576   │    0.134   │   5.4%
+  AttentionLayer_12   │   2304 │   208.038   │    0.090   │   3.7%
+  FeedForwardLayer_13 │   2304 │   308.568   │    0.134   │   5.4%
+  AttentionLayer_14   │   2304 │   208.803   │    0.091   │   3.7%
+  FeedForwardLayer_15 │   2304 │   304.331   │    0.132   │   5.3%
+  AttentionLayer_16   │   2304 │   206.206   │    0.089   │   3.6%
+  FeedForwardLayer_17 │   2304 │   305.117   │    0.132   │   5.4%
+  RMSNormLayer_18     │   2304 │     4.143   │    0.002   │   0.1%
+  LinearLayer_19      │   2304 │  1537.110   │    0.667   │  27.0%
+  OutputLayer_20      │   2304 │    12.173   │    0.005   │   0.2%
+  ────────────────────┼────────┼─────────────┼────────────┼────────
+  TOTAL               │        │  5690.628   │            │ 100.0%
+
+  
