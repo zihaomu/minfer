@@ -2,6 +2,7 @@
 #include "openmp_utils.h"
 #include "xsimd_kernel_utils.h"
 
+#include "minfer/system.h"
 #include "xsimd/xsimd.hpp"
 
 #include <algorithm>
@@ -432,6 +433,595 @@ inline void store_row_block(float* c, int nr, const XSimdBatch& sum0, const XSim
     }
 }
 
+template <class PackedT, class LoadPackedBatch, class ApplyBlockPostprocess>
+void gemv_parallel_packed_pair_impl(const float* a,
+                                    const PackedT* packed_b0,
+                                    const PackedT* packed_b1,
+                                    float* c0,
+                                    float* c1,
+                                    int n,
+                                    int k,
+                                    long long min_parallel_work,
+                                    LoadPackedBatch&& load_packed_batch,
+                                    ApplyBlockPostprocess&& apply_block_postprocess)
+{
+    M_Assert(a != nullptr);
+    M_Assert(packed_b0 != nullptr);
+    M_Assert(packed_b1 != nullptr);
+    M_Assert(c0 != nullptr);
+    M_Assert(c1 != nullptr);
+    M_Assert(n > 0);
+    M_Assert(k > 0);
+
+    const int col_blocks = ceil_div(n, kKernelNR);
+    const bool parallel_blocks = should_parallelize_1d_loop(
+        static_cast<size_t>(col_blocks),
+        static_cast<size_t>(2) * static_cast<size_t>(std::max(k, 1)) * static_cast<size_t>(kKernelNR),
+        min_parallel_work,
+        2);
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) if(parallel_blocks)
+#endif
+    for (int block = 0; block < col_blocks; ++block)
+    {
+        const PackedT* r0 = packed_b0 + static_cast<size_t>(block) * k * kKernelNR;
+        const PackedT* r1 = packed_b1 + static_cast<size_t>(block) * k * kKernelNR;
+        XSimdBatch s00(0.0f), s01(0.0f);
+        XSimdBatch s10(0.0f), s11(0.0f);
+
+        int p = 0;
+        for (; p + 1 < k; p += 2)
+        {
+            const XSimdBatch av0(a[p]);
+            s00 = xsimd::fma(av0, load_packed_batch(r0), s00);
+            s01 = xsimd::fma(av0, load_packed_batch(r0 + kXSimdBatchSize), s01);
+            s10 = xsimd::fma(av0, load_packed_batch(r1), s10);
+            s11 = xsimd::fma(av0, load_packed_batch(r1 + kXSimdBatchSize), s11);
+            r0 += kKernelNR;
+            r1 += kKernelNR;
+
+            const XSimdBatch av1(a[p + 1]);
+            s00 = xsimd::fma(av1, load_packed_batch(r0), s00);
+            s01 = xsimd::fma(av1, load_packed_batch(r0 + kXSimdBatchSize), s01);
+            s10 = xsimd::fma(av1, load_packed_batch(r1), s10);
+            s11 = xsimd::fma(av1, load_packed_batch(r1 + kXSimdBatchSize), s11);
+            r0 += kKernelNR;
+            r1 += kKernelNR;
+        }
+        for (; p < k; ++p)
+        {
+            const XSimdBatch av(a[p]);
+            s00 = xsimd::fma(av, load_packed_batch(r0), s00);
+            s01 = xsimd::fma(av, load_packed_batch(r0 + kXSimdBatchSize), s01);
+            s10 = xsimd::fma(av, load_packed_batch(r1), s10);
+            s11 = xsimd::fma(av, load_packed_batch(r1 + kXSimdBatchSize), s11);
+            r0 += kKernelNR;
+            r1 += kKernelNR;
+        }
+
+        apply_block_postprocess(block, s00, s01, s10, s11);
+
+        const int nr = std::min(kKernelNR, n - block * kKernelNR);
+        store_row_block(c0 + static_cast<size_t>(block) * kKernelNR, nr, s00, s01);
+        store_row_block(c1 + static_cast<size_t>(block) * kKernelNR, nr, s10, s11);
+    }
+}
+
+inline bool decode_candidate_better(const DecodeCandidate& lhs, const DecodeCandidate& rhs)
+{
+    if (lhs.logit != rhs.logit)
+    {
+        return lhs.logit > rhs.logit;
+    }
+    return lhs.token_id < rhs.token_id;
+}
+
+inline void update_decode_argmax_candidate(DecodeCandidate& best, int token_id, float logit)
+{
+    if (logit > best.logit || (logit == best.logit && (best.token_id < 0 || token_id < best.token_id)))
+    {
+        best.token_id = token_id;
+        best.logit = logit;
+    }
+}
+
+inline void update_decode_selection_candidate(DecodeSelection& selection,
+                                              DecodeOutputMode mode,
+                                              int top_limit,
+                                              int token_id,
+                                              float logit)
+{
+    if (mode == DecodeOutputMode::ArgMax)
+    {
+        DecodeCandidate best = {selection.token_id, selection.logit};
+        update_decode_argmax_candidate(best, token_id, logit);
+        selection.token_id = best.token_id;
+        selection.logit = best.logit;
+        return;
+    }
+
+    DecodeCandidate candidate = {token_id, logit};
+    auto it = std::find_if(selection.top_k.begin(),
+                           selection.top_k.end(),
+                           [&](const DecodeCandidate& existing) { return decode_candidate_better(candidate, existing); });
+    if (it != selection.top_k.end())
+    {
+        selection.top_k.insert(it, candidate);
+    }
+    else if (static_cast<int>(selection.top_k.size()) < top_limit)
+    {
+        selection.top_k.push_back(candidate);
+    }
+
+    if (static_cast<int>(selection.top_k.size()) > top_limit)
+    {
+        selection.top_k.pop_back();
+    }
+
+    if (!selection.top_k.empty())
+    {
+        selection.token_id = selection.top_k.front().token_id;
+        selection.logit = selection.top_k.front().logit;
+    }
+}
+
+inline void merge_decode_selection(DecodeSelection& dst,
+                                   const DecodeSelection& src,
+                                   DecodeOutputMode mode,
+                                   int top_limit)
+{
+    if (mode == DecodeOutputMode::ArgMax)
+    {
+        if (src.token_id >= 0)
+        {
+            update_decode_selection_candidate(dst, mode, top_limit, src.token_id, src.logit);
+        }
+        return;
+    }
+
+    for (const DecodeCandidate& candidate : src.top_k)
+    {
+        update_decode_selection_candidate(dst, mode, top_limit, candidate.token_id, candidate.logit);
+    }
+}
+
+inline void finalize_decode_argmax_selection(DecodeSelection& selection, const DecodeCandidate& best)
+{
+    selection.reset(DecodeOutputMode::ArgMax, 1);
+    selection.token_id = best.token_id;
+    selection.logit = best.logit;
+    selection.ready = best.token_id >= 0;
+}
+
+constexpr int kFastDecodeTopKMax = 8;
+
+template <int MaxTopK>
+struct FixedDecodeTopKBuffer
+{
+    int limit = 0;
+    int count = 0;
+    std::array<DecodeCandidate, MaxTopK> items {};
+
+    void reset(int requested_limit)
+    {
+        limit = std::max(1, std::min(requested_limit, MaxTopK));
+        count = 0;
+    }
+
+    void tryInsert(int token_id, float logit)
+    {
+        DecodeCandidate candidate = {token_id, logit};
+
+        if (count == limit && !decode_candidate_better(candidate, items[static_cast<size_t>(count - 1)]))
+        {
+            return;
+        }
+
+        int insert_pos = (count < limit) ? count : (limit - 1);
+        while (insert_pos > 0 && decode_candidate_better(candidate, items[static_cast<size_t>(insert_pos - 1)]))
+        {
+            items[static_cast<size_t>(insert_pos)] = items[static_cast<size_t>(insert_pos - 1)];
+            --insert_pos;
+        }
+
+        items[static_cast<size_t>(insert_pos)] = candidate;
+        if (count < limit)
+        {
+            ++count;
+        }
+    }
+};
+
+template <int MaxTopK>
+inline void merge_fixed_decode_topk_buffer(FixedDecodeTopKBuffer<MaxTopK>& dst,
+                                           const FixedDecodeTopKBuffer<MaxTopK>& src)
+{
+    for (int i = 0; i < src.count; ++i)
+    {
+        const DecodeCandidate& candidate = src.items[static_cast<size_t>(i)];
+        dst.tryInsert(candidate.token_id, candidate.logit);
+    }
+}
+
+template <int MaxTopK>
+inline void finalize_decode_topk_selection(DecodeSelection& selection,
+                                           const FixedDecodeTopKBuffer<MaxTopK>& buffer)
+{
+    selection.reset(DecodeOutputMode::TopK, buffer.limit);
+    selection.top_k.assign(buffer.items.begin(), buffer.items.begin() + buffer.count);
+    if (!selection.top_k.empty())
+    {
+        selection.token_id = selection.top_k.front().token_id;
+        selection.logit = selection.top_k.front().logit;
+        selection.ready = true;
+    }
+}
+
+template <class PackedT, class LoadPackedBatch, class ApplyBlockPostprocess>
+void gemv_argmax_packed_impl(const float* a,
+                             const PackedT* packed_b,
+                             const float* bias,
+                             int n,
+                             int k,
+                             DecodeSelection& selection,
+                             long long min_parallel_work,
+                             LoadPackedBatch&& load_packed_batch,
+                             ApplyBlockPostprocess&& apply_block_postprocess)
+{
+    M_Assert(a != nullptr);
+    M_Assert(packed_b != nullptr);
+    M_Assert(n > 0);
+    M_Assert(k > 0);
+
+    const int col_blocks = ceil_div(n, kKernelNR);
+    const bool parallel_blocks = should_parallelize_1d_loop(
+        static_cast<size_t>(col_blocks),
+        static_cast<size_t>(std::max(k, 1)) * static_cast<size_t>(kKernelNR),
+        min_parallel_work,
+        2);
+
+    int thread_count = 1;
+#ifdef _OPENMP
+    if (parallel_blocks)
+    {
+        thread_count = omp_get_max_threads();
+    }
+#endif
+
+    std::vector<DecodeCandidate> locals(static_cast<size_t>(thread_count));
+
+#ifdef _OPENMP
+#pragma omp parallel if(parallel_blocks)
+    {
+        DecodeCandidate& local = locals[static_cast<size_t>(omp_get_thread_num())];
+
+#pragma omp for schedule(static)
+        for (int block = 0; block < col_blocks; ++block)
+        {
+            const PackedT* r = packed_b + static_cast<size_t>(block) * k * kKernelNR;
+            XSimdBatch sum0(0.0f);
+            XSimdBatch sum1(0.0f);
+
+            for (int p = 0; p < k; ++p)
+            {
+                const XSimdBatch av(a[p]);
+                sum0 = xsimd::fma(av, load_packed_batch(r), sum0);
+                sum1 = xsimd::fma(av, load_packed_batch(r + kXSimdBatchSize), sum1);
+                r += kKernelNR;
+            }
+
+            apply_block_postprocess(block, sum0, sum1);
+
+            alignas(64) float tmp[kKernelNR];
+            const int nr = std::min(kKernelNR, n - block * kKernelNR);
+            store_row_block(tmp, nr, sum0, sum1);
+
+            const int token_base = block * kKernelNR;
+            for (int lane = 0; lane < nr; ++lane)
+            {
+                const int token_id = token_base + lane;
+                float logit = tmp[lane];
+                if (bias != nullptr)
+                {
+                    logit += bias[token_id];
+                }
+                update_decode_argmax_candidate(local, token_id, logit);
+            }
+        }
+    }
+#else
+    DecodeCandidate& local = locals[0];
+    for (int block = 0; block < col_blocks; ++block)
+    {
+        const PackedT* r = packed_b + static_cast<size_t>(block) * k * kKernelNR;
+        XSimdBatch sum0(0.0f);
+        XSimdBatch sum1(0.0f);
+
+        for (int p = 0; p < k; ++p)
+        {
+            const XSimdBatch av(a[p]);
+            sum0 = xsimd::fma(av, load_packed_batch(r), sum0);
+            sum1 = xsimd::fma(av, load_packed_batch(r + kXSimdBatchSize), sum1);
+            r += kKernelNR;
+        }
+
+        apply_block_postprocess(block, sum0, sum1);
+
+        alignas(64) float tmp[kKernelNR];
+        const int nr = std::min(kKernelNR, n - block * kKernelNR);
+        store_row_block(tmp, nr, sum0, sum1);
+
+        const int token_base = block * kKernelNR;
+        for (int lane = 0; lane < nr; ++lane)
+        {
+            const int token_id = token_base + lane;
+            float logit = tmp[lane];
+            if (bias != nullptr)
+            {
+                logit += bias[token_id];
+            }
+            update_decode_argmax_candidate(local, token_id, logit);
+        }
+    }
+#endif
+
+    DecodeCandidate best;
+    for (const DecodeCandidate& local : locals)
+    {
+        if (local.token_id >= 0)
+        {
+            update_decode_argmax_candidate(best, local.token_id, local.logit);
+        }
+    }
+
+    finalize_decode_argmax_selection(selection, best);
+}
+
+template <int MaxTopK, class PackedT, class LoadPackedBatch, class ApplyBlockPostprocess>
+void gemv_topk_packed_impl(const float* a,
+                           const PackedT* packed_b,
+                           const float* bias,
+                           int n,
+                           int k,
+                           int top_k,
+                           DecodeSelection& selection,
+                           long long min_parallel_work,
+                           LoadPackedBatch&& load_packed_batch,
+                           ApplyBlockPostprocess&& apply_block_postprocess)
+{
+    M_Assert(a != nullptr);
+    M_Assert(packed_b != nullptr);
+    M_Assert(n > 0);
+    M_Assert(k > 0);
+
+    const int top_limit = std::max(1, std::min({top_k, n, MaxTopK}));
+    const int col_blocks = ceil_div(n, kKernelNR);
+    const bool parallel_blocks = should_parallelize_1d_loop(
+        static_cast<size_t>(col_blocks),
+        static_cast<size_t>(std::max(k, 1)) * static_cast<size_t>(kKernelNR),
+        min_parallel_work,
+        2);
+
+    int thread_count = 1;
+#ifdef _OPENMP
+    if (parallel_blocks)
+    {
+        thread_count = omp_get_max_threads();
+    }
+#endif
+
+    std::vector<FixedDecodeTopKBuffer<MaxTopK>> locals(static_cast<size_t>(thread_count));
+
+#ifdef _OPENMP
+#pragma omp parallel if(parallel_blocks)
+    {
+        FixedDecodeTopKBuffer<MaxTopK>& local = locals[static_cast<size_t>(omp_get_thread_num())];
+        local.reset(top_limit);
+
+#pragma omp for schedule(static)
+        for (int block = 0; block < col_blocks; ++block)
+        {
+            const PackedT* r = packed_b + static_cast<size_t>(block) * k * kKernelNR;
+            XSimdBatch sum0(0.0f);
+            XSimdBatch sum1(0.0f);
+
+            for (int p = 0; p < k; ++p)
+            {
+                const XSimdBatch av(a[p]);
+                sum0 = xsimd::fma(av, load_packed_batch(r), sum0);
+                sum1 = xsimd::fma(av, load_packed_batch(r + kXSimdBatchSize), sum1);
+                r += kKernelNR;
+            }
+
+            apply_block_postprocess(block, sum0, sum1);
+
+            alignas(64) float tmp[kKernelNR];
+            const int nr = std::min(kKernelNR, n - block * kKernelNR);
+            store_row_block(tmp, nr, sum0, sum1);
+
+            const int token_base = block * kKernelNR;
+            for (int lane = 0; lane < nr; ++lane)
+            {
+                const int token_id = token_base + lane;
+                float logit = tmp[lane];
+                if (bias != nullptr)
+                {
+                    logit += bias[token_id];
+                }
+                local.tryInsert(token_id, logit);
+            }
+        }
+    }
+#else
+    FixedDecodeTopKBuffer<MaxTopK>& local = locals[0];
+    local.reset(top_limit);
+    for (int block = 0; block < col_blocks; ++block)
+    {
+        const PackedT* r = packed_b + static_cast<size_t>(block) * k * kKernelNR;
+        XSimdBatch sum0(0.0f);
+        XSimdBatch sum1(0.0f);
+
+        for (int p = 0; p < k; ++p)
+        {
+            const XSimdBatch av(a[p]);
+            sum0 = xsimd::fma(av, load_packed_batch(r), sum0);
+            sum1 = xsimd::fma(av, load_packed_batch(r + kXSimdBatchSize), sum1);
+            r += kKernelNR;
+        }
+
+        apply_block_postprocess(block, sum0, sum1);
+
+        alignas(64) float tmp[kKernelNR];
+        const int nr = std::min(kKernelNR, n - block * kKernelNR);
+        store_row_block(tmp, nr, sum0, sum1);
+
+        const int token_base = block * kKernelNR;
+        for (int lane = 0; lane < nr; ++lane)
+        {
+            const int token_id = token_base + lane;
+            float logit = tmp[lane];
+            if (bias != nullptr)
+            {
+                logit += bias[token_id];
+            }
+            local.tryInsert(token_id, logit);
+        }
+    }
+#endif
+
+    FixedDecodeTopKBuffer<MaxTopK> best;
+    best.reset(top_limit);
+    for (const FixedDecodeTopKBuffer<MaxTopK>& local : locals)
+    {
+        merge_fixed_decode_topk_buffer(best, local);
+    }
+
+    finalize_decode_topk_selection(selection, best);
+}
+
+template <class PackedT, class LoadPackedBatch, class ApplyBlockPostprocess>
+void gemv_select_packed_impl(const float* a,
+                             const PackedT* packed_b,
+                             const float* bias,
+                             int n,
+                             int k,
+                             DecodeOutputMode mode,
+                             int top_k,
+                             DecodeSelection& selection,
+                             long long min_parallel_work,
+                             LoadPackedBatch&& load_packed_batch,
+                             ApplyBlockPostprocess&& apply_block_postprocess)
+{
+    M_Assert(mode != DecodeOutputMode::FullLogits);
+    M_Assert(a != nullptr);
+    M_Assert(packed_b != nullptr);
+    M_Assert(n > 0);
+    M_Assert(k > 0);
+
+    const int top_limit = mode == DecodeOutputMode::TopK ? std::max(1, std::min(top_k, n)) : 1;
+    const int col_blocks = ceil_div(n, kKernelNR);
+    const bool parallel_blocks = should_parallelize_1d_loop(
+        static_cast<size_t>(col_blocks),
+        static_cast<size_t>(std::max(k, 1)) * static_cast<size_t>(kKernelNR),
+        min_parallel_work,
+        2);
+
+    int thread_count = 1;
+#ifdef _OPENMP
+    if (parallel_blocks)
+    {
+        thread_count = omp_get_max_threads();
+    }
+#endif
+
+    std::vector<DecodeSelection> locals(static_cast<size_t>(thread_count));
+
+#ifdef _OPENMP
+#pragma omp parallel if(parallel_blocks)
+    {
+        DecodeSelection& local = locals[static_cast<size_t>(omp_get_thread_num())];
+        local.reset(mode, top_limit);
+
+#pragma omp for schedule(static)
+        for (int block = 0; block < col_blocks; ++block)
+        {
+            const PackedT* r = packed_b + static_cast<size_t>(block) * k * kKernelNR;
+            XSimdBatch sum0(0.0f);
+            XSimdBatch sum1(0.0f);
+
+            for (int p = 0; p < k; ++p)
+            {
+                const XSimdBatch av(a[p]);
+                sum0 = xsimd::fma(av, load_packed_batch(r), sum0);
+                sum1 = xsimd::fma(av, load_packed_batch(r + kXSimdBatchSize), sum1);
+                r += kKernelNR;
+            }
+
+            apply_block_postprocess(block, sum0, sum1);
+
+            alignas(64) float tmp[kKernelNR];
+            const int nr = std::min(kKernelNR, n - block * kKernelNR);
+            store_row_block(tmp, nr, sum0, sum1);
+
+            const int token_base = block * kKernelNR;
+            for (int lane = 0; lane < nr; ++lane)
+            {
+                const int token_id = token_base + lane;
+                float logit = tmp[lane];
+                if (bias != nullptr)
+                {
+                    logit += bias[token_id];
+                }
+                update_decode_selection_candidate(local, mode, top_limit, token_id, logit);
+            }
+        }
+    }
+#else
+    DecodeSelection& local = locals[0];
+    local.reset(mode, top_limit);
+    for (int block = 0; block < col_blocks; ++block)
+    {
+        const PackedT* r = packed_b + static_cast<size_t>(block) * k * kKernelNR;
+        XSimdBatch sum0(0.0f);
+        XSimdBatch sum1(0.0f);
+
+        for (int p = 0; p < k; ++p)
+        {
+            const XSimdBatch av(a[p]);
+            sum0 = xsimd::fma(av, load_packed_batch(r), sum0);
+            sum1 = xsimd::fma(av, load_packed_batch(r + kXSimdBatchSize), sum1);
+            r += kKernelNR;
+        }
+
+        apply_block_postprocess(block, sum0, sum1);
+
+        alignas(64) float tmp[kKernelNR];
+        const int nr = std::min(kKernelNR, n - block * kKernelNR);
+        store_row_block(tmp, nr, sum0, sum1);
+
+        const int token_base = block * kKernelNR;
+        for (int lane = 0; lane < nr; ++lane)
+        {
+            const int token_id = token_base + lane;
+            float logit = tmp[lane];
+            if (bias != nullptr)
+            {
+                logit += bias[token_id];
+            }
+            update_decode_selection_candidate(local, mode, top_limit, token_id, logit);
+        }
+    }
+#endif
+
+    selection.reset(mode, top_limit);
+    for (const DecodeSelection& local : locals)
+    {
+        merge_decode_selection(selection, local, mode, top_limit);
+    }
+    selection.ready = selection.token_id >= 0;
+}
+
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86))
 __attribute__((target("avx2,f16c,fma")))
 inline void store_row_block_avx8(float* c, int nr, const __m256& sum)
@@ -738,11 +1328,209 @@ inline void gemv_parallel_packed_fp16_avx2_impl(const float* a, const hfloat* pa
 }
 
 __attribute__((target("avx2,fma")))
+inline void gemv_parallel_packed_pair_fp32_avx2_impl(const float* a,
+                                                     const float* packed_b0,
+                                                     const float* packed_b1,
+                                                     float* c0,
+                                                     float* c1,
+                                                     int n,
+                                                     int k)
+{
+    constexpr int kAvxLanes = 8;
+    const int col_blocks = ceil_div(n, kAvxLanes);
+    const bool parallel_blocks = should_parallelize_1d_loop(
+        static_cast<size_t>(col_blocks),
+        static_cast<size_t>(2) * static_cast<size_t>(std::max(k, 1)) * static_cast<size_t>(kAvxLanes),
+        get_decode_gemv_fp32_min_parallel_work(),
+        2);
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) if(parallel_blocks)
+#endif
+    for (int block = 0; block < col_blocks; ++block)
+    {
+        const float* r0 = packed_b0 + static_cast<size_t>(block) * k * kAvxLanes;
+        const float* r1 = packed_b1 + static_cast<size_t>(block) * k * kAvxLanes;
+        __m256 s0 = _mm256_setzero_ps();
+        __m256 s1 = _mm256_setzero_ps();
+
+        int p = 0;
+        for (; p + 1 < k; p += 2)
+        {
+            const __m256 av0 = _mm256_set1_ps(a[p]);
+            s0 = _mm256_fmadd_ps(av0, _mm256_loadu_ps(r0), s0);
+            s1 = _mm256_fmadd_ps(av0, _mm256_loadu_ps(r1), s1);
+            r0 += kAvxLanes;
+            r1 += kAvxLanes;
+
+            const __m256 av1 = _mm256_set1_ps(a[p + 1]);
+            s0 = _mm256_fmadd_ps(av1, _mm256_loadu_ps(r0), s0);
+            s1 = _mm256_fmadd_ps(av1, _mm256_loadu_ps(r1), s1);
+            r0 += kAvxLanes;
+            r1 += kAvxLanes;
+        }
+        for (; p < k; ++p)
+        {
+            const __m256 av = _mm256_set1_ps(a[p]);
+            s0 = _mm256_fmadd_ps(av, _mm256_loadu_ps(r0), s0);
+            s1 = _mm256_fmadd_ps(av, _mm256_loadu_ps(r1), s1);
+            r0 += kAvxLanes;
+            r1 += kAvxLanes;
+        }
+
+        const int nr = std::min(kAvxLanes, n - block * kAvxLanes);
+        store_row_block_avx8(c0 + static_cast<size_t>(block) * kAvxLanes, nr, s0);
+        store_row_block_avx8(c1 + static_cast<size_t>(block) * kAvxLanes, nr, s1);
+    }
+}
+
+__attribute__((target("avx2,f16c,fma")))
+inline void gemv_parallel_packed_pair_fp16_avx2_impl(const float* a,
+                                                     const hfloat* packed_b0,
+                                                     const hfloat* packed_b1,
+                                                     float* c0,
+                                                     float* c1,
+                                                     int n,
+                                                     int k)
+{
+    constexpr int kAvxLanes = 8;
+    const int col_blocks = ceil_div(n, kAvxLanes);
+    const bool parallel_blocks = should_parallelize_1d_loop(
+        static_cast<size_t>(col_blocks),
+        static_cast<size_t>(2) * static_cast<size_t>(std::max(k, 1)) * static_cast<size_t>(kAvxLanes),
+        get_decode_gemv_fp16_min_parallel_work(),
+        2);
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) if(parallel_blocks)
+#endif
+    for (int block = 0; block < col_blocks; ++block)
+    {
+        const hfloat* r0 = packed_b0 + static_cast<size_t>(block) * k * kAvxLanes;
+        const hfloat* r1 = packed_b1 + static_cast<size_t>(block) * k * kAvxLanes;
+        __m256 s0_even = _mm256_setzero_ps();
+        __m256 s0_odd = _mm256_setzero_ps();
+        __m256 s1_even = _mm256_setzero_ps();
+        __m256 s1_odd = _mm256_setzero_ps();
+
+        int p = 0;
+        for (; p + 1 < k; p += 2)
+        {
+            const __m256 av0 = _mm256_set1_ps(a[p]);
+            s0_even = _mm256_fmadd_ps(
+                av0,
+                _mm256_cvtph_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(static_cast<const void*>(r0)))),
+                s0_even);
+            s1_even = _mm256_fmadd_ps(
+                av0,
+                _mm256_cvtph_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(static_cast<const void*>(r1)))),
+                s1_even);
+            r0 += kAvxLanes;
+            r1 += kAvxLanes;
+
+            const __m256 av1 = _mm256_set1_ps(a[p + 1]);
+            s0_odd = _mm256_fmadd_ps(
+                av1,
+                _mm256_cvtph_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(static_cast<const void*>(r0)))),
+                s0_odd);
+            s1_odd = _mm256_fmadd_ps(
+                av1,
+                _mm256_cvtph_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(static_cast<const void*>(r1)))),
+                s1_odd);
+            r0 += kAvxLanes;
+            r1 += kAvxLanes;
+        }
+        __m256 s0 = _mm256_add_ps(s0_even, s0_odd);
+        __m256 s1 = _mm256_add_ps(s1_even, s1_odd);
+        for (; p < k; ++p)
+        {
+            const __m256 av = _mm256_set1_ps(a[p]);
+            s0 = _mm256_fmadd_ps(
+                av,
+                _mm256_cvtph_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(static_cast<const void*>(r0)))),
+                s0);
+            s1 = _mm256_fmadd_ps(
+                av,
+                _mm256_cvtph_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(static_cast<const void*>(r1)))),
+                s1);
+            r0 += kAvxLanes;
+            r1 += kAvxLanes;
+        }
+
+        const int nr = std::min(kAvxLanes, n - block * kAvxLanes);
+        store_row_block_avx8(c0 + static_cast<size_t>(block) * kAvxLanes, nr, s0);
+        store_row_block_avx8(c1 + static_cast<size_t>(block) * kAvxLanes, nr, s1);
+    }
+}
+
+__attribute__((target("avx2,fma")))
 inline __m256 load_i8x8_as_ps_avx2(const int8_t* src)
 {
     const __m128i v8 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(static_cast<const void*>(src)));
     const __m256i v32 = _mm256_cvtepi8_epi32(v8);
     return _mm256_cvtepi32_ps(v32);
+}
+
+__attribute__((target("avx2,fma")))
+inline void gemv_parallel_packed_pair_i8_rowwise_avx2_impl(const float* a,
+                                                           const int8_t* packed_b0,
+                                                           const float* packed_scales0,
+                                                           const int8_t* packed_b1,
+                                                           const float* packed_scales1,
+                                                           float* c0,
+                                                           float* c1,
+                                                           int n,
+                                                           int k)
+{
+    constexpr int kAvxLanes = 8;
+    const int col_blocks = ceil_div(n, kAvxLanes);
+    const bool parallel_blocks = should_parallelize_1d_loop(
+        static_cast<size_t>(col_blocks),
+        static_cast<size_t>(2) * static_cast<size_t>(std::max(k, 1)) * static_cast<size_t>(kAvxLanes),
+        get_decode_gemv_i8_min_parallel_work(),
+        2);
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) if(parallel_blocks)
+#endif
+    for (int block = 0; block < col_blocks; ++block)
+    {
+        const int8_t* r0 = packed_b0 + static_cast<size_t>(block) * k * kAvxLanes;
+        const int8_t* r1 = packed_b1 + static_cast<size_t>(block) * k * kAvxLanes;
+        __m256 s0 = _mm256_setzero_ps();
+        __m256 s1 = _mm256_setzero_ps();
+
+        int p = 0;
+        for (; p + 1 < k; p += 2)
+        {
+            const __m256 av0 = _mm256_set1_ps(a[p]);
+            s0 = _mm256_fmadd_ps(av0, load_i8x8_as_ps_avx2(r0), s0);
+            s1 = _mm256_fmadd_ps(av0, load_i8x8_as_ps_avx2(r1), s1);
+            r0 += kAvxLanes;
+            r1 += kAvxLanes;
+
+            const __m256 av1 = _mm256_set1_ps(a[p + 1]);
+            s0 = _mm256_fmadd_ps(av1, load_i8x8_as_ps_avx2(r0), s0);
+            s1 = _mm256_fmadd_ps(av1, load_i8x8_as_ps_avx2(r1), s1);
+            r0 += kAvxLanes;
+            r1 += kAvxLanes;
+        }
+        for (; p < k; ++p)
+        {
+            const __m256 av = _mm256_set1_ps(a[p]);
+            s0 = _mm256_fmadd_ps(av, load_i8x8_as_ps_avx2(r0), s0);
+            s1 = _mm256_fmadd_ps(av, load_i8x8_as_ps_avx2(r1), s1);
+            r0 += kAvxLanes;
+            r1 += kAvxLanes;
+        }
+
+        s0 = _mm256_mul_ps(s0, _mm256_loadu_ps(packed_scales0 + static_cast<size_t>(block) * kAvxLanes));
+        s1 = _mm256_mul_ps(s1, _mm256_loadu_ps(packed_scales1 + static_cast<size_t>(block) * kAvxLanes));
+
+        const int nr = std::min(kAvxLanes, n - block * kAvxLanes);
+        store_row_block_avx8(c0 + static_cast<size_t>(block) * kAvxLanes, nr, s0);
+        store_row_block_avx8(c1 + static_cast<size_t>(block) * kAvxLanes, nr, s1);
+    }
 }
 
 __attribute__((target("avx2,fma")))
@@ -838,6 +1626,241 @@ inline void gemv_parallel_packed_i8_rowwise_avx2_impl(const float* a,
         const int nr = std::min(kAvxLanes, n - block * kAvxLanes);
         store_row_block_avx8(c + static_cast<size_t>(block) * kAvxLanes, nr, s);
     }
+}
+
+__attribute__((target("avx2,fma")))
+inline void update_argmax_from_avx8(DecodeCandidate& best,
+                                    int token_base,
+                                    int nr,
+                                    const __m256& sum,
+                                    const float* bias)
+{
+    alignas(32) float tmp[8];
+    _mm256_storeu_ps(tmp, sum);
+    for (int lane = 0; lane < nr; ++lane)
+    {
+        const int token_id = token_base + lane;
+        float logit = tmp[lane];
+        if (bias != nullptr)
+        {
+            logit += bias[token_id];
+        }
+        update_decode_argmax_candidate(best, token_id, logit);
+    }
+}
+
+__attribute__((target("avx2,fma")))
+inline void gemv_argmax_packed_fp32_avx2_impl(const float* a,
+                                              const float* packed_b,
+                                              const float* bias,
+                                              int n,
+                                              int k,
+                                              DecodeSelection& selection)
+{
+    constexpr int kAvxLanes = 8;
+    const int col_blocks = ceil_div(n, kAvxLanes);
+    const bool parallel_blocks = should_parallelize_1d_loop(
+        static_cast<size_t>(col_blocks),
+        static_cast<size_t>(std::max(k, 1)) * static_cast<size_t>(kAvxLanes),
+        get_decode_gemv_fp32_min_parallel_work(),
+        2);
+
+    int thread_count = 1;
+#ifdef _OPENMP
+    if (parallel_blocks)
+    {
+        thread_count = omp_get_max_threads();
+    }
+#endif
+
+    std::vector<DecodeCandidate> locals(static_cast<size_t>(thread_count));
+
+#ifdef _OPENMP
+#pragma omp parallel if(parallel_blocks)
+    {
+        DecodeCandidate& local = locals[static_cast<size_t>(omp_get_thread_num())];
+
+#pragma omp for schedule(static)
+        for (int block = 0; block < col_blocks; ++block)
+        {
+            const float* r = packed_b + static_cast<size_t>(block) * k * kAvxLanes;
+            __m256 s = _mm256_setzero_ps();
+
+            int p = 0;
+            for (; p + 1 < k; p += 2)
+            {
+                const __m256 av0 = _mm256_set1_ps(a[p]);
+                s = _mm256_fmadd_ps(av0, _mm256_loadu_ps(r), s);
+                r += kAvxLanes;
+
+                const __m256 av1 = _mm256_set1_ps(a[p + 1]);
+                s = _mm256_fmadd_ps(av1, _mm256_loadu_ps(r), s);
+                r += kAvxLanes;
+            }
+            for (; p < k; ++p)
+            {
+                const __m256 av = _mm256_set1_ps(a[p]);
+                s = _mm256_fmadd_ps(av, _mm256_loadu_ps(r), s);
+                r += kAvxLanes;
+            }
+
+            const int nr = std::min(kAvxLanes, n - block * kAvxLanes);
+            update_argmax_from_avx8(local, block * kAvxLanes, nr, s, bias);
+        }
+    }
+#else
+    DecodeCandidate& local = locals[0];
+    for (int block = 0; block < col_blocks; ++block)
+    {
+        const float* r = packed_b + static_cast<size_t>(block) * k * kAvxLanes;
+        __m256 s = _mm256_setzero_ps();
+
+        int p = 0;
+        for (; p + 1 < k; p += 2)
+        {
+            const __m256 av0 = _mm256_set1_ps(a[p]);
+            s = _mm256_fmadd_ps(av0, _mm256_loadu_ps(r), s);
+            r += kAvxLanes;
+
+            const __m256 av1 = _mm256_set1_ps(a[p + 1]);
+            s = _mm256_fmadd_ps(av1, _mm256_loadu_ps(r), s);
+            r += kAvxLanes;
+        }
+        for (; p < k; ++p)
+        {
+            const __m256 av = _mm256_set1_ps(a[p]);
+            s = _mm256_fmadd_ps(av, _mm256_loadu_ps(r), s);
+            r += kAvxLanes;
+        }
+
+        const int nr = std::min(kAvxLanes, n - block * kAvxLanes);
+        update_argmax_from_avx8(local, block * kAvxLanes, nr, s, bias);
+    }
+#endif
+
+    DecodeCandidate best;
+    for (const DecodeCandidate& local : locals)
+    {
+        if (local.token_id >= 0)
+        {
+            update_decode_argmax_candidate(best, local.token_id, local.logit);
+        }
+    }
+
+    finalize_decode_argmax_selection(selection, best);
+}
+
+__attribute__((target("avx2,f16c,fma")))
+inline void gemv_argmax_packed_fp16_avx2_impl(const float* a,
+                                              const hfloat* packed_b,
+                                              const float* bias,
+                                              int n,
+                                              int k,
+                                              DecodeSelection& selection)
+{
+    constexpr int kAvxLanes = 8;
+    const int col_blocks = ceil_div(n, kAvxLanes);
+    const bool parallel_blocks = should_parallelize_1d_loop(
+        static_cast<size_t>(col_blocks),
+        static_cast<size_t>(std::max(k, 1)) * static_cast<size_t>(kAvxLanes),
+        get_decode_gemv_fp16_min_parallel_work(),
+        2);
+
+    int thread_count = 1;
+#ifdef _OPENMP
+    if (parallel_blocks)
+    {
+        thread_count = omp_get_max_threads();
+    }
+#endif
+
+    std::vector<DecodeCandidate> locals(static_cast<size_t>(thread_count));
+
+#ifdef _OPENMP
+#pragma omp parallel if(parallel_blocks)
+    {
+        DecodeCandidate& local = locals[static_cast<size_t>(omp_get_thread_num())];
+
+#pragma omp for schedule(static)
+        for (int block = 0; block < col_blocks; ++block)
+        {
+            const hfloat* r = packed_b + static_cast<size_t>(block) * k * kAvxLanes;
+            __m256 s = _mm256_setzero_ps();
+
+            int p = 0;
+            for (; p + 1 < k; p += 2)
+            {
+                const __m256 av0 = _mm256_set1_ps(a[p]);
+                s = _mm256_fmadd_ps(av0,
+                                    _mm256_cvtph_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(static_cast<const void*>(r)))),
+                                    s);
+                r += kAvxLanes;
+
+                const __m256 av1 = _mm256_set1_ps(a[p + 1]);
+                s = _mm256_fmadd_ps(av1,
+                                    _mm256_cvtph_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(static_cast<const void*>(r)))),
+                                    s);
+                r += kAvxLanes;
+            }
+            for (; p < k; ++p)
+            {
+                const __m256 av = _mm256_set1_ps(a[p]);
+                s = _mm256_fmadd_ps(av,
+                                    _mm256_cvtph_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(static_cast<const void*>(r)))),
+                                    s);
+                r += kAvxLanes;
+            }
+
+            const int nr = std::min(kAvxLanes, n - block * kAvxLanes);
+            update_argmax_from_avx8(local, block * kAvxLanes, nr, s, bias);
+        }
+    }
+#else
+    DecodeCandidate& local = locals[0];
+    for (int block = 0; block < col_blocks; ++block)
+    {
+        const hfloat* r = packed_b + static_cast<size_t>(block) * k * kAvxLanes;
+        __m256 s = _mm256_setzero_ps();
+
+        int p = 0;
+        for (; p + 1 < k; p += 2)
+        {
+            const __m256 av0 = _mm256_set1_ps(a[p]);
+            s = _mm256_fmadd_ps(av0,
+                                _mm256_cvtph_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(static_cast<const void*>(r)))),
+                                s);
+            r += kAvxLanes;
+
+            const __m256 av1 = _mm256_set1_ps(a[p + 1]);
+            s = _mm256_fmadd_ps(av1,
+                                _mm256_cvtph_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(static_cast<const void*>(r)))),
+                                s);
+            r += kAvxLanes;
+        }
+        for (; p < k; ++p)
+        {
+            const __m256 av = _mm256_set1_ps(a[p]);
+            s = _mm256_fmadd_ps(av,
+                                _mm256_cvtph_ps(_mm_loadu_si128(reinterpret_cast<const __m128i*>(static_cast<const void*>(r)))),
+                                s);
+            r += kAvxLanes;
+        }
+
+        const int nr = std::min(kAvxLanes, n - block * kAvxLanes);
+        update_argmax_from_avx8(local, block * kAvxLanes, nr, s, bias);
+    }
+#endif
+
+    DecodeCandidate best;
+    for (const DecodeCandidate& local : locals)
+    {
+        if (local.token_id >= 0)
+        {
+            update_decode_argmax_candidate(best, local.token_id, local.logit);
+        }
+    }
+
+    finalize_decode_argmax_selection(selection, best);
 }
 #endif
 
@@ -1568,6 +2591,297 @@ void gemv_parallel_packed_i8_rowwise(const float* a, const int8_t* packed_b, con
                         s0 * XSimdBatch::load_unaligned(sc),
                         s1 * XSimdBatch::load_unaligned(sc + kXSimdBatchSize));
     }
+}
+
+void gemv_parallel_packed_pair_fp32(const float* a,
+                                    const float* packed_b0,
+                                    const float* packed_b1,
+                                    float* c0,
+                                    float* c1,
+                                    int n,
+                                    int k)
+{
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86))
+    if (kKernelNR == 8 &&
+        __builtin_cpu_supports("avx2") &&
+        __builtin_cpu_supports("fma"))
+    {
+        gemv_parallel_packed_pair_fp32_avx2_impl(a, packed_b0, packed_b1, c0, c1, n, k);
+        return;
+    }
+#endif
+
+    gemv_parallel_packed_pair_impl(
+        a,
+        packed_b0,
+        packed_b1,
+        c0,
+        c1,
+        n,
+        k,
+        get_decode_gemv_fp32_min_parallel_work(),
+        [](const float* src) { return XSimdBatch::load_unaligned(src); },
+        [](int, XSimdBatch&, XSimdBatch&, XSimdBatch&, XSimdBatch&) {});
+}
+
+void gemv_parallel_packed_pair_fp16(const float* a,
+                                    const hfloat* packed_b0,
+                                    const hfloat* packed_b1,
+                                    float* c0,
+                                    float* c1,
+                                    int n,
+                                    int k)
+{
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86))
+    if (kKernelNR == 8 &&
+        __builtin_cpu_supports("avx2") &&
+        __builtin_cpu_supports("f16c") &&
+        __builtin_cpu_supports("fma"))
+    {
+        gemv_parallel_packed_pair_fp16_avx2_impl(a, packed_b0, packed_b1, c0, c1, n, k);
+        return;
+    }
+#endif
+
+    gemv_parallel_packed_pair_impl(
+        a,
+        packed_b0,
+        packed_b1,
+        c0,
+        c1,
+        n,
+        k,
+        get_decode_gemv_fp16_min_parallel_work(),
+        [](const hfloat* src) { return load_hfloat_batch(src); },
+        [](int, XSimdBatch&, XSimdBatch&, XSimdBatch&, XSimdBatch&) {});
+}
+
+void gemv_parallel_packed_pair_i8_rowwise(const float* a,
+                                          const int8_t* packed_b0,
+                                          const float* packed_scales0,
+                                          const int8_t* packed_b1,
+                                          const float* packed_scales1,
+                                          float* c0,
+                                          float* c1,
+                                          int n,
+                                          int k)
+{
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86))
+    if (kKernelNR == 8 &&
+        __builtin_cpu_supports("avx2") &&
+        __builtin_cpu_supports("fma"))
+    {
+        gemv_parallel_packed_pair_i8_rowwise_avx2_impl(
+            a, packed_b0, packed_scales0, packed_b1, packed_scales1, c0, c1, n, k);
+        return;
+    }
+#endif
+
+    gemv_parallel_packed_pair_impl(
+        a,
+        packed_b0,
+        packed_b1,
+        c0,
+        c1,
+        n,
+        k,
+        get_decode_gemv_i8_min_parallel_work(),
+        [](const int8_t* src) { return load_int8_batch(src); },
+        [&](int block, XSimdBatch& s00, XSimdBatch& s01, XSimdBatch& s10, XSimdBatch& s11) {
+            const float* scale0 = packed_scales0 + static_cast<size_t>(block) * kKernelNR;
+            const float* scale1 = packed_scales1 + static_cast<size_t>(block) * kKernelNR;
+            s00 *= XSimdBatch::load_unaligned(scale0);
+            s01 *= XSimdBatch::load_unaligned(scale0 + kXSimdBatchSize);
+            s10 *= XSimdBatch::load_unaligned(scale1);
+            s11 *= XSimdBatch::load_unaligned(scale1 + kXSimdBatchSize);
+        });
+}
+
+void gemv_select_packed_fp32(const float* a,
+                             const float* packed_b,
+                             const float* bias,
+                             int n,
+                             int k,
+                             DecodeOutputMode mode,
+                             int top_k,
+                             DecodeSelection& selection)
+{
+    if (mode == DecodeOutputMode::ArgMax)
+    {
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86))
+        if (kKernelNR == 8 &&
+            __builtin_cpu_supports("avx2") &&
+            __builtin_cpu_supports("fma"))
+        {
+            gemv_argmax_packed_fp32_avx2_impl(a, packed_b, bias, n, k, selection);
+            return;
+        }
+#endif
+        gemv_argmax_packed_impl(a,
+                                packed_b,
+                                bias,
+                                n,
+                                k,
+                                selection,
+                                get_decode_gemv_fp32_min_parallel_work(),
+                                [](const float* src) { return XSimdBatch::load_unaligned(src); },
+                                [](int, XSimdBatch&, XSimdBatch&) {});
+        return;
+    }
+
+    if (mode == DecodeOutputMode::TopK && top_k <= kFastDecodeTopKMax)
+    {
+        gemv_topk_packed_impl<kFastDecodeTopKMax>(a,
+                                                  packed_b,
+                                                  bias,
+                                                  n,
+                                                  k,
+                                                  top_k,
+                                                  selection,
+                                                  get_decode_gemv_fp32_min_parallel_work(),
+                                                  [](const float* src) { return XSimdBatch::load_unaligned(src); },
+                                                  [](int, XSimdBatch&, XSimdBatch&) {});
+        return;
+    }
+
+    gemv_select_packed_impl(a,
+                            packed_b,
+                            bias,
+                            n,
+                            k,
+                            mode,
+                            top_k,
+                            selection,
+                            get_decode_gemv_fp32_min_parallel_work(),
+                            [](const float* src) { return XSimdBatch::load_unaligned(src); },
+                            [](int, XSimdBatch&, XSimdBatch&) {});
+}
+
+void gemv_select_packed_fp16(const float* a,
+                             const hfloat* packed_b,
+                             const float* bias,
+                             int n,
+                             int k,
+                             DecodeOutputMode mode,
+                             int top_k,
+                             DecodeSelection& selection)
+{
+    if (mode == DecodeOutputMode::ArgMax)
+    {
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86))
+        if (kKernelNR == 8 &&
+            __builtin_cpu_supports("avx2") &&
+            __builtin_cpu_supports("f16c") &&
+            __builtin_cpu_supports("fma"))
+        {
+            gemv_argmax_packed_fp16_avx2_impl(a, packed_b, bias, n, k, selection);
+            return;
+        }
+#endif
+        gemv_argmax_packed_impl(a,
+                                packed_b,
+                                bias,
+                                n,
+                                k,
+                                selection,
+                                get_decode_gemv_fp16_min_parallel_work(),
+                                [](const hfloat* src) { return load_hfloat_batch(src); },
+                                [](int, XSimdBatch&, XSimdBatch&) {});
+        return;
+    }
+
+    if (mode == DecodeOutputMode::TopK && top_k <= kFastDecodeTopKMax)
+    {
+        gemv_topk_packed_impl<kFastDecodeTopKMax>(a,
+                                                  packed_b,
+                                                  bias,
+                                                  n,
+                                                  k,
+                                                  top_k,
+                                                  selection,
+                                                  get_decode_gemv_fp16_min_parallel_work(),
+                                                  [](const hfloat* src) { return load_hfloat_batch(src); },
+                                                  [](int, XSimdBatch&, XSimdBatch&) {});
+        return;
+    }
+
+    gemv_select_packed_impl(a,
+                            packed_b,
+                            bias,
+                            n,
+                            k,
+                            mode,
+                            top_k,
+                            selection,
+                            get_decode_gemv_fp16_min_parallel_work(),
+                            [](const hfloat* src) { return load_hfloat_batch(src); },
+                            [](int, XSimdBatch&, XSimdBatch&) {});
+}
+
+void gemv_select_packed_i8_rowwise(const float* a,
+                                   const int8_t* packed_b,
+                                   const float* packed_scales,
+                                   const float* bias,
+                                   int n,
+                                   int k,
+                                   DecodeOutputMode mode,
+                                   int top_k,
+                                   DecodeSelection& selection)
+{
+    M_Assert(packed_scales != nullptr);
+
+    if (mode == DecodeOutputMode::ArgMax)
+    {
+        gemv_argmax_packed_impl(a,
+                                packed_b,
+                                bias,
+                                n,
+                                k,
+                                selection,
+                                get_decode_gemv_i8_min_parallel_work(),
+                                [](const int8_t* src) { return load_int8_batch(src); },
+                                [&](int block, XSimdBatch& sum0, XSimdBatch& sum1) {
+                                    const float* scale = packed_scales + static_cast<size_t>(block) * kKernelNR;
+                                    sum0 *= XSimdBatch::load_unaligned(scale);
+                                    sum1 *= XSimdBatch::load_unaligned(scale + kXSimdBatchSize);
+                                });
+        return;
+    }
+
+    if (mode == DecodeOutputMode::TopK && top_k <= kFastDecodeTopKMax)
+    {
+        gemv_topk_packed_impl<kFastDecodeTopKMax>(a,
+                                                  packed_b,
+                                                  bias,
+                                                  n,
+                                                  k,
+                                                  top_k,
+                                                  selection,
+                                                  get_decode_gemv_i8_min_parallel_work(),
+                                                  [](const int8_t* src) { return load_int8_batch(src); },
+                                                  [&](int block, XSimdBatch& sum0, XSimdBatch& sum1) {
+                                                      const float* scale = packed_scales + static_cast<size_t>(block) * kKernelNR;
+                                                      sum0 *= XSimdBatch::load_unaligned(scale);
+                                                      sum1 *= XSimdBatch::load_unaligned(scale + kXSimdBatchSize);
+                                                  });
+        return;
+    }
+
+    gemv_select_packed_impl(a,
+                            packed_b,
+                            bias,
+                            n,
+                            k,
+                            mode,
+                            top_k,
+                            selection,
+                            get_decode_gemv_i8_min_parallel_work(),
+                            [](const int8_t* src) { return load_int8_batch(src); },
+                            [&](int block, XSimdBatch& sum0, XSimdBatch& sum1) {
+                                const float* scale = packed_scales + static_cast<size_t>(block) * kKernelNR;
+                                sum0 *= XSimdBatch::load_unaligned(scale);
+                                sum1 *= XSimdBatch::load_unaligned(scale + kXSimdBatchSize);
+                            });
 }
 
 }  // namespace cpu

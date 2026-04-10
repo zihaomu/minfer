@@ -333,6 +333,150 @@ Mat RuntimeWeight::gemmNT(const Mat& input) const
     return out;
 }
 
+bool RuntimeWeight::gemmNTPair(const Mat& input, const RuntimeWeight& other, Mat& out0, Mat& out1) const
+{
+    if (!shouldUseDecodePacked(input) || !other.shouldUseDecodePacked(input))
+    {
+        return false;
+    }
+
+    if (precision_ != other.precision_ || weight_.shape() != other.weight_.shape())
+    {
+        return false;
+    }
+
+    M_Assert(weight_.shape().size() == 2);
+    const int N = weight_.shape()[0];
+    const int K = weight_.shape()[1];
+    M_Assert(input.type() == DT_32F);
+    M_Assert(input.shape().back() == K);
+
+    const size_t outer = input.total() / static_cast<size_t>(K);
+    if (outer != 1)
+    {
+        return false;
+    }
+
+    MatShape out_shape = input.shape();
+    out_shape.back() = N;
+    out0 = Mat(out_shape, DT_32F);
+    out1 = Mat(out_shape, DT_32F);
+
+    const float* input_ptr = reinterpret_cast<const float*>(input.data);
+    float* out0_ptr = reinterpret_cast<float*>(out0.data);
+    float* out1_ptr = reinterpret_cast<float*>(out1.data);
+
+    switch (precision_)
+    {
+        case RuntimePrecision::FP32:
+            cpu::gemv_parallel_packed_pair_fp32(
+                input_ptr,
+                reinterpret_cast<const float*>(decode_kernel_packed_.data),
+                reinterpret_cast<const float*>(other.decode_kernel_packed_.data),
+                out0_ptr,
+                out1_ptr,
+                N,
+                K);
+            return true;
+        case RuntimePrecision::FP16:
+            cpu::gemv_parallel_packed_pair_fp16(
+                input_ptr,
+                reinterpret_cast<const hfloat*>(decode_kernel_packed_.data),
+                reinterpret_cast<const hfloat*>(other.decode_kernel_packed_.data),
+                out0_ptr,
+                out1_ptr,
+                N,
+                K);
+            return true;
+        case RuntimePrecision::INT8:
+            cpu::gemv_parallel_packed_pair_i8_rowwise(
+                input_ptr,
+                reinterpret_cast<const int8_t*>(decode_kernel_packed_.data),
+                reinterpret_cast<const float*>(decode_packed_scales_.data),
+                reinterpret_cast<const int8_t*>(other.decode_kernel_packed_.data),
+                reinterpret_cast<const float*>(other.decode_packed_scales_.data),
+                out0_ptr,
+                out1_ptr,
+                N,
+                K);
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool RuntimeWeight::selectNT(const Mat& input,
+                             DecodeOutputMode mode,
+                             int top_k,
+                             const Mat* bias,
+                             DecodeSelection& selection) const
+{
+    if (mode == DecodeOutputMode::FullLogits || !shouldUseDecodePacked(input))
+    {
+        return false;
+    }
+
+    M_Assert(weight_.shape().size() == 2);
+    const int N = weight_.shape()[0];
+    const int K = weight_.shape()[1];
+    M_Assert(input.type() == DT_32F);
+    M_Assert(input.shape().back() == K);
+
+    const size_t outer = input.total() / static_cast<size_t>(K);
+    if (outer != 1)
+    {
+        return false;
+    }
+
+    const float* bias_ptr = nullptr;
+    if (bias != nullptr && !bias->empty())
+    {
+        M_Assert(bias->type() == DT_32F);
+        M_Assert(bias->shape().size() == 1);
+        M_Assert(bias->shape()[0] == N);
+        bias_ptr = reinterpret_cast<const float*>(bias->data);
+    }
+
+    const float* input_ptr = reinterpret_cast<const float*>(input.data);
+
+    switch (precision_)
+    {
+        case RuntimePrecision::FP32:
+            cpu::gemv_select_packed_fp32(input_ptr,
+                                         reinterpret_cast<const float*>(decode_kernel_packed_.data),
+                                         bias_ptr,
+                                         N,
+                                         K,
+                                         mode,
+                                         top_k,
+                                         selection);
+            return selection.ready;
+        case RuntimePrecision::FP16:
+            cpu::gemv_select_packed_fp16(input_ptr,
+                                         reinterpret_cast<const hfloat*>(decode_kernel_packed_.data),
+                                         bias_ptr,
+                                         N,
+                                         K,
+                                         mode,
+                                         top_k,
+                                         selection);
+            return selection.ready;
+        case RuntimePrecision::INT8:
+            cpu::gemv_select_packed_i8_rowwise(input_ptr,
+                                               reinterpret_cast<const int8_t*>(decode_kernel_packed_.data),
+                                               reinterpret_cast<const float*>(decode_packed_scales_.data),
+                                               bias_ptr,
+                                               N,
+                                               K,
+                                               mode,
+                                               top_k,
+                                               selection);
+            return selection.ready;
+        default:
+            return false;
+    }
+}
+
 Mat canonicalize_linear_weight(const Mat& weight, int out_features, int in_features)
 {
     Mat weight_fp32;

@@ -99,6 +99,22 @@ Mat Net::step(int token_id)
     return impl->step(token_id);
 }
 
+DecodeResult Net::prefillDecode(const std::vector<int>& token_ids,
+                                DecodeOutputMode mode,
+                                int top_k)
+{
+    M_Assert(impl != nullptr);
+    return impl->prefillDecode(token_ids, mode, top_k);
+}
+
+DecodeResult Net::stepDecode(int token_id,
+                             DecodeOutputMode mode,
+                             int top_k)
+{
+    M_Assert(impl != nullptr);
+    return impl->stepDecode(token_id, mode, top_k);
+}
+
 void Net::resetKVCache()
 {
     M_Assert(impl != nullptr);

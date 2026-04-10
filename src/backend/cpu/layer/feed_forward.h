@@ -21,6 +21,9 @@ public:
     void init(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
     void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
+    void forward(const std::vector<Mat*>& input,
+                 std::vector<Mat*>& output,
+                 const InferenceContext& ctx) override;
 
     void finalize(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
@@ -37,6 +40,8 @@ private:
     RuntimeWeight up;
     RuntimeWeight down;
     ActivateType activateType;
+
+    bool tryDecodeFusedForward(const Mat& x, Mat& out, const InferenceContext& ctx) const;
 };
 
 }

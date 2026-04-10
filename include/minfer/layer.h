@@ -34,6 +34,7 @@ enum LayerType {
     Softmax,
     FFN,
     Linear,
+    LmHead,
     Attention,
     LayerNorm,
 };
@@ -70,9 +71,16 @@ public:
 //    int layerId = -1;               // It will be set
     LayerType type;
     RuntimePrecision precision = RuntimePrecision::FP32;
+    bool hasPrecisionOverride = false;
     std::vector<int> inputIndex;
     std::vector<int> outputIndex;
     std::vector<Mat> weights;
+
+    void setPrecisionOverride(RuntimePrecision runtime_precision)
+    {
+        precision = runtime_precision;
+        hasPrecisionOverride = true;
+    }
 };
 
 class RMSNormLayerParams: public LayerParams
@@ -122,6 +130,16 @@ public:
     int out_features; // output, the number of output features
     Mat w;           // weight matrix
     Mat b;           // bias vector
+};
+
+class LmHeadLayerParams: public LinearLayerParams
+{
+public:
+    LmHeadLayerParams(std::vector<int> _inputIndex, std::vector<int> _outputIndex, int _in_features, int _out_features, Mat _w, Mat _b={})
+    : LinearLayerParams(_inputIndex, _outputIndex, _in_features, _out_features, _w, _b)
+    {
+        type = LayerType::LmHead;
+    }
 };
 
 // TODO

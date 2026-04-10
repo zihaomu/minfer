@@ -69,6 +69,12 @@ public:
     // Chat 生成接口
     Mat prefill(const std::vector<int>& token_ids);
     Mat step(int token_id);
+    DecodeResult prefillDecode(const std::vector<int>& token_ids,
+                               DecodeOutputMode mode,
+                               int top_k);
+    DecodeResult stepDecode(int token_id,
+                            DecodeOutputMode mode,
+                            int top_k);
     void resetKVCache();
     void setKVCacheConfigPath(const std::string& cfg_path);
     RuntimePrecision getRuntimePrecision() const;
@@ -90,6 +96,9 @@ private:
         int max_seq_len) const;
 
     void setRuntimePrecision(RuntimePrecision precision);
+    void runLayersForCurrentContext();
+    Mat* selectDecodeResultMat(DecodeOutputMode mode);
+    DecodeResult buildDecodeResult(DecodeOutputMode mode, int top_k);
     void createLayerRecurve(int layerIdx, std::vector<int>& isLayerCreated, const std::map<int,
             std::vector<int> >& layer2Parent, const std::vector<std::shared_ptr<LayerParams> >& allLayerParams);
 
@@ -116,6 +125,7 @@ private:
     std::shared_ptr<GGUF_Vocab> gguf_vocab = nullptr; // 用于存储gguf模型的vocab
 
     InferenceContext ctx_; // 推理上下文，用于 chat 生成
+    DecodeSelection decode_selection_;
     RuntimePrecision runtimePrecision_ = RuntimePrecision::FP32;
     bool graphCreated_ = false;
 

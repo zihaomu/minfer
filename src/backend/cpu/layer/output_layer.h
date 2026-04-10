@@ -20,6 +20,7 @@ public:
     void init(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
 
     void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output) override;
+    void forward(const std::vector<Mat*>& input, std::vector<Mat*>& output, const InferenceContext& ctx) override;
 
 private:
     OutputLayer(const std::shared_ptr<LayerParams> param);

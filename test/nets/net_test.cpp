@@ -357,3 +357,50 @@ TEST(Net_TEST, create_net_default_precision_matches_explicit_fp32)
 
     expect_close(fp32_default, fp32_explicit, 1e-6f, 1e-6f, "net_default_precision_fp32_matches_explicit");
 }
+
+TEST(Net_TEST, create_net_preserves_lm_head_precision_override)
+{
+    const int embd = 8;
+    const int vocab = 16;
+    const int seq_len = 4;
+
+    auto make_mat = [](const std::vector<int>& shape, float scale = 1.0f, float bias = 0.0f) {
+        Mat mat(shape, DT_32F);
+        float* data = reinterpret_cast<float*>(mat.data);
+        for (size_t i = 0; i < mat.total(); ++i)
+        {
+            data[i] = std::sin(static_cast<float>(i) * 0.13f) * scale +
+                      std::cos(static_cast<float>(i) * 0.09f) * scale * 0.5f +
+                      bias;
+        }
+        return mat;
+    };
+
+    auto lm_head = std::shared_ptr<LmHeadLayerParams>(
+        new LmHeadLayerParams({1}, {2}, embd, vocab, make_mat({vocab, embd}, 0.4f), make_mat({vocab}, 0.05f)));
+    lm_head->setPrecisionOverride(RuntimePrecision::INT8);
+
+    std::vector<std::shared_ptr<LayerParams>> layers = {
+        std::shared_ptr<LayerParams>(new LayerParams(LayerType::Input, {0}, {1})),
+        lm_head,
+        std::shared_ptr<LayerParams>(new LayerParams(LayerType::Output, {2}, {3})),
+    };
+
+    Net net;
+    net.createNet(layers, RuntimePrecision::FP32);
+
+    EXPECT_EQ(lm_head->precision, RuntimePrecision::INT8);
+
+    Mat input({1, seq_len, embd}, DT_32F);
+    float* input_data = reinterpret_cast<float*>(input.data);
+    for (size_t i = 0; i < input.total(); ++i)
+    {
+        input_data[i] = std::sin(static_cast<float>(i) * 0.07f);
+    }
+
+    net.setInput(input);
+    net.init();
+    Mat output = net.forward();
+
+    ASSERT_EQ(output.shape(), (MatShape{1, seq_len, vocab}));
+}

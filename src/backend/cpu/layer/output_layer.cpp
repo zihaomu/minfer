@@ -29,6 +29,16 @@ void OutputLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *> &o
     }
 }
 
+void OutputLayer::forward(const std::vector<Mat *> &input, std::vector<Mat *> &output, const InferenceContext& ctx)
+{
+    if (ctx.decode_output_mode != DecodeOutputMode::FullLogits)
+    {
+        return;
+    }
+
+    forward(input, output);
+}
+
 OutputLayer::~OutputLayer()
 {
 

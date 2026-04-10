@@ -60,11 +60,71 @@ int clamp_threads(int threads, int base_threads)
     return std::max(1, std::min(threads, base));
 }
 
+const float* last_logits_row(const Mat& logits)
+{
+    M_Assert(logits.dims == 3);
+    M_Assert(logits.size[0] == 1);
+    M_Assert(logits.type() == DT_32F);
+
+    const int seq_len = logits.size[1];
+    const int vocab_size = logits.size[2];
+    M_Assert(seq_len > 0);
+    M_Assert(vocab_size > 0);
+
+    return reinterpret_cast<const float*>(logits.data) + static_cast<size_t>(seq_len - 1) * static_cast<size_t>(vocab_size);
+}
+
+DecodeCandidate argmax_last_logits(const Mat& logits)
+{
+    const float* row = last_logits_row(logits);
+    const int vocab_size = logits.size[2];
+
+    DecodeCandidate best = {};
+    for (int v = 0; v < vocab_size; ++v)
+    {
+        const float logit = row[v];
+        if (logit > best.logit || (logit == best.logit && (best.token_id < 0 || v < best.token_id)))
+        {
+            best.token_id = v;
+            best.logit = logit;
+        }
+    }
+
+    return best;
+}
+
+std::vector<DecodeCandidate> topk_last_logits(const Mat& logits, int top_k)
+{
+    const float* row = last_logits_row(logits);
+    const int vocab_size = logits.size[2];
+    const int k = std::max(1, std::min(top_k, vocab_size));
+
+    std::vector<DecodeCandidate> candidates;
+    candidates.reserve(vocab_size);
+    for (int v = 0; v < vocab_size; ++v)
+    {
+        candidates.push_back({v, row[v]});
+    }
+
+    auto cmp = [](const DecodeCandidate& a, const DecodeCandidate& b) {
+        if (a.logit != b.logit)
+        {
+            return a.logit > b.logit;
+        }
+        return a.token_id < b.token_id;
+    };
+
+    std::partial_sort(candidates.begin(), candidates.begin() + k, candidates.end(), cmp);
+    candidates.resize(k);
+    return candidates;
+}
+
 }  // namespace
 
 Net::NetImpl::NetImpl()
 {
     gguf_vocab = std::shared_ptr<GGUF_Vocab>(new GGUF_Vocab());
+    ctx_.decode_selection = &decode_selection_;
     if (runtime == nullptr)
     {
         runtime = Runtime::getRuntime();
@@ -480,7 +540,10 @@ int Net::NetImpl::createLayer(std::shared_ptr<LayerParams> param)
 
     LayerData ld = {};
     int layerId = lds.size();
-    param->precision = runtimePrecision_;
+    if (!param->hasPrecisionOverride)
+    {
+        param->precision = runtimePrecision_;
+    }
     std::shared_ptr<Layer> layer = runtime->createLayer(param);
 
     if (!layer)
@@ -648,6 +711,86 @@ void Net::NetImpl::applyPhaseThreads(InferPhase phase)
     activePhaseThreads_ = target_threads;
 }
 
+void Net::NetImpl::runLayersForCurrentContext()
+{
+    for (auto it = lds.begin(); it != lds.end(); it++)
+    {
+        if (benchmarkEnabled_)
+        {
+            auto t0 = std::chrono::steady_clock::now();
+            it->layer->forward(it->inputs, it->outputs, ctx_);
+            auto t1 = std::chrono::steady_clock::now();
+            double us = std::chrono::duration<double, std::micro>(t1 - t0).count();
+            profiler_.record(it->layerId, ctx_.phase, us);
+        }
+        else
+        {
+            it->layer->forward(it->inputs, it->outputs, ctx_);
+        }
+    }
+}
+
+Mat* Net::NetImpl::selectDecodeResultMat(DecodeOutputMode mode)
+{
+    if (mode == DecodeOutputMode::FullLogits)
+    {
+        M_Assert(outputMatId.size() == 1);
+        Mat* m = this->getMat(outputMatId[0]);
+        M_Assert(m && "Output Mat can not be empty!");
+        return m;
+    }
+
+    M_Assert(outputLayers.size() == 1);
+    M_Assert(outputLayers[0] >= 0 && outputLayers[0] < static_cast<int>(lds.size()));
+
+    LayerData& output_ld = lds[outputLayers[0]];
+    M_Assert(output_ld.inputs.size() == 1);
+    M_Assert(output_ld.inputs[0] && "LmHead output Mat can not be empty!");
+    return output_ld.inputs[0];
+}
+
+DecodeResult Net::NetImpl::buildDecodeResult(DecodeOutputMode mode, int top_k)
+{
+    DecodeResult result;
+    result.mode = mode;
+
+    if (mode == DecodeOutputMode::FullLogits)
+    {
+        Mat* source = selectDecodeResultMat(mode);
+        M_Assert(source && "Decode source Mat can not be empty!");
+        result.logits = *source;
+        return result;
+    }
+
+    if (ctx_.decode_selection != nullptr && ctx_.decode_selection->ready)
+    {
+        result.token_id = ctx_.decode_selection->token_id;
+        result.logit = ctx_.decode_selection->logit;
+        if (mode == DecodeOutputMode::TopK)
+        {
+            result.top_k = ctx_.decode_selection->top_k;
+        }
+        return result;
+    }
+
+    Mat* source = selectDecodeResultMat(mode);
+    M_Assert(source && "Decode source Mat can not be empty!");
+
+    if (mode == DecodeOutputMode::ArgMax)
+    {
+        const DecodeCandidate best = argmax_last_logits(*source);
+        result.token_id = best.token_id;
+        result.logit = best.logit;
+        return result;
+    }
+
+    result.top_k = topk_last_logits(*source, top_k);
+    M_Assert(!result.top_k.empty());
+    result.token_id = result.top_k.front().token_id;
+    result.logit = result.top_k.front().logit;
+    return result;
+}
+
 // ====== Chat 生成接口实现 ======
 
 Mat Net::NetImpl::prefill(const std::vector<int>& token_ids)
@@ -659,6 +802,9 @@ Mat Net::NetImpl::prefill(const std::vector<int>& token_ids)
     ctx_.phase = InferPhase::Prefill;
     ctx_.start_pos = 0;
     ctx_.seq_len = seq_len;
+    ctx_.decode_output_mode = DecodeOutputMode::FullLogits;
+    ctx_.top_k = 0;
+    decode_selection_.reset(DecodeOutputMode::FullLogits, 0);
 
     applyPhaseThreads(InferPhase::Prefill);
 
@@ -675,29 +821,12 @@ Mat Net::NetImpl::prefill(const std::vector<int>& token_ids)
         hasInit = true;
     }
 
-    // 遍历所有层，使用带 context 的 forward
-    for (auto it = lds.begin(); it != lds.end(); it++)
-    {
-        if (benchmarkEnabled_)
-        {
-            auto t0 = std::chrono::steady_clock::now();
-            it->layer->forward(it->inputs, it->outputs, ctx_);
-            auto t1 = std::chrono::steady_clock::now();
-            double us = std::chrono::duration<double, std::micro>(t1 - t0).count();
-            profiler_.record(it->layerId, InferPhase::Prefill, us);
-        }
-        else
-        {
-            it->layer->forward(it->inputs, it->outputs, ctx_);
-        }
-    }
+    runLayersForCurrentContext();
 
     // 更新 start_pos
     ctx_.start_pos += seq_len;
 
-    M_Assert(outputMatId.size() == 1);
-    Mat* m = this->getMat(outputMatId[0]);
-    M_Assert(m && "Output Mat can not be empty!");
+    Mat* m = selectDecodeResultMat(DecodeOutputMode::FullLogits);
     return *m;
 }
 
@@ -706,6 +835,9 @@ Mat Net::NetImpl::step(int token_id)
     // 设置推理上下文
     ctx_.phase = InferPhase::Decode;
     ctx_.seq_len = 1;
+    ctx_.decode_output_mode = DecodeOutputMode::FullLogits;
+    ctx_.top_k = 0;
+    decode_selection_.reset(DecodeOutputMode::FullLogits, 0);
 
     applyPhaseThreads(InferPhase::Decode);
 
@@ -739,30 +871,92 @@ Mat Net::NetImpl::step(int token_id)
         }
     }
 
-    // 遍历所有层，使用带 context 的 forward
-    for (auto it = lds.begin(); it != lds.end(); it++)
-    {
-        if (benchmarkEnabled_)
-        {
-            auto t0 = std::chrono::steady_clock::now();
-            it->layer->forward(it->inputs, it->outputs, ctx_);
-            auto t1 = std::chrono::steady_clock::now();
-            double us = std::chrono::duration<double, std::micro>(t1 - t0).count();
-            profiler_.record(it->layerId, InferPhase::Decode, us);
-        }
-        else
-        {
-            it->layer->forward(it->inputs, it->outputs, ctx_);
-        }
-    }
+    runLayersForCurrentContext();
 
     // 更新 start_pos
     ctx_.start_pos += 1;
 
-    M_Assert(outputMatId.size() == 1);
-    Mat* m = this->getMat(outputMatId[0]);
-    M_Assert(m && "Output Mat can not be empty!");
+    Mat* m = selectDecodeResultMat(DecodeOutputMode::FullLogits);
     return *m;
+}
+
+DecodeResult Net::NetImpl::prefillDecode(const std::vector<int>& token_ids,
+                                         DecodeOutputMode mode,
+                                         int top_k)
+{
+    int seq_len = token_ids.size();
+    M_Assert(seq_len > 0 && "Token ids must not be empty!");
+    M_Assert(mode != DecodeOutputMode::TopK || top_k > 0);
+
+    ctx_.phase = InferPhase::Prefill;
+    ctx_.start_pos = 0;
+    ctx_.seq_len = seq_len;
+    ctx_.decode_output_mode = mode;
+    ctx_.top_k = top_k;
+    decode_selection_.reset(mode, top_k);
+
+    applyPhaseThreads(InferPhase::Prefill);
+
+    std::vector<int> input_shape = {1, seq_len};
+    Mat input_mat(input_shape, DT_32S, (void*)token_ids.data());
+
+    this->setInput(input_mat, -1);
+
+    if (!hasInit)
+    {
+        this->init();
+        hasInit = true;
+    }
+
+    runLayersForCurrentContext();
+
+    ctx_.start_pos += seq_len;
+    return buildDecodeResult(mode, top_k);
+}
+
+DecodeResult Net::NetImpl::stepDecode(int token_id,
+                                      DecodeOutputMode mode,
+                                      int top_k)
+{
+    M_Assert(mode != DecodeOutputMode::TopK || top_k > 0);
+
+    ctx_.phase = InferPhase::Decode;
+    ctx_.seq_len = 1;
+    ctx_.decode_output_mode = mode;
+    ctx_.top_k = top_k;
+    decode_selection_.reset(mode, top_k);
+
+    applyPhaseThreads(InferPhase::Decode);
+
+    std::vector<int> input_shape = {1, 1};
+    Mat input_mat(input_shape, DT_32S, (void*)&token_id);
+
+    M_Assert(inputMatId.size() == 1);
+    inputMatClone[0] = input_mat.clone();
+
+    int mIndx = inputMatId[0];
+    auto itLayerId = matId2layer.find(mIndx);
+    M_Assert(itLayerId != matId2layer.end());
+    auto& ld_input = lds[itLayerId->second];
+    ld_input.inputs[0] = &inputMatClone[0];
+    mats[0] = &inputMatClone[0];
+
+    for (auto it = lds.begin(); it != lds.end(); it++)
+    {
+        it->layer->init(it->inputs, it->outputs);
+        for (int i = 0; i < (int)it->outputsIdx.size(); i++)
+        {
+            if (it->outputs[i]->empty())
+            {
+                Runtime::getRuntime()->allocMat(it->outputs[i]);
+            }
+        }
+    }
+
+    runLayersForCurrentContext();
+
+    ctx_.start_pos += 1;
+    return buildDecodeResult(mode, top_k);
 }
 
 void Net::NetImpl::resetKVCache()
@@ -770,6 +964,9 @@ void Net::NetImpl::resetKVCache()
     ctx_.start_pos = 0;
     ctx_.seq_len = 0;
     ctx_.phase = InferPhase::Prefill;
+    ctx_.decode_output_mode = DecodeOutputMode::FullLogits;
+    ctx_.top_k = 0;
+    decode_selection_.reset(DecodeOutputMode::FullLogits, 0);
 
     for (auto it = lds.begin(); it != lds.end(); it++)
     {

@@ -975,7 +975,7 @@ void readGGUF(const std::string path, std::vector<std::shared_ptr<LayerParams> >
 
             // create output out-embedding
             netParams.push_back(std::shared_ptr<LayerParams>(
-                    new LinearLayerParams({layer_id}, {layer_id + 1}, p.n_embd, p.n_vocab, outWeight)));
+                    new LmHeadLayerParams({layer_id}, {layer_id + 1}, p.n_embd, p.n_vocab, outWeight)));
             layer_id++;
         }
 

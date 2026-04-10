@@ -15,13 +15,8 @@ int main()
     net.encode(prompt, prompt_ids);
 
     // Prefill: 处理完整 prompt
-    Mat logits = net.prefill(prompt_ids);
-
-    // 取最后一个 token 的 argmax 作为生成的第一个 token
-    std::vector<int> next_ids = argmax_tokens(
-        reinterpret_cast<const float*>(logits.data),
-        logits.size[0], logits.size[1], logits.size[2]);
-    int next_token = next_ids.back();
+    DecodeResult prefill_result = net.prefillDecode(prompt_ids, DecodeOutputMode::ArgMax);
+    int next_token = prefill_result.token_id;
 
     std::cout << "Prompt: " << prompt << std::endl;
     std::cout << "Generated: ";
@@ -35,12 +30,8 @@ int main()
     int max_new_tokens = 50;
     for (int i = 1; i < max_new_tokens; i++)
     {
-        logits = net.step(next_token);
-
-        next_ids = argmax_tokens(
-            reinterpret_cast<const float*>(logits.data),
-            logits.size[0], logits.size[1], logits.size[2]);
-        next_token = next_ids[0];
+        DecodeResult step_result = net.stepDecode(next_token, DecodeOutputMode::ArgMax);
+        next_token = step_result.token_id;
 
         // Tokenizer 解码
         token_text.clear();

@@ -5,9 +5,19 @@
 #include "context.h"
 #include "mat.h"
 #include "map"
+#include <limits>
 
 namespace minfer
 {
+
+struct DecodeResult
+{
+    DecodeOutputMode mode = DecodeOutputMode::FullLogits;
+    Mat logits;
+    int token_id = -1;
+    float logit = -std::numeric_limits<float>::infinity();
+    std::vector<DecodeCandidate> top_k;
+};
 
 /// Net 类别
 /* 例子代码：
@@ -75,6 +85,16 @@ public:
 
     /// 自回归生成一步：输入上一步产出的 token，返回下一个 token 的 logits
     Mat step(int token_id);
+
+    /// Prefill 后返回 decode 专用结果，可选择 full_logits / argmax / top-k
+    DecodeResult prefillDecode(const std::vector<int>& token_ids,
+                               DecodeOutputMode mode = DecodeOutputMode::ArgMax,
+                               int top_k = 1);
+
+    /// Decode 单步返回 decode 专用结果，可选择 full_logits / argmax / top-k
+    DecodeResult stepDecode(int token_id,
+                            DecodeOutputMode mode = DecodeOutputMode::ArgMax,
+                            int top_k = 1);
 
     /// 重置所有 AttentionLayer 的 KV Cache，开始新一轮对话
     void resetKVCache();

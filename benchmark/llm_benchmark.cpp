@@ -212,15 +212,6 @@ std::vector<int> build_prompt_ids(const std::vector<int>& seed_ids, int prompt_l
     return out;
 }
 
-int sample_next_token(const Mat& logits) {
-    std::vector<int> ids = argmax_tokens(
-        reinterpret_cast<const float*>(logits.data),
-        logits.size[0], logits.size[1], logits.size[2]);
-
-    M_Assert(!ids.empty());
-    return ids.back();
-}
-
 double now_ms() {
     using namespace std::chrono;
     return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
@@ -243,20 +234,22 @@ CaseResult run_case(Net& net, const std::vector<int>& seed_ids, const BenchmarkO
         net.resetKVCache();
 
         const double t0 = now_ms();
-        Mat logits = net.prefill(prompt_ids);
+        DecodeResult prefill_result = net.prefillDecode(prompt_ids, DecodeOutputMode::ArgMax);
         const double t1 = now_ms();
         const double prefill_ms = t1 - t0;
         std::cout << "  [" << phase_name << " " << run_idx << "/" << run_total
                   << "] prefill done: " << std::fixed << std::setprecision(2)
                   << prefill_ms << " ms" << std::endl;
 
-        int next_token = sample_next_token(logits);
+        M_Assert(prefill_result.mode == DecodeOutputMode::ArgMax);
+        M_Assert(prefill_result.token_id >= 0);
+        int next_token = prefill_result.token_id;
         double decode_total_ms = 0.0;
         double first_decode_ms = 0.0;
 
         for (int i = 0; i < opts.decode_tokens; ++i) {
             const double d0 = now_ms();
-            logits = net.step(next_token);
+            DecodeResult step_result = net.stepDecode(next_token, DecodeOutputMode::ArgMax);
             const double d1 = now_ms();
 
             const double step_ms = d1 - d0;
@@ -264,7 +257,9 @@ CaseResult run_case(Net& net, const std::vector<int>& seed_ids, const BenchmarkO
             if (i == 0) first_decode_ms = step_ms;
             if (collect) decode_step_ms.push_back(step_ms);
 
-            next_token = sample_next_token(logits);
+            M_Assert(step_result.mode == DecodeOutputMode::ArgMax);
+            M_Assert(step_result.token_id >= 0);
+            next_token = step_result.token_id;
 
             const int decoded = i + 1;
             if (decoded % opts.progress_interval == 0 || decoded == opts.decode_tokens) {
@@ -380,7 +375,8 @@ int main(int argc, char** argv) {
             std::cout << opts.prompt_lens[i];
             if (i + 1 != opts.prompt_lens.size()) std::cout << ",";
         }
-        std::cout << "\nDecode tokens per run: " << opts.decode_tokens
+        std::cout << "\nDecode mode: argmax-shortlist"
+                  << "\nDecode tokens per run: " << opts.decode_tokens
                   << "\nWarmup: " << opts.warmup
                   << "\nRuns: " << opts.runs
                   << "\nThreads: " << active_threads << "\n";

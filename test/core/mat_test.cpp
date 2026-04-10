@@ -64,6 +64,44 @@ void expect_mat_close(const Mat& out, const Mat& ref, float abs_tol, float rel_t
         << ", rel_tol=" << rel_tol;
 }
 
+std::vector<DecodeCandidate> topk_from_last_logits_row(const Mat& logits, int k)
+{
+    M_Assert(k > 0);
+    M_Assert(logits.dims == 3);
+
+    const int seq_len = logits.size[1];
+    const int vocab_size = logits.size[2];
+    const float* row = reinterpret_cast<const float*>(logits.data) +
+                       static_cast<size_t>(seq_len - 1) * static_cast<size_t>(vocab_size);
+
+    std::vector<DecodeCandidate> topk;
+    topk.reserve(vocab_size);
+    for (int v = 0; v < vocab_size; ++v)
+    {
+        topk.push_back({v, row[v]});
+    }
+
+    auto cmp = [](const DecodeCandidate& a, const DecodeCandidate& b) {
+        if (a.logit != b.logit)
+        {
+            return a.logit > b.logit;
+        }
+        return a.token_id < b.token_id;
+    };
+
+    if (k < static_cast<int>(topk.size()))
+    {
+        std::partial_sort(topk.begin(), topk.begin() + k, topk.end(), cmp);
+        topk.resize(k);
+    }
+    else
+    {
+        std::sort(topk.begin(), topk.end(), cmp);
+    }
+
+    return topk;
+}
+
 }  // namespace
 
 // TODO add test element equal check. compare two mat, or compare mat and scalar.
@@ -503,6 +541,226 @@ TEST(Mat_TEST, runtime_weight_gemmNT_matches_reference_for_small_matrix_rows)
                      2.5e-1f,
                      8e-2f,
                      "runtime_weight_int8_small_m_decode_pack");
+}
+
+TEST(Mat_TEST, runtime_weight_selectNT_matches_reference_without_materializing_logits)
+{
+    constexpr int K = 13;
+    constexpr int N = 17;
+    constexpr int TopK = 4;
+
+    Mat input({1, 1, K}, DT_32F);
+    Mat weight({N, K}, DT_32F);
+    Mat bias({N}, DT_32F);
+
+    float* input_data = reinterpret_cast<float*>(input.data);
+    float* weight_data = reinterpret_cast<float*>(weight.data);
+    float* bias_data = reinterpret_cast<float*>(bias.data);
+
+    for (int idx = 0; idx < K; ++idx)
+    {
+        input_data[idx] = std::sin(static_cast<float>(idx) * 0.19f) * 0.8f +
+                          std::cos(static_cast<float>(idx) * 0.03f) * 0.6f;
+    }
+
+    for (int idx = 0; idx < N * K; ++idx)
+    {
+        weight_data[idx] = std::sin(static_cast<float>(idx) * 0.09f) * 0.9f -
+                           std::cos(static_cast<float>(idx) * 0.05f) * 0.35f;
+    }
+
+    for (int idx = 0; idx < N; ++idx)
+    {
+        bias_data[idx] = std::sin(static_cast<float>(idx) * 0.13f) * 0.2f -
+                         std::cos(static_cast<float>(idx) * 0.17f) * 0.1f;
+    }
+
+    auto run_case = [&](RuntimePrecision precision, float logit_tol) {
+        RuntimeWeight rw;
+        rw.init(weight, Int8QuantScheme::PerRow, true, precision);
+
+        Mat ref = precision == RuntimePrecision::INT8
+                      ? gemm(input, rw.active(), rw.int8Scales(), false, true)
+                      : gemm(input, rw.active(), false, true);
+        ref = ref + bias;
+        std::vector<DecodeCandidate> ref_topk = topk_from_last_logits_row(ref, TopK);
+
+        DecodeSelection selection;
+        const bool ok = rw.selectNT(input, DecodeOutputMode::TopK, TopK, &bias, selection);
+        ASSERT_TRUE(ok);
+        ASSERT_TRUE(selection.ready);
+        ASSERT_EQ(selection.top_k.size(), static_cast<size_t>(TopK));
+        EXPECT_EQ(selection.token_id, ref_topk.front().token_id);
+        EXPECT_NEAR(selection.logit, ref_topk.front().logit, logit_tol);
+
+        for (int i = 0; i < TopK; ++i)
+        {
+            EXPECT_EQ(selection.top_k[static_cast<size_t>(i)].token_id, ref_topk[static_cast<size_t>(i)].token_id);
+            EXPECT_NEAR(selection.top_k[static_cast<size_t>(i)].logit,
+                        ref_topk[static_cast<size_t>(i)].logit,
+                        logit_tol);
+        }
+    };
+
+    run_case(RuntimePrecision::FP32, 1e-4f);
+    run_case(RuntimePrecision::FP16, 8e-2f);
+    run_case(RuntimePrecision::INT8, 3e-1f);
+}
+
+TEST(Mat_TEST, runtime_weight_selectNT_argmax_matches_reference_across_precisions)
+{
+    constexpr int K = 13;
+    constexpr int N = 17;
+
+    Mat input({1, 1, K}, DT_32F);
+    Mat weight({N, K}, DT_32F);
+    Mat bias({N}, DT_32F);
+
+    float* input_data = reinterpret_cast<float*>(input.data);
+    float* weight_data = reinterpret_cast<float*>(weight.data);
+    float* bias_data = reinterpret_cast<float*>(bias.data);
+
+    for (int idx = 0; idx < K; ++idx)
+    {
+        input_data[idx] = std::sin(static_cast<float>(idx) * 0.31f) * 0.7f +
+                          std::cos(static_cast<float>(idx) * 0.11f) * 0.4f;
+    }
+
+    for (int idx = 0; idx < N * K; ++idx)
+    {
+        weight_data[idx] = std::sin(static_cast<float>(idx) * 0.07f) * 0.8f -
+                           std::cos(static_cast<float>(idx) * 0.09f) * 0.3f;
+    }
+
+    for (int idx = 0; idx < N; ++idx)
+    {
+        bias_data[idx] = std::sin(static_cast<float>(idx) * 0.23f) * 0.15f -
+                         std::cos(static_cast<float>(idx) * 0.05f) * 0.08f;
+    }
+
+    auto run_case = [&](RuntimePrecision precision, float logit_tol) {
+        RuntimeWeight rw;
+        rw.init(weight, Int8QuantScheme::PerRow, true, precision);
+
+        Mat ref = precision == RuntimePrecision::INT8
+                      ? gemm(input, rw.active(), rw.int8Scales(), false, true)
+                      : gemm(input, rw.active(), false, true);
+        ref = ref + bias;
+        std::vector<DecodeCandidate> ref_top1 = topk_from_last_logits_row(ref, 1);
+
+        DecodeSelection selection;
+        const bool ok = rw.selectNT(input, DecodeOutputMode::ArgMax, 1, &bias, selection);
+        ASSERT_TRUE(ok);
+        ASSERT_TRUE(selection.ready);
+        EXPECT_TRUE(selection.top_k.empty());
+        EXPECT_EQ(selection.token_id, ref_top1.front().token_id);
+        EXPECT_NEAR(selection.logit, ref_top1.front().logit, logit_tol);
+    };
+
+    run_case(RuntimePrecision::FP32, 1e-4f);
+    run_case(RuntimePrecision::FP16, 8e-2f);
+    run_case(RuntimePrecision::INT8, 3e-1f);
+}
+
+TEST(Mat_TEST, runtime_weight_selectNT_topk_large_k_matches_reference)
+{
+    constexpr int K = 13;
+    constexpr int N = 17;
+    constexpr int TopK = 9;
+
+    Mat input({1, 1, K}, DT_32F);
+    Mat weight({N, K}, DT_32F);
+    Mat bias({N}, DT_32F);
+
+    float* input_data = reinterpret_cast<float*>(input.data);
+    float* weight_data = reinterpret_cast<float*>(weight.data);
+    float* bias_data = reinterpret_cast<float*>(bias.data);
+
+    for (int idx = 0; idx < K; ++idx)
+    {
+        input_data[idx] = std::sin(static_cast<float>(idx) * 0.29f) * 0.65f +
+                          std::cos(static_cast<float>(idx) * 0.07f) * 0.45f;
+    }
+
+    for (int idx = 0; idx < N * K; ++idx)
+    {
+        weight_data[idx] = std::sin(static_cast<float>(idx) * 0.05f) * 0.75f -
+                           std::cos(static_cast<float>(idx) * 0.12f) * 0.28f;
+    }
+
+    for (int idx = 0; idx < N; ++idx)
+    {
+        bias_data[idx] = std::sin(static_cast<float>(idx) * 0.17f) * 0.11f -
+                         std::cos(static_cast<float>(idx) * 0.19f) * 0.06f;
+    }
+
+    RuntimeWeight rw;
+    rw.init(weight, Int8QuantScheme::PerRow, true, RuntimePrecision::FP32);
+
+    Mat ref = gemm(input, rw.active(), false, true);
+    ref = ref + bias;
+    std::vector<DecodeCandidate> ref_topk = topk_from_last_logits_row(ref, TopK);
+
+    DecodeSelection selection;
+    const bool ok = rw.selectNT(input, DecodeOutputMode::TopK, TopK, &bias, selection);
+    ASSERT_TRUE(ok);
+    ASSERT_TRUE(selection.ready);
+    ASSERT_EQ(selection.top_k.size(), static_cast<size_t>(TopK));
+
+    for (int i = 0; i < TopK; ++i)
+    {
+        EXPECT_EQ(selection.top_k[static_cast<size_t>(i)].token_id, ref_topk[static_cast<size_t>(i)].token_id);
+        EXPECT_NEAR(selection.top_k[static_cast<size_t>(i)].logit,
+                    ref_topk[static_cast<size_t>(i)].logit,
+                    1e-4f);
+    }
+}
+
+TEST(Mat_TEST, runtime_weight_gemmNTPair_matches_two_separate_projections)
+{
+    constexpr int K = 13;
+    constexpr int N = 17;
+
+    Mat input({1, 1, K}, DT_32F);
+    Mat weight0({N, K}, DT_32F);
+    Mat weight1({N, K}, DT_32F);
+
+    float* input_data = reinterpret_cast<float*>(input.data);
+    float* weight0_data = reinterpret_cast<float*>(weight0.data);
+    float* weight1_data = reinterpret_cast<float*>(weight1.data);
+
+    for (int idx = 0; idx < K; ++idx)
+    {
+        input_data[idx] = std::sin(static_cast<float>(idx) * 0.21f) * 0.68f +
+                          std::cos(static_cast<float>(idx) * 0.09f) * 0.41f;
+    }
+
+    for (int idx = 0; idx < N * K; ++idx)
+    {
+        weight0_data[idx] = std::sin(static_cast<float>(idx) * 0.06f) * 0.73f -
+                            std::cos(static_cast<float>(idx) * 0.10f) * 0.33f;
+        weight1_data[idx] = std::sin(static_cast<float>(idx) * 0.14f) * 0.57f +
+                            std::cos(static_cast<float>(idx) * 0.08f) * 0.29f;
+    }
+
+    auto run_case = [&](RuntimePrecision precision, float abs_tol, float rel_tol) {
+        RuntimeWeight lhs;
+        RuntimeWeight rhs;
+        lhs.init(weight0, Int8QuantScheme::PerRow, true, precision);
+        rhs.init(weight1, Int8QuantScheme::PerRow, true, precision);
+
+        Mat fused0;
+        Mat fused1;
+        const bool ok = lhs.gemmNTPair(input, rhs, fused0, fused1);
+        ASSERT_TRUE(ok);
+
+        expect_mat_close(fused0, lhs.gemmNT(input), abs_tol, rel_tol, "runtime_weight_pair_lhs");
+        expect_mat_close(fused1, rhs.gemmNT(input), abs_tol, rel_tol, "runtime_weight_pair_rhs");
+    };
+
+    run_case(RuntimePrecision::FP32, 1e-4f, 1e-5f);
+    run_case(RuntimePrecision::FP16, 5e-2f, 1e-2f);
+    run_case(RuntimePrecision::INT8, 2.5e-1f, 8e-2f);
 }
 
 TEST(Mat_TEST, test_mat_brodcast)

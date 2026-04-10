@@ -1,6 +1,7 @@
 #ifndef MINFER_GEMM_KERNEL_XSIMD_H
 #define MINFER_GEMM_KERNEL_XSIMD_H
 
+#include "minfer/context.h"
 #include "minfer/define.h"
 
 #include <cstddef>
@@ -50,6 +51,55 @@ void gemv_parallel_packed_fp32(const float* a, const float* packed_b, float* c, 
 void gemv_parallel_packed_fp16(const float* a, const hfloat* packed_b, float* c, int n, int k);
 void gemv_parallel_packed_i8_rowwise(const float* a, const int8_t* packed_b, const float* packed_scales,
                                     float* c, int n, int k);
+void gemv_parallel_packed_pair_fp32(const float* a,
+                                    const float* packed_b0,
+                                    const float* packed_b1,
+                                    float* c0,
+                                    float* c1,
+                                    int n,
+                                    int k);
+void gemv_parallel_packed_pair_fp16(const float* a,
+                                    const hfloat* packed_b0,
+                                    const hfloat* packed_b1,
+                                    float* c0,
+                                    float* c1,
+                                    int n,
+                                    int k);
+void gemv_parallel_packed_pair_i8_rowwise(const float* a,
+                                          const int8_t* packed_b0,
+                                          const float* packed_scales0,
+                                          const int8_t* packed_b1,
+                                          const float* packed_scales1,
+                                          float* c0,
+                                          float* c1,
+                                          int n,
+                                          int k);
+
+void gemv_select_packed_fp32(const float* a,
+                             const float* packed_b,
+                             const float* bias,
+                             int n,
+                             int k,
+                             DecodeOutputMode mode,
+                             int top_k,
+                             DecodeSelection& selection);
+void gemv_select_packed_fp16(const float* a,
+                             const hfloat* packed_b,
+                             const float* bias,
+                             int n,
+                             int k,
+                             DecodeOutputMode mode,
+                             int top_k,
+                             DecodeSelection& selection);
+void gemv_select_packed_i8_rowwise(const float* a,
+                                   const int8_t* packed_b,
+                                   const float* packed_scales,
+                                   const float* bias,
+                                   int n,
+                                   int k,
+                                   DecodeOutputMode mode,
+                                   int top_k,
+                                   DecodeSelection& selection);
 
 }  // namespace cpu
 }  // namespace minfer
