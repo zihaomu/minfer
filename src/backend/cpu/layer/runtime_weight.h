@@ -34,6 +34,7 @@ public:
     const Mat& fp32() const;
     const Mat& decodePacked() const;
     Mat materializeFp32() const;
+    void gemmNT(const Mat& input, Mat& output) const;
     Mat gemmNT(const Mat& input) const;
     bool gemmNTPair(const Mat& input, const RuntimeWeight& other, Mat& out0, Mat& out1) const;
     bool selectNT(const Mat& input,

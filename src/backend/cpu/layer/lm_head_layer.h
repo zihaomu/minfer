@@ -25,6 +25,8 @@ public:
     void setRuntimePrecision(RuntimePrecision precision) override;
 
 private:
+    void computeLogits(const Mat& x, Mat& out, const InferenceContext* ctx) const;
+    void recordSubStage(const InferenceContext* ctx, const char* stage_name, double elapsed_us) const;
     void updateDecodeSelection(const Mat& logits, const InferenceContext& ctx) const;
 
     int in_features;

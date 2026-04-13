@@ -63,12 +63,28 @@ Mat project_with_runtime_weight(const Mat& input, const RuntimeWeight& weight)
     return weight.gemmNT(input);
 }
 
-Mat rmsnorm_with_runtime_weight(const Mat& input, const RuntimeWeight& weight, float eps)
+void project_with_runtime_weight(const Mat& input, const RuntimeWeight& weight, Mat& output)
+{
+    weight.gemmNT(input, output);
+}
+
+Mat rmsnorm_with_runtime_weight(const Mat& input,
+                                const RuntimeWeight& weight,
+                                float eps,
+                                Mat* aligned_input_scratch = nullptr)
 {
     Mat aligned_input = input;
     if (weight.precision() != RuntimePrecision::FP32)
     {
-        aligned_input = align_precision_sensitive_input(input, weight.precision());
+        if (aligned_input_scratch)
+        {
+            align_precision_sensitive_input(input, weight.precision(), *aligned_input_scratch);
+            aligned_input = *aligned_input_scratch;
+        }
+        else
+        {
+            aligned_input = align_precision_sensitive_input(input, weight.precision());
+        }
     }
 
     if (weight.usesInt8())
@@ -350,10 +366,11 @@ static QKVHeads compute_qkv_heads(const Mat& x,
                                   float rms_eps,
                                   int head_count,
                                   int head_count_kv,
-                                  int embd_dim_head)
+                                  int embd_dim_head,
+                                  Mat* norm_align_scratch = nullptr)
 {
     Mat x_rows = Mat(x.dims - 1, x.size.p + 1, DT_32F, x.data);
-    Mat x_norm = rmsnorm_with_runtime_weight(x_rows, norm, rms_eps);
+    Mat x_norm = rmsnorm_with_runtime_weight(x_rows, norm, rms_eps, norm_align_scratch);
 
     Mat x_q = project_with_runtime_weight(x_norm, wq);
     Mat x_k = project_with_runtime_weight(x_norm, wk);
@@ -480,7 +497,7 @@ static void project_output_and_add_residual(const Mat& qkv,
         Mat qkv_t = transposeND(qkv, {1, 0, 2});
         qkv_for_proj = qkv_t.reshape({seq_len, head_count * embd_dim_head});
     }
-    project_with_runtime_weight(qkv_for_proj, wout).copyTo(x_out);
+    project_with_runtime_weight(qkv_for_proj, wout, x_out);
     out += residual;
 }
 
@@ -637,7 +654,7 @@ void AttentionLayer::forwardDecode(const std::vector<Mat *> &input, std::vector<
     Mat x = *input[0];
     QKVHeads qkv_heads = compute_qkv_heads(
         x, norm, wq, wk, wv, 1, cur_pos,
-        embd_dim, rms_eps, head_count, head_count_kv, embd_dim_head);
+        embd_dim, rms_eps, head_count, head_count_kv, embd_dim_head, &norm_align_scratch_);
     Mat x_q = qkv_heads.q;
     Mat x_k = qkv_heads.k;
     Mat x_v = qkv_heads.v;

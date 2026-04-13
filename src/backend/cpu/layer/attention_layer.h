@@ -90,6 +90,7 @@ private:
     std::shared_ptr<mobilekv::KVCacheStorage> kv_storage = nullptr;
     int kv_cache_layer_id = -1;
     bool use_mobilekv = false;
+    Mat norm_align_scratch_;
 
     // 内部辅助方法
     void forwardPrefill(const std::vector<Mat*>& input, std::vector<Mat*>& output, const InferenceContext& ctx);

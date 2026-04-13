@@ -51,9 +51,12 @@ void RMSNormLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &ou
     M_Assert(in_shape[2] == embd_dim);
     M_Assert(in_shape[0] == 1 && "Currently, only support single batch!");
 
-    Mat aligned_input = runtimePrecision == RuntimePrecision::FP32
-        ? *input[0]
-        : align_precision_sensitive_input(*input[0], runtimePrecision);
+    Mat aligned_input = *input[0];
+    if (runtimePrecision != RuntimePrecision::FP32)
+    {
+        align_precision_sensitive_input(*input[0], runtimePrecision, align_input_scratch_);
+        aligned_input = align_input_scratch_;
+    }
 
     if (w.usesInt8())
     {

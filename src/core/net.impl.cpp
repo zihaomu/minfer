@@ -715,6 +715,9 @@ void Net::NetImpl::runLayersForCurrentContext()
 {
     for (auto it = lds.begin(); it != lds.end(); it++)
     {
+        ctx_.benchmark_profiler = benchmarkEnabled_ ? &profiler_ : nullptr;
+        ctx_.benchmark_layer_id = benchmarkEnabled_ ? it->layerId : -1;
+
         if (benchmarkEnabled_)
         {
             auto t0 = std::chrono::steady_clock::now();
@@ -728,6 +731,9 @@ void Net::NetImpl::runLayersForCurrentContext()
             it->layer->forward(it->inputs, it->outputs, ctx_);
         }
     }
+
+    ctx_.benchmark_profiler = nullptr;
+    ctx_.benchmark_layer_id = -1;
 }
 
 Mat* Net::NetImpl::selectDecodeResultMat(DecodeOutputMode mode)

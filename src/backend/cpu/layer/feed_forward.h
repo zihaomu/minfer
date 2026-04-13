@@ -40,8 +40,9 @@ private:
     RuntimeWeight up;
     RuntimeWeight down;
     ActivateType activateType;
+    Mat gate_align_scratch_;
 
-    bool tryDecodeFusedForward(const Mat& x, Mat& out, const InferenceContext& ctx) const;
+    bool tryDecodeFusedForward(const Mat& x, Mat& out, const InferenceContext& ctx);
 };
 
 }

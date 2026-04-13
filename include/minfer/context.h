@@ -11,6 +11,8 @@
 namespace minfer
 {
 
+class BenchmarkProfiler;
+
 enum class RuntimePrecision {
     FP32,
     FP16,
@@ -61,6 +63,8 @@ struct InferenceContext {
     DecodeOutputMode decode_output_mode = DecodeOutputMode::FullLogits;
     int top_k = 0;
     DecodeSelection* decode_selection = nullptr;
+    BenchmarkProfiler* benchmark_profiler = nullptr;
+    int benchmark_layer_id = -1;
 };
 
 }

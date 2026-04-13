@@ -29,6 +29,7 @@ private:
     int embd_dim;
     float rms_eps;
     RuntimeWeight w;
+    Mat align_input_scratch_;
     RMSNormLayer(const std::shared_ptr<RMSNormLayerParams> param);
 };
 

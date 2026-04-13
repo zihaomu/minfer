@@ -231,15 +231,21 @@ void RuntimeWeight::rebuildDecodePacked()
     }
 }
 
-Mat RuntimeWeight::gemmNT(const Mat& input) const
+void RuntimeWeight::gemmNT(const Mat& input, Mat& output) const
 {
     if (!shouldUseDecodePacked(input))
     {
+        Mat out;
         if (usesInt8())
         {
-            return gemm(input, active(), int8Scales(), false, true);
+            out = gemm(input, active(), int8Scales(), false, true);
         }
-        return gemm(input, active(), false, true);
+        else
+        {
+            out = gemm(input, active(), false, true);
+        }
+        out.copyTo(output);
+        return;
     }
 
     const MatShape in_shape = input.shape();
@@ -250,11 +256,11 @@ Mat RuntimeWeight::gemmNT(const Mat& input) const
 
     MatShape out_shape = in_shape;
     out_shape.back() = N;
-    Mat out(out_shape, DT_32F);
+    output.create(out_shape, DT_32F);
 
     const size_t outer = input.total() / static_cast<size_t>(K);
     const float* input_ptr = reinterpret_cast<const float*>(input.data);
-    float* output_ptr = reinterpret_cast<float*>(out.data);
+    float* output_ptr = reinterpret_cast<float*>(output.data);
 
     // ── M=1 fast path: parallel GEMV across N dimension ──
     // When outer==1 (decode step), the old per-row OMP loop had only 1 iteration
@@ -289,7 +295,7 @@ Mat RuntimeWeight::gemmNT(const Mat& input) const
             default:
                 break;
         }
-        return out;
+        return;
     }
 
     // ── M>1 path: existing per-row OMP loop ──
@@ -329,8 +335,13 @@ Mat RuntimeWeight::gemmNT(const Mat& input) const
                 break;
         }
     }
+}
 
-    return out;
+Mat RuntimeWeight::gemmNT(const Mat& input) const
+{
+    Mat output;
+    gemmNT(input, output);
+    return output;
 }
 
 bool RuntimeWeight::gemmNTPair(const Mat& input, const RuntimeWeight& other, Mat& out0, Mat& out1) const
@@ -359,8 +370,8 @@ bool RuntimeWeight::gemmNTPair(const Mat& input, const RuntimeWeight& other, Mat
 
     MatShape out_shape = input.shape();
     out_shape.back() = N;
-    out0 = Mat(out_shape, DT_32F);
-    out1 = Mat(out_shape, DT_32F);
+    out0.create(out_shape, DT_32F);
+    out1.create(out_shape, DT_32F);
 
     const float* input_ptr = reinterpret_cast<const float*>(input.data);
     float* out0_ptr = reinterpret_cast<float*>(out0.data);

@@ -62,12 +62,12 @@ void LinearLayer::forward(const std::vector<Mat*> &input, std::vector<Mat*> &out
     M_Assert(in_shape[2] == in_features);
 
     // gemm: y = alpha * A * B + beta * C
-    w.gemmNT(x).copyTo(out);
+    w.gemmNT(x, out);
 
     // std::cout<<"out"<<std::endl;
     // out.print(10);
     if (!b.empty())
-        out = out + b;
+        out += b;
     // out.print(10);
     // out_tmp.copyTo(out);
 }

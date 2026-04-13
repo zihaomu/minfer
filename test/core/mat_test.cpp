@@ -662,6 +662,52 @@ TEST(Mat_TEST, runtime_weight_selectNT_argmax_matches_reference_across_precision
     run_case(RuntimePrecision::INT8, 3e-1f);
 }
 
+TEST(Mat_TEST, runtime_weight_selectNT_argmax_without_bias_matches_reference_across_precisions)
+{
+    constexpr int K = 13;
+    constexpr int N = 17;
+
+    Mat input({1, 1, K}, DT_32F);
+    Mat weight({N, K}, DT_32F);
+
+    float* input_data = reinterpret_cast<float*>(input.data);
+    float* weight_data = reinterpret_cast<float*>(weight.data);
+
+    for (int idx = 0; idx < K; ++idx)
+    {
+        input_data[idx] = std::sin(static_cast<float>(idx) * 0.27f) * 0.73f +
+                          std::cos(static_cast<float>(idx) * 0.13f) * 0.38f;
+    }
+
+    for (int idx = 0; idx < N * K; ++idx)
+    {
+        weight_data[idx] = std::sin(static_cast<float>(idx) * 0.06f) * 0.77f -
+                           std::cos(static_cast<float>(idx) * 0.08f) * 0.29f;
+    }
+
+    auto run_case = [&](RuntimePrecision precision, float logit_tol) {
+        RuntimeWeight rw;
+        rw.init(weight, Int8QuantScheme::PerRow, true, precision);
+
+        Mat ref = precision == RuntimePrecision::INT8
+                      ? gemm(input, rw.active(), rw.int8Scales(), false, true)
+                      : gemm(input, rw.active(), false, true);
+        std::vector<DecodeCandidate> ref_top1 = topk_from_last_logits_row(ref, 1);
+
+        DecodeSelection selection;
+        const bool ok = rw.selectNT(input, DecodeOutputMode::ArgMax, 1, nullptr, selection);
+        ASSERT_TRUE(ok);
+        ASSERT_TRUE(selection.ready);
+        EXPECT_TRUE(selection.top_k.empty());
+        EXPECT_EQ(selection.token_id, ref_top1.front().token_id);
+        EXPECT_NEAR(selection.logit, ref_top1.front().logit, logit_tol);
+    };
+
+    run_case(RuntimePrecision::FP32, 1e-4f);
+    run_case(RuntimePrecision::FP16, 8e-2f);
+    run_case(RuntimePrecision::INT8, 3e-1f);
+}
+
 TEST(Mat_TEST, runtime_weight_selectNT_topk_large_k_matches_reference)
 {
     constexpr int K = 13;
@@ -756,6 +802,45 @@ TEST(Mat_TEST, runtime_weight_gemmNTPair_matches_two_separate_projections)
 
         expect_mat_close(fused0, lhs.gemmNT(input), abs_tol, rel_tol, "runtime_weight_pair_lhs");
         expect_mat_close(fused1, rhs.gemmNT(input), abs_tol, rel_tol, "runtime_weight_pair_rhs");
+    };
+
+    run_case(RuntimePrecision::FP32, 1e-4f, 1e-5f);
+    run_case(RuntimePrecision::FP16, 5e-2f, 1e-2f);
+    run_case(RuntimePrecision::INT8, 2.5e-1f, 8e-2f);
+}
+
+TEST(Mat_TEST, runtime_weight_gemmNT_into_matches_returning_variant)
+{
+    constexpr int K = 13;
+    constexpr int N = 17;
+
+    Mat input({1, 1, K}, DT_32F);
+    Mat weight({N, K}, DT_32F);
+
+    float* input_data = reinterpret_cast<float*>(input.data);
+    float* weight_data = reinterpret_cast<float*>(weight.data);
+
+    for (int idx = 0; idx < K; ++idx)
+    {
+        input_data[idx] = std::sin(static_cast<float>(idx) * 0.17f) * 0.72f +
+                          std::cos(static_cast<float>(idx) * 0.04f) * 0.38f;
+    }
+
+    for (int idx = 0; idx < N * K; ++idx)
+    {
+        weight_data[idx] = std::sin(static_cast<float>(idx) * 0.08f) * 0.69f -
+                           std::cos(static_cast<float>(idx) * 0.12f) * 0.31f;
+    }
+
+    auto run_case = [&](RuntimePrecision precision, float abs_tol, float rel_tol) {
+        RuntimeWeight rw;
+        rw.init(weight, Int8QuantScheme::PerRow, true, precision);
+
+        Mat out_into;
+        rw.gemmNT(input, out_into);
+        Mat out_return = rw.gemmNT(input);
+
+        expect_mat_close(out_into, out_return, abs_tol, rel_tol, "runtime_weight_into_vs_return");
     };
 
     run_case(RuntimePrecision::FP32, 1e-4f, 1e-5f);

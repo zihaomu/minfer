@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 #ifdef _OPENMP
@@ -517,6 +518,15 @@ inline bool decode_candidate_better(const DecodeCandidate& lhs, const DecodeCand
     return lhs.token_id < rhs.token_id;
 }
 
+inline bool decode_candidate_better(int token_id, float logit, const DecodeCandidate& rhs)
+{
+    if (logit != rhs.logit)
+    {
+        return logit > rhs.logit;
+    }
+    return token_id < rhs.token_id;
+}
+
 inline void update_decode_argmax_candidate(DecodeCandidate& best, int token_id, float logit)
 {
     if (logit > best.logit || (logit == best.logit && (best.token_id < 0 || token_id < best.token_id)))
@@ -594,6 +604,20 @@ inline void finalize_decode_argmax_selection(DecodeSelection& selection, const D
     selection.ready = best.token_id >= 0;
 }
 
+inline std::vector<DecodeCandidate>& decode_candidate_scratch(int count)
+{
+    static thread_local std::vector<DecodeCandidate> scratch;
+    scratch.assign(static_cast<size_t>(count), DecodeCandidate());
+    return scratch;
+}
+
+inline std::vector<DecodeSelection>& decode_selection_scratch(int count)
+{
+    static thread_local std::vector<DecodeSelection> scratch;
+    scratch.resize(static_cast<size_t>(count));
+    return scratch;
+}
+
 constexpr int kFastDecodeTopKMax = 8;
 
 template <int MaxTopK>
@@ -609,29 +633,48 @@ struct FixedDecodeTopKBuffer
         count = 0;
     }
 
+    bool full() const
+    {
+        return count == limit;
+    }
+
+    const DecodeCandidate& worst() const
+    {
+        M_Assert(count > 0);
+        return items[static_cast<size_t>(count - 1)];
+    }
+
     void tryInsert(int token_id, float logit)
     {
-        DecodeCandidate candidate = {token_id, logit};
-
-        if (count == limit && !decode_candidate_better(candidate, items[static_cast<size_t>(count - 1)]))
+        if (count == limit && !decode_candidate_better(token_id, logit, items[static_cast<size_t>(count - 1)]))
         {
             return;
         }
 
         int insert_pos = (count < limit) ? count : (limit - 1);
-        while (insert_pos > 0 && decode_candidate_better(candidate, items[static_cast<size_t>(insert_pos - 1)]))
+        while (insert_pos > 0 &&
+               decode_candidate_better(token_id, logit, items[static_cast<size_t>(insert_pos - 1)]))
         {
             items[static_cast<size_t>(insert_pos)] = items[static_cast<size_t>(insert_pos - 1)];
             --insert_pos;
         }
 
-        items[static_cast<size_t>(insert_pos)] = candidate;
+        items[static_cast<size_t>(insert_pos)].token_id = token_id;
+        items[static_cast<size_t>(insert_pos)].logit = logit;
         if (count < limit)
         {
             ++count;
         }
     }
 };
+
+template <int MaxTopK>
+inline std::vector<FixedDecodeTopKBuffer<MaxTopK>>& decode_topk_buffer_scratch(int count)
+{
+    static thread_local std::vector<FixedDecodeTopKBuffer<MaxTopK>> scratch;
+    scratch.resize(static_cast<size_t>(count));
+    return scratch;
+}
 
 template <int MaxTopK>
 inline void merge_fixed_decode_topk_buffer(FixedDecodeTopKBuffer<MaxTopK>& dst,
@@ -658,7 +701,7 @@ inline void finalize_decode_topk_selection(DecodeSelection& selection,
     }
 }
 
-template <class PackedT, class LoadPackedBatch, class ApplyBlockPostprocess>
+template <bool HasBias, class PackedT, class LoadPackedBatch, class ApplyBlockPostprocess>
 void gemv_argmax_packed_impl(const float* a,
                              const PackedT* packed_b,
                              const float* bias,
@@ -673,6 +716,7 @@ void gemv_argmax_packed_impl(const float* a,
     M_Assert(packed_b != nullptr);
     M_Assert(n > 0);
     M_Assert(k > 0);
+    M_Assert(!HasBias || bias != nullptr);
 
     const int col_blocks = ceil_div(n, kKernelNR);
     const bool parallel_blocks = should_parallelize_1d_loop(
@@ -689,7 +733,7 @@ void gemv_argmax_packed_impl(const float* a,
     }
 #endif
 
-    std::vector<DecodeCandidate> locals(static_cast<size_t>(thread_count));
+    std::vector<DecodeCandidate>& locals = decode_candidate_scratch(thread_count);
 
 #ifdef _OPENMP
 #pragma omp parallel if(parallel_blocks)
@@ -722,7 +766,7 @@ void gemv_argmax_packed_impl(const float* a,
             {
                 const int token_id = token_base + lane;
                 float logit = tmp[lane];
-                if (bias != nullptr)
+                if constexpr (HasBias)
                 {
                     logit += bias[token_id];
                 }
@@ -757,7 +801,7 @@ void gemv_argmax_packed_impl(const float* a,
         {
             const int token_id = token_base + lane;
             float logit = tmp[lane];
-            if (bias != nullptr)
+            if constexpr (HasBias)
             {
                 logit += bias[token_id];
             }
@@ -811,7 +855,7 @@ void gemv_topk_packed_impl(const float* a,
     }
 #endif
 
-    std::vector<FixedDecodeTopKBuffer<MaxTopK>> locals(static_cast<size_t>(thread_count));
+    std::vector<FixedDecodeTopKBuffer<MaxTopK>>& locals = decode_topk_buffer_scratch<MaxTopK>(thread_count);
 
 #ifdef _OPENMP
 #pragma omp parallel if(parallel_blocks)
@@ -836,16 +880,41 @@ void gemv_topk_packed_impl(const float* a,
 
             apply_block_postprocess(block, sum0, sum1);
 
-            alignas(64) float tmp[kKernelNR];
             const int nr = std::min(kKernelNR, n - block * kKernelNR);
-            store_row_block(tmp, nr, sum0, sum1);
-
             const int token_base = block * kKernelNR;
+            const bool full_block = nr == kKernelNR;
+
+            XSimdBatch logits0 = sum0;
+            XSimdBatch logits1 = sum1;
+            bool logits_include_bias = false;
+
+            if (full_block && bias != nullptr)
+            {
+                const float* bias_block = bias + token_base;
+                logits0 += XSimdBatch::load_unaligned(bias_block);
+                logits1 += XSimdBatch::load_unaligned(bias_block + kXSimdBatchSize);
+                logits_include_bias = true;
+            }
+
+            if (full_block && local.full())
+            {
+                const DecodeCandidate& worst = local.worst();
+                const float block_max = std::max(xsimd::reduce_max(logits0), xsimd::reduce_max(logits1));
+                if (block_max < worst.logit ||
+                    (block_max == worst.logit && token_base >= worst.token_id))
+                {
+                    continue;
+                }
+            }
+
+            alignas(64) float tmp[kKernelNR];
+            store_row_block(tmp, nr, logits0, logits1);
+
             for (int lane = 0; lane < nr; ++lane)
             {
                 const int token_id = token_base + lane;
                 float logit = tmp[lane];
-                if (bias != nullptr)
+                if (!logits_include_bias && bias != nullptr)
                 {
                     logit += bias[token_id];
                 }
@@ -872,16 +941,41 @@ void gemv_topk_packed_impl(const float* a,
 
         apply_block_postprocess(block, sum0, sum1);
 
-        alignas(64) float tmp[kKernelNR];
         const int nr = std::min(kKernelNR, n - block * kKernelNR);
-        store_row_block(tmp, nr, sum0, sum1);
-
         const int token_base = block * kKernelNR;
+        const bool full_block = nr == kKernelNR;
+
+        XSimdBatch logits0 = sum0;
+        XSimdBatch logits1 = sum1;
+        bool logits_include_bias = false;
+
+        if (full_block && bias != nullptr)
+        {
+            const float* bias_block = bias + token_base;
+            logits0 += XSimdBatch::load_unaligned(bias_block);
+            logits1 += XSimdBatch::load_unaligned(bias_block + kXSimdBatchSize);
+            logits_include_bias = true;
+        }
+
+        if (full_block && local.full())
+        {
+            const DecodeCandidate& worst = local.worst();
+            const float block_max = std::max(xsimd::reduce_max(logits0), xsimd::reduce_max(logits1));
+            if (block_max < worst.logit ||
+                (block_max == worst.logit && token_base >= worst.token_id))
+            {
+                continue;
+            }
+        }
+
+        alignas(64) float tmp[kKernelNR];
+        store_row_block(tmp, nr, logits0, logits1);
+
         for (int lane = 0; lane < nr; ++lane)
         {
             const int token_id = token_base + lane;
             float logit = tmp[lane];
-            if (bias != nullptr)
+            if (!logits_include_bias && bias != nullptr)
             {
                 logit += bias[token_id];
             }
@@ -935,7 +1029,7 @@ void gemv_select_packed_impl(const float* a,
     }
 #endif
 
-    std::vector<DecodeSelection> locals(static_cast<size_t>(thread_count));
+    std::vector<DecodeSelection>& locals = decode_selection_scratch(thread_count);
 
 #ifdef _OPENMP
 #pragma omp parallel if(parallel_blocks)
@@ -1628,6 +1722,7 @@ inline void gemv_parallel_packed_i8_rowwise_avx2_impl(const float* a,
     }
 }
 
+template <bool HasBias>
 __attribute__((target("avx2,fma")))
 inline void update_argmax_from_avx8(DecodeCandidate& best,
                                     int token_base,
@@ -1641,7 +1736,7 @@ inline void update_argmax_from_avx8(DecodeCandidate& best,
     {
         const int token_id = token_base + lane;
         float logit = tmp[lane];
-        if (bias != nullptr)
+        if constexpr (HasBias)
         {
             logit += bias[token_id];
         }
@@ -1649,6 +1744,54 @@ inline void update_argmax_from_avx8(DecodeCandidate& best,
     }
 }
 
+template <bool HasBias>
+__attribute__((target("avx2,fma")))
+inline void update_argmax_state_from_avx8(__m256& best_vals,
+                                          __m256i& best_ids,
+                                          int token_base,
+                                          const __m256& sum,
+                                          const float* bias)
+{
+    __m256 values = sum;
+    if constexpr (HasBias)
+    {
+        values = _mm256_add_ps(values, _mm256_loadu_ps(bias + token_base));
+    }
+
+    const __m256i lane_ids = _mm256_setr_epi32(0, 1, 2, 3, 4, 5, 6, 7);
+    const __m256i candidate_ids = _mm256_add_epi32(_mm256_set1_epi32(token_base), lane_ids);
+    const __m256 greater_mask = _mm256_cmp_ps(values, best_vals, _CMP_GT_OQ);
+    const __m256 equal_mask = _mm256_cmp_ps(values, best_vals, _CMP_EQ_OQ);
+    const __m256i lower_id_mask = _mm256_cmpgt_epi32(best_ids, candidate_ids);
+    const __m256 better_mask = _mm256_or_ps(greater_mask,
+                                            _mm256_and_ps(equal_mask, _mm256_castsi256_ps(lower_id_mask)));
+
+    best_vals = _mm256_blendv_ps(best_vals, values, better_mask);
+    best_ids = _mm256_castps_si256(_mm256_blendv_ps(_mm256_castsi256_ps(best_ids),
+                                                    _mm256_castsi256_ps(candidate_ids),
+                                                    better_mask));
+}
+
+__attribute__((target("avx2,fma")))
+inline void merge_argmax_state_to_candidate(DecodeCandidate& best,
+                                            const __m256& best_vals,
+                                            const __m256i& best_ids)
+{
+    alignas(32) float vals[8];
+    alignas(32) int ids[8];
+    _mm256_storeu_ps(vals, best_vals);
+    _mm256_storeu_si256(reinterpret_cast<__m256i*>(ids), best_ids);
+
+    for (int lane = 0; lane < 8; ++lane)
+    {
+        if (ids[lane] >= 0 && ids[lane] != std::numeric_limits<int>::max())
+        {
+            update_decode_argmax_candidate(best, ids[lane], vals[lane]);
+        }
+    }
+}
+
+template <bool HasBias>
 __attribute__((target("avx2,fma")))
 inline void gemv_argmax_packed_fp32_avx2_impl(const float* a,
                                               const float* packed_b,
@@ -1658,6 +1801,7 @@ inline void gemv_argmax_packed_fp32_avx2_impl(const float* a,
                                               DecodeSelection& selection)
 {
     constexpr int kAvxLanes = 8;
+    M_Assert(!HasBias || bias != nullptr);
     const int col_blocks = ceil_div(n, kAvxLanes);
     const bool parallel_blocks = should_parallelize_1d_loop(
         static_cast<size_t>(col_blocks),
@@ -1673,12 +1817,15 @@ inline void gemv_argmax_packed_fp32_avx2_impl(const float* a,
     }
 #endif
 
-    std::vector<DecodeCandidate> locals(static_cast<size_t>(thread_count));
+    std::vector<DecodeCandidate>& locals = decode_candidate_scratch(thread_count);
 
 #ifdef _OPENMP
 #pragma omp parallel if(parallel_blocks)
     {
         DecodeCandidate& local = locals[static_cast<size_t>(omp_get_thread_num())];
+        __m256 best_vals = _mm256_set1_ps(-std::numeric_limits<float>::infinity());
+        __m256i best_ids = _mm256_set1_epi32(std::numeric_limits<int>::max());
+        bool has_vector_blocks = false;
 
 #pragma omp for schedule(static)
         for (int block = 0; block < col_blocks; ++block)
@@ -1705,11 +1852,27 @@ inline void gemv_argmax_packed_fp32_avx2_impl(const float* a,
             }
 
             const int nr = std::min(kAvxLanes, n - block * kAvxLanes);
-            update_argmax_from_avx8(local, block * kAvxLanes, nr, s, bias);
+            if (nr == kAvxLanes)
+            {
+                update_argmax_state_from_avx8<HasBias>(best_vals, best_ids, block * kAvxLanes, s, bias);
+                has_vector_blocks = true;
+            }
+            else
+            {
+                update_argmax_from_avx8<HasBias>(local, block * kAvxLanes, nr, s, bias);
+            }
+        }
+
+        if (has_vector_blocks)
+        {
+            merge_argmax_state_to_candidate(local, best_vals, best_ids);
         }
     }
 #else
     DecodeCandidate& local = locals[0];
+    __m256 best_vals = _mm256_set1_ps(-std::numeric_limits<float>::infinity());
+    __m256i best_ids = _mm256_set1_epi32(std::numeric_limits<int>::max());
+    bool has_vector_blocks = false;
     for (int block = 0; block < col_blocks; ++block)
     {
         const float* r = packed_b + static_cast<size_t>(block) * k * kAvxLanes;
@@ -1734,7 +1897,20 @@ inline void gemv_argmax_packed_fp32_avx2_impl(const float* a,
         }
 
         const int nr = std::min(kAvxLanes, n - block * kAvxLanes);
-        update_argmax_from_avx8(local, block * kAvxLanes, nr, s, bias);
+        if (nr == kAvxLanes)
+        {
+            update_argmax_state_from_avx8<HasBias>(best_vals, best_ids, block * kAvxLanes, s, bias);
+            has_vector_blocks = true;
+        }
+        else
+        {
+            update_argmax_from_avx8<HasBias>(local, block * kAvxLanes, nr, s, bias);
+        }
+    }
+
+    if (has_vector_blocks)
+    {
+        merge_argmax_state_to_candidate(local, best_vals, best_ids);
     }
 #endif
 
@@ -1750,6 +1926,7 @@ inline void gemv_argmax_packed_fp32_avx2_impl(const float* a,
     finalize_decode_argmax_selection(selection, best);
 }
 
+template <bool HasBias>
 __attribute__((target("avx2,f16c,fma")))
 inline void gemv_argmax_packed_fp16_avx2_impl(const float* a,
                                               const hfloat* packed_b,
@@ -1759,6 +1936,7 @@ inline void gemv_argmax_packed_fp16_avx2_impl(const float* a,
                                               DecodeSelection& selection)
 {
     constexpr int kAvxLanes = 8;
+    M_Assert(!HasBias || bias != nullptr);
     const int col_blocks = ceil_div(n, kAvxLanes);
     const bool parallel_blocks = should_parallelize_1d_loop(
         static_cast<size_t>(col_blocks),
@@ -1774,12 +1952,15 @@ inline void gemv_argmax_packed_fp16_avx2_impl(const float* a,
     }
 #endif
 
-    std::vector<DecodeCandidate> locals(static_cast<size_t>(thread_count));
+    std::vector<DecodeCandidate>& locals = decode_candidate_scratch(thread_count);
 
 #ifdef _OPENMP
 #pragma omp parallel if(parallel_blocks)
     {
         DecodeCandidate& local = locals[static_cast<size_t>(omp_get_thread_num())];
+        __m256 best_vals = _mm256_set1_ps(-std::numeric_limits<float>::infinity());
+        __m256i best_ids = _mm256_set1_epi32(std::numeric_limits<int>::max());
+        bool has_vector_blocks = false;
 
 #pragma omp for schedule(static)
         for (int block = 0; block < col_blocks; ++block)
@@ -1812,11 +1993,27 @@ inline void gemv_argmax_packed_fp16_avx2_impl(const float* a,
             }
 
             const int nr = std::min(kAvxLanes, n - block * kAvxLanes);
-            update_argmax_from_avx8(local, block * kAvxLanes, nr, s, bias);
+            if (nr == kAvxLanes)
+            {
+                update_argmax_state_from_avx8<HasBias>(best_vals, best_ids, block * kAvxLanes, s, bias);
+                has_vector_blocks = true;
+            }
+            else
+            {
+                update_argmax_from_avx8<HasBias>(local, block * kAvxLanes, nr, s, bias);
+            }
+        }
+
+        if (has_vector_blocks)
+        {
+            merge_argmax_state_to_candidate(local, best_vals, best_ids);
         }
     }
 #else
     DecodeCandidate& local = locals[0];
+    __m256 best_vals = _mm256_set1_ps(-std::numeric_limits<float>::infinity());
+    __m256i best_ids = _mm256_set1_epi32(std::numeric_limits<int>::max());
+    bool has_vector_blocks = false;
     for (int block = 0; block < col_blocks; ++block)
     {
         const hfloat* r = packed_b + static_cast<size_t>(block) * k * kAvxLanes;
@@ -1847,7 +2044,164 @@ inline void gemv_argmax_packed_fp16_avx2_impl(const float* a,
         }
 
         const int nr = std::min(kAvxLanes, n - block * kAvxLanes);
-        update_argmax_from_avx8(local, block * kAvxLanes, nr, s, bias);
+        if (nr == kAvxLanes)
+        {
+            update_argmax_state_from_avx8<HasBias>(best_vals, best_ids, block * kAvxLanes, s, bias);
+            has_vector_blocks = true;
+        }
+        else
+        {
+            update_argmax_from_avx8<HasBias>(local, block * kAvxLanes, nr, s, bias);
+        }
+    }
+
+    if (has_vector_blocks)
+    {
+        merge_argmax_state_to_candidate(local, best_vals, best_ids);
+    }
+#endif
+
+    DecodeCandidate best;
+    for (const DecodeCandidate& local : locals)
+    {
+        if (local.token_id >= 0)
+        {
+            update_decode_argmax_candidate(best, local.token_id, local.logit);
+        }
+    }
+
+    finalize_decode_argmax_selection(selection, best);
+}
+
+template <bool HasBias>
+__attribute__((target("avx2,fma")))
+inline void gemv_argmax_packed_i8_rowwise_avx2_impl(const float* a,
+                                                    const int8_t* packed_b,
+                                                    const float* packed_scales,
+                                                    const float* bias,
+                                                    int n,
+                                                    int k,
+                                                    DecodeSelection& selection)
+{
+    constexpr int kAvxLanes = 8;
+    M_Assert(packed_scales != nullptr);
+    M_Assert(!HasBias || bias != nullptr);
+
+    const int col_blocks = ceil_div(n, kAvxLanes);
+    const bool parallel_blocks = should_parallelize_1d_loop(
+        static_cast<size_t>(col_blocks),
+        static_cast<size_t>(std::max(k, 1)) * static_cast<size_t>(kAvxLanes),
+        get_decode_gemv_i8_min_parallel_work(),
+        2);
+
+    int thread_count = 1;
+#ifdef _OPENMP
+    if (parallel_blocks)
+    {
+        thread_count = omp_get_max_threads();
+    }
+#endif
+
+    std::vector<DecodeCandidate>& locals = decode_candidate_scratch(thread_count);
+
+#ifdef _OPENMP
+#pragma omp parallel if(parallel_blocks)
+    {
+        DecodeCandidate& local = locals[static_cast<size_t>(omp_get_thread_num())];
+        __m256 best_vals = _mm256_set1_ps(-std::numeric_limits<float>::infinity());
+        __m256i best_ids = _mm256_set1_epi32(std::numeric_limits<int>::max());
+        bool has_vector_blocks = false;
+
+#pragma omp for schedule(static)
+        for (int block = 0; block < col_blocks; ++block)
+        {
+            const int8_t* r = packed_b + static_cast<size_t>(block) * k * kAvxLanes;
+            __m256 s = _mm256_setzero_ps();
+
+            int p = 0;
+            for (; p + 1 < k; p += 2)
+            {
+                const __m256 av0 = _mm256_set1_ps(a[p]);
+                s = _mm256_fmadd_ps(av0, load_i8x8_as_ps_avx2(r), s);
+                r += kAvxLanes;
+
+                const __m256 av1 = _mm256_set1_ps(a[p + 1]);
+                s = _mm256_fmadd_ps(av1, load_i8x8_as_ps_avx2(r), s);
+                r += kAvxLanes;
+            }
+            for (; p < k; ++p)
+            {
+                const __m256 av = _mm256_set1_ps(a[p]);
+                s = _mm256_fmadd_ps(av, load_i8x8_as_ps_avx2(r), s);
+                r += kAvxLanes;
+            }
+
+            const __m256 sc = _mm256_loadu_ps(packed_scales + static_cast<size_t>(block) * kAvxLanes);
+            s = _mm256_mul_ps(s, sc);
+
+            const int nr = std::min(kAvxLanes, n - block * kAvxLanes);
+            if (nr == kAvxLanes)
+            {
+                update_argmax_state_from_avx8<HasBias>(best_vals, best_ids, block * kAvxLanes, s, bias);
+                has_vector_blocks = true;
+            }
+            else
+            {
+                update_argmax_from_avx8<HasBias>(local, block * kAvxLanes, nr, s, bias);
+            }
+        }
+
+        if (has_vector_blocks)
+        {
+            merge_argmax_state_to_candidate(local, best_vals, best_ids);
+        }
+    }
+#else
+    DecodeCandidate& local = locals[0];
+    __m256 best_vals = _mm256_set1_ps(-std::numeric_limits<float>::infinity());
+    __m256i best_ids = _mm256_set1_epi32(std::numeric_limits<int>::max());
+    bool has_vector_blocks = false;
+    for (int block = 0; block < col_blocks; ++block)
+    {
+        const int8_t* r = packed_b + static_cast<size_t>(block) * k * kAvxLanes;
+        __m256 s = _mm256_setzero_ps();
+
+        int p = 0;
+        for (; p + 1 < k; p += 2)
+        {
+            const __m256 av0 = _mm256_set1_ps(a[p]);
+            s = _mm256_fmadd_ps(av0, load_i8x8_as_ps_avx2(r), s);
+            r += kAvxLanes;
+
+            const __m256 av1 = _mm256_set1_ps(a[p + 1]);
+            s = _mm256_fmadd_ps(av1, load_i8x8_as_ps_avx2(r), s);
+            r += kAvxLanes;
+        }
+        for (; p < k; ++p)
+        {
+            const __m256 av = _mm256_set1_ps(a[p]);
+            s = _mm256_fmadd_ps(av, load_i8x8_as_ps_avx2(r), s);
+            r += kAvxLanes;
+        }
+
+        const __m256 sc = _mm256_loadu_ps(packed_scales + static_cast<size_t>(block) * kAvxLanes);
+        s = _mm256_mul_ps(s, sc);
+
+        const int nr = std::min(kAvxLanes, n - block * kAvxLanes);
+        if (nr == kAvxLanes)
+        {
+            update_argmax_state_from_avx8<HasBias>(best_vals, best_ids, block * kAvxLanes, s, bias);
+            has_vector_blocks = true;
+        }
+        else
+        {
+            update_argmax_from_avx8<HasBias>(local, block * kAvxLanes, nr, s, bias);
+        }
+    }
+
+    if (has_vector_blocks)
+    {
+        merge_argmax_state_to_candidate(local, best_vals, best_ids);
     }
 #endif
 
@@ -2713,19 +3067,41 @@ void gemv_select_packed_fp32(const float* a,
             __builtin_cpu_supports("avx2") &&
             __builtin_cpu_supports("fma"))
         {
-            gemv_argmax_packed_fp32_avx2_impl(a, packed_b, bias, n, k, selection);
+            if (bias != nullptr)
+            {
+                gemv_argmax_packed_fp32_avx2_impl<true>(a, packed_b, bias, n, k, selection);
+            }
+            else
+            {
+                gemv_argmax_packed_fp32_avx2_impl<false>(a, packed_b, nullptr, n, k, selection);
+            }
             return;
         }
 #endif
-        gemv_argmax_packed_impl(a,
-                                packed_b,
-                                bias,
-                                n,
-                                k,
-                                selection,
-                                get_decode_gemv_fp32_min_parallel_work(),
-                                [](const float* src) { return XSimdBatch::load_unaligned(src); },
-                                [](int, XSimdBatch&, XSimdBatch&) {});
+        if (bias != nullptr)
+        {
+            gemv_argmax_packed_impl<true>(a,
+                                          packed_b,
+                                          bias,
+                                          n,
+                                          k,
+                                          selection,
+                                          get_decode_gemv_fp32_min_parallel_work(),
+                                          [](const float* src) { return XSimdBatch::load_unaligned(src); },
+                                          [](int, XSimdBatch&, XSimdBatch&) {});
+        }
+        else
+        {
+            gemv_argmax_packed_impl<false>(a,
+                                           packed_b,
+                                           nullptr,
+                                           n,
+                                           k,
+                                           selection,
+                                           get_decode_gemv_fp32_min_parallel_work(),
+                                           [](const float* src) { return XSimdBatch::load_unaligned(src); },
+                                           [](int, XSimdBatch&, XSimdBatch&) {});
+        }
         return;
     }
 
@@ -2774,19 +3150,41 @@ void gemv_select_packed_fp16(const float* a,
             __builtin_cpu_supports("f16c") &&
             __builtin_cpu_supports("fma"))
         {
-            gemv_argmax_packed_fp16_avx2_impl(a, packed_b, bias, n, k, selection);
+            if (bias != nullptr)
+            {
+                gemv_argmax_packed_fp16_avx2_impl<true>(a, packed_b, bias, n, k, selection);
+            }
+            else
+            {
+                gemv_argmax_packed_fp16_avx2_impl<false>(a, packed_b, nullptr, n, k, selection);
+            }
             return;
         }
 #endif
-        gemv_argmax_packed_impl(a,
-                                packed_b,
-                                bias,
-                                n,
-                                k,
-                                selection,
-                                get_decode_gemv_fp16_min_parallel_work(),
-                                [](const hfloat* src) { return load_hfloat_batch(src); },
-                                [](int, XSimdBatch&, XSimdBatch&) {});
+        if (bias != nullptr)
+        {
+            gemv_argmax_packed_impl<true>(a,
+                                          packed_b,
+                                          bias,
+                                          n,
+                                          k,
+                                          selection,
+                                          get_decode_gemv_fp16_min_parallel_work(),
+                                          [](const hfloat* src) { return load_hfloat_batch(src); },
+                                          [](int, XSimdBatch&, XSimdBatch&) {});
+        }
+        else
+        {
+            gemv_argmax_packed_impl<false>(a,
+                                           packed_b,
+                                           nullptr,
+                                           n,
+                                           k,
+                                           selection,
+                                           get_decode_gemv_fp16_min_parallel_work(),
+                                           [](const hfloat* src) { return load_hfloat_batch(src); },
+                                           [](int, XSimdBatch&, XSimdBatch&) {});
+        }
         return;
     }
 
@@ -2832,19 +3230,54 @@ void gemv_select_packed_i8_rowwise(const float* a,
 
     if (mode == DecodeOutputMode::ArgMax)
     {
-        gemv_argmax_packed_impl(a,
-                                packed_b,
-                                bias,
-                                n,
-                                k,
-                                selection,
-                                get_decode_gemv_i8_min_parallel_work(),
-                                [](const int8_t* src) { return load_int8_batch(src); },
-                                [&](int block, XSimdBatch& sum0, XSimdBatch& sum1) {
-                                    const float* scale = packed_scales + static_cast<size_t>(block) * kKernelNR;
-                                    sum0 *= XSimdBatch::load_unaligned(scale);
-                                    sum1 *= XSimdBatch::load_unaligned(scale + kXSimdBatchSize);
-                                });
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86))
+        if (kKernelNR == 8 &&
+            __builtin_cpu_supports("avx2") &&
+            __builtin_cpu_supports("fma"))
+        {
+            if (bias != nullptr)
+            {
+                gemv_argmax_packed_i8_rowwise_avx2_impl<true>(a, packed_b, packed_scales, bias, n, k, selection);
+            }
+            else
+            {
+                gemv_argmax_packed_i8_rowwise_avx2_impl<false>(a, packed_b, packed_scales, nullptr, n, k, selection);
+            }
+            return;
+        }
+#endif
+        if (bias != nullptr)
+        {
+            gemv_argmax_packed_impl<true>(a,
+                                          packed_b,
+                                          bias,
+                                          n,
+                                          k,
+                                          selection,
+                                          get_decode_gemv_i8_min_parallel_work(),
+                                          [](const int8_t* src) { return load_int8_batch(src); },
+                                          [&](int block, XSimdBatch& sum0, XSimdBatch& sum1) {
+                                              const float* scale = packed_scales + static_cast<size_t>(block) * kKernelNR;
+                                              sum0 *= XSimdBatch::load_unaligned(scale);
+                                              sum1 *= XSimdBatch::load_unaligned(scale + kXSimdBatchSize);
+                                          });
+        }
+        else
+        {
+            gemv_argmax_packed_impl<false>(a,
+                                           packed_b,
+                                           nullptr,
+                                           n,
+                                           k,
+                                           selection,
+                                           get_decode_gemv_i8_min_parallel_work(),
+                                           [](const int8_t* src) { return load_int8_batch(src); },
+                                           [&](int block, XSimdBatch& sum0, XSimdBatch& sum1) {
+                                               const float* scale = packed_scales + static_cast<size_t>(block) * kKernelNR;
+                                               sum0 *= XSimdBatch::load_unaligned(scale);
+                                               sum1 *= XSimdBatch::load_unaligned(scale + kXSimdBatchSize);
+                                           });
+        }
         return;
     }
 

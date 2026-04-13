@@ -8,6 +8,7 @@
 #include "../src/backend/cpu/layer/lm_head_layer.h"
 #include "../src/backend/cpu/layer/output_layer.h"
 #include "../src/backend/cpu/layer/rms_norm_layer.h"
+#include "benchmark_profiler.h"
 
 #include <algorithm>
 #include <cmath>
@@ -230,6 +231,52 @@ TEST(Layer_TEST, quantized_ffn_decode_fast_path_matches_generic_forward)
     unsetenv("MINFER_FFN_DECODE_PAIR");
 }
 
+TEST(Layer_TEST, quantized_rmsnorm_repeated_forward_matches_fp32)
+{
+    const int embd = 8;
+
+    Mat input0({1, 1, embd}, DT_32F);
+    Mat input1({1, 1, embd}, DT_32F);
+    Mat norm_w({embd}, DT_32F);
+    fill_trig(input0, 0.6f, 0.1f);
+    fill_trig(input1, 0.55f, -0.2f);
+    fill_trig(norm_w, 0.2f, 1.0f);
+
+    auto make_layer = [&](RuntimePrecision precision) {
+        auto params = std::shared_ptr<RMSNormLayerParams>(
+            new RMSNormLayerParams({0}, {1}, embd, 1e-6f, norm_w));
+        params->precision = precision;
+        return RMSNormLayer::create(params);
+    };
+
+    auto run_twice = [&](const std::shared_ptr<RMSNormLayer>& layer, Mat& a, Mat& b) {
+        Mat out0({1, 1, embd}, DT_32F);
+        Mat out1({1, 1, embd}, DT_32F);
+        std::vector<Mat*> inputs0 = {&a};
+        std::vector<Mat*> outputs0 = {&out0};
+        std::vector<Mat*> inputs1 = {&b};
+        std::vector<Mat*> outputs1 = {&out1};
+        layer->init(inputs0, outputs0);
+        layer->forward(inputs0, outputs0);
+        layer->init(inputs1, outputs1);
+        layer->forward(inputs1, outputs1);
+        return std::pair<Mat, Mat>(out0, out1);
+    };
+
+    auto fp32_layer = make_layer(RuntimePrecision::FP32);
+    auto fp32_ref = run_twice(fp32_layer, input0, input1);
+
+    auto fp16_layer = make_layer(RuntimePrecision::FP16);
+    auto fp16_out = run_twice(fp16_layer, input0, input1);
+    expect_close_stats(fp16_out.first, fp32_ref.first, 2e-2f, 1e-1f, "rmsnorm_repeat_fp16_first");
+    expect_close_stats(fp16_out.second, fp32_ref.second, 2e-2f, 1e-1f, "rmsnorm_repeat_fp16_second");
+
+    auto int8_layer = make_layer(RuntimePrecision::INT8);
+    auto int8_out = run_twice(int8_layer, input0, input1);
+    expect_close_stats(int8_out.first, fp32_ref.first, 8e-2f, 3e-1f, "rmsnorm_repeat_int8_first");
+    expect_close_stats(int8_out.second, fp32_ref.second, 8e-2f, 3e-1f, "rmsnorm_repeat_int8_second");
+}
+
 TEST(Layer_TEST, lm_head_layer_populates_decode_selection_inside_forward)
 {
     Mat input({1, 3, 8}, DT_32F);
@@ -306,6 +353,45 @@ TEST(Layer_TEST, lm_head_layer_shortlist_decode_skips_output_materialization)
     {
         EXPECT_FLOAT_EQ(out_data[i], -7.0f);
     }
+}
+
+TEST(Layer_TEST, lm_head_layer_records_selectnt_substage_in_benchmark_profiler)
+{
+    Mat input({1, 1, 8}, DT_32F);
+    Mat weight({6, 8}, DT_32F);
+    Mat bias({6}, DT_32F);
+    fill_trig(input, 0.8f);
+    fill_trig(weight, 0.5f);
+    fill_trig(bias, 0.2f);
+
+    auto params = std::shared_ptr<LmHeadLayerParams>(new LmHeadLayerParams({0}, {1}, 8, 6, weight, bias));
+    auto layer = LmHeadLayer::create(params);
+
+    Mat output({1, 1, 6}, DT_32F);
+    output = -7.0f;
+    std::vector<Mat*> inputs = {&input};
+    std::vector<Mat*> outputs = {&output};
+    layer->init(inputs, outputs);
+
+    DecodeSelection selection;
+    BenchmarkProfiler profiler;
+    profiler.resize(1);
+    profiler.setLayerInfo(0, "LmHeadLayer_19", LayerType::LmHead);
+    profiler.record(0, InferPhase::Decode, 1.0);
+
+    InferenceContext ctx;
+    ctx.phase = InferPhase::Decode;
+    ctx.decode_output_mode = DecodeOutputMode::ArgMax;
+    ctx.top_k = 1;
+    ctx.decode_selection = &selection;
+    ctx.benchmark_profiler = &profiler;
+    ctx.benchmark_layer_id = 0;
+
+    layer->forward(inputs, outputs, ctx);
+
+    ASSERT_TRUE(selection.ready);
+    const std::string report = profiler.reportString();
+    EXPECT_NE(report.find("LmHeadLayer_19/selectNT"), std::string::npos);
 }
 
 TEST(Layer_TEST, output_layer_skips_copy_for_shortlist_mode)

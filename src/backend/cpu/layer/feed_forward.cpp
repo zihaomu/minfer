@@ -113,39 +113,18 @@ void FeedForwardLayer::forward(const std::vector<Mat *> &input, std::vector<Mat 
         ? rmsnorm(x, norm.active(), norm.int8Scales(), rms_eps)
         : rmsnorm(x, norm.active(), rms_eps); // shape [1, seq_len, embed]
 
-    // x1 = silu(self.linear1.forward(x))
-    Mat x1 = gate.gemmNT(x_norm);
-    Mat x1_aligned = runtimePrecision == RuntimePrecision::FP32
-        ? x1
-        : align_precision_sensitive_input(x1, runtimePrecision);
-
-    if (activateType == ActivateType::RELU)
+    Mat gate_proj = gate.gemmNT(x_norm);
+    Mat gate_activated = gate_proj;
+    if (runtimePrecision != RuntimePrecision::FP32)
     {
-        x1 = x1_aligned;
-        float* p_x1 = (float*)x1.data;
-        const size_t total_elements = x1.total();
-        for (size_t i = 0; i < total_elements; i++)
-        {
-            p_x1[i] = std::max(0.f, p_x1[i]);
-        }
+        align_precision_sensitive_input(gate_proj, runtimePrecision, gate_align_scratch_);
+        gate_activated = gate_align_scratch_;
     }
-    else if (activateType == ActivateType::SILU)
-    {
-        silu(x1_aligned, x1);
-    }
-    else
-    {
-        M_Error(NULL, "Un-supported activation type!");
-    }
+    Mat up_proj = up.gemmNT(x_norm);
+    apply_ffn_activation_product(activateType, gate_activated, up_proj, gate_activated);
 
-    // x3 = self.linear3.forward(x)
-    Mat x3 = up.gemmNT(x_norm);
-
-    // x_out = self.linear2.forward(x1 * x3)
     Mat out = *output[0];
-    Mat x_out = Mat(out.size.dims(), out.size.p, out.type(), out.data);
-
-    down.gemmNT(x1 * x3).copyTo(out);
+    down.gemmNT(gate_activated, out);
 
     // std::cout<<"out gemm"<<std::endl;
     // out.print(10);
@@ -169,7 +148,7 @@ void FeedForwardLayer::forward(const std::vector<Mat*>& input,
     forward(input, output);
 }
 
-bool FeedForwardLayer::tryDecodeFusedForward(const Mat& x, Mat& out, const InferenceContext& ctx) const
+bool FeedForwardLayer::tryDecodeFusedForward(const Mat& x, Mat& out, const InferenceContext& ctx)
 {
     if (!ffn_decode_pair_enabled())
     {
@@ -203,12 +182,15 @@ bool FeedForwardLayer::tryDecodeFusedForward(const Mat& x, Mat& out, const Infer
         return false;
     }
 
-    const Mat gate_input = runtimePrecision == RuntimePrecision::FP32
-        ? gate_raw
-        : align_precision_sensitive_input(gate_raw, runtimePrecision);
+    Mat gate_input = gate_raw;
+    if (runtimePrecision != RuntimePrecision::FP32)
+    {
+        align_precision_sensitive_input(gate_raw, runtimePrecision, gate_align_scratch_);
+        gate_input = gate_align_scratch_;
+    }
     apply_ffn_activation_product(activateType, gate_input, up_raw, gate_raw);
 
-    down.gemmNT(gate_raw).copyTo(out);
+    down.gemmNT(gate_raw, out);
     out += x;
     return true;
 }

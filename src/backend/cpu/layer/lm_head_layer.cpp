@@ -3,8 +3,10 @@
 //
 
 #include "lm_head_layer.h"
+#include "benchmark_profiler.h"
 
 #include <algorithm>
+#include <chrono>
 
 namespace minfer {
 
@@ -61,30 +63,76 @@ void LmHeadLayer::forward(const std::vector<Mat*>& input, std::vector<Mat*>& out
     M_Assert(in_shape[0] == 1 && "Currently, only support single batch!");
     M_Assert(in_shape[2] == in_features);
 
-    w.gemmNT(x).copyTo(out);
-
-    if (!b.empty())
-    {
-        out = out + b;
-    }
+    computeLogits(x, out, nullptr);
 }
 
 void LmHeadLayer::forward(const std::vector<Mat*>& input, std::vector<Mat*>& output, const InferenceContext& ctx)
 {
     if (ctx.phase == InferPhase::Decode &&
         ctx.decode_output_mode != DecodeOutputMode::FullLogits &&
-        ctx.decode_selection != nullptr &&
-        w.selectNT(*input[0],
-                   ctx.decode_output_mode,
-                   ctx.top_k,
-                   b.empty() ? nullptr : &b,
-                   *ctx.decode_selection))
+        ctx.decode_selection != nullptr)
+    {
+        const auto t0 = std::chrono::steady_clock::now();
+        const bool ok = w.selectNT(*input[0],
+                                   ctx.decode_output_mode,
+                                   ctx.top_k,
+                                   b.empty() ? nullptr : &b,
+                                   *ctx.decode_selection);
+        const auto t1 = std::chrono::steady_clock::now();
+        const double us = std::chrono::duration<double, std::micro>(t1 - t0).count();
+        recordSubStage(&ctx, "selectNT", us);
+        if (ok)
+        {
+            return;
+        }
+    }
+
+    M_Assert(input.size() == 1 && input[0]);
+    M_Assert(output.size() == 1 && output[0]);
+
+    M_Assert(input[0]->type() == output[0]->type());
+
+    Mat x = *input[0];
+    Mat out = *output[0];
+
+    MatShape in_shape = x.shape();
+    M_Assert(in_shape.size() == 3);
+    M_Assert(in_shape[0] == 1 && "Currently, only support single batch!");
+    M_Assert(in_shape[2] == in_features);
+
+    computeLogits(x, out, &ctx);
+
+    const auto t0 = std::chrono::steady_clock::now();
+    updateDecodeSelection(*output[0], ctx);
+    const auto t1 = std::chrono::steady_clock::now();
+    const double us = std::chrono::duration<double, std::micro>(t1 - t0).count();
+    recordSubStage(&ctx, "updateSelection", us);
+}
+
+void LmHeadLayer::computeLogits(const Mat& x, Mat& out, const InferenceContext* ctx) const
+{
+    auto t0 = std::chrono::steady_clock::now();
+    w.gemmNT(x, out);
+    auto t1 = std::chrono::steady_clock::now();
+    recordSubStage(ctx, "gemmNT", std::chrono::duration<double, std::micro>(t1 - t0).count());
+
+    if (!b.empty())
+    {
+        t0 = std::chrono::steady_clock::now();
+        out += b;
+        t1 = std::chrono::steady_clock::now();
+        recordSubStage(ctx, "bias", std::chrono::duration<double, std::micro>(t1 - t0).count());
+    }
+}
+
+void LmHeadLayer::recordSubStage(const InferenceContext* ctx, const char* stage_name, double elapsed_us) const
+{
+    if (ctx == nullptr || ctx->benchmark_profiler == nullptr || ctx->benchmark_layer_id < 0)
     {
         return;
     }
 
-    forward(input, output);
-    updateDecodeSelection(*output[0], ctx);
+    ctx->benchmark_profiler->recordSubEvent(ctx->benchmark_layer_id, ctx->phase, stage_name, elapsed_us);
 }
 
 void LmHeadLayer::updateDecodeSelection(const Mat& logits, const InferenceContext& ctx) const
