@@ -2,10 +2,7 @@
 #define MINFER_BACKEND_CPU_KERNEL_OPENMP_UTILS_H
 
 #include <cstddef>
-
-#ifdef _OPENMP
-#include <omp.h>
-#endif
+#include "minfer/parallel.h"
 
 namespace minfer {
 namespace cpu {
@@ -15,8 +12,7 @@ inline bool should_parallelize_1d_loop(size_t trip_count,
                                        long long min_total_work,
                                        int min_items_per_thread = 1)
 {
-#ifdef _OPENMP
-    if (omp_in_parallel())
+    if (parallel_in_parallel())
     {
         return false;
     }
@@ -26,7 +22,7 @@ inline bool should_parallelize_1d_loop(size_t trip_count,
         return false;
     }
 
-    const int max_threads = omp_get_max_threads();
+    const int max_threads = parallel_get_num_threads();
     if (max_threads <= 1)
     {
         return false;
@@ -43,13 +39,6 @@ inline bool should_parallelize_1d_loop(size_t trip_count,
                             static_cast<unsigned long long>(work_per_item);
     const auto required_work = static_cast<unsigned long long>(min_total_work > 0 ? min_total_work : 0);
     return total_work >= required_work;
-#else
-    (void)trip_count;
-    (void)work_per_item;
-    (void)min_total_work;
-    (void)min_items_per_thread;
-    return false;
-#endif
 }
 
 }  // namespace cpu

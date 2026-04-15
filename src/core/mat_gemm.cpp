@@ -4,14 +4,11 @@
 
 #include "minfer/mat.h"
 #include "minfer/basic_op.h"
+#include "minfer/parallel.h"
 #include "minfer/system.h"
 #include "minfer/utils.h"
 #include "backend/cpu/kernel/gemm_kernel_xsimd.h"
 #include "backend/cpu/kernel/openmp_utils.h"
-
-#ifdef _OPENMP
-#include <omp.h>
-#endif
 
 namespace minfer
 {
@@ -111,37 +108,53 @@ void gemm_impl_naive(const Mat& a, const Mat& b, Mat& c)
     float* pc = (float*)c.data;
 
     const long long out_loop_ll = static_cast<long long>(out_loop);
-#ifdef _OPENMP
-#pragma omp parallel for if(static_cast<long long>(M) * N * K <= (1LL << 15) && cpu::should_parallelize_1d_loop(out_loop, static_cast<size_t>(M) * static_cast<size_t>(N) * static_cast<size_t>(K), 1LL << 15, 2))
-#endif
-    for (long long i = 0; i < out_loop_ll; i++)
+    const bool parallel =
+        static_cast<long long>(M) * N * K <= (1LL << 15) &&
+        cpu::should_parallelize_1d_loop(
+            out_loop,
+            static_cast<size_t>(M) * static_cast<size_t>(N) * static_cast<size_t>(K),
+            1LL << 15,
+            2);
+
+    auto process_batches = [&](long long begin, long long end) {
+        for (long long i = begin; i < end; ++i)
+        {
+            size_t tmp = static_cast<size_t>(i);
+            std::vector<int> idx_c(out_batch_dims);
+            for (int d = 0; d < out_batch_dims; d++)
+            {
+                idx_c[d] = tmp / stride_c[d];
+                tmp %= stride_c[d];
+            }
+
+            size_t lin_a = broadcast_linear_index(shape_a, stride_a, idx_c, out_batch_dims);
+            size_t lin_b = broadcast_linear_index(shape_b, stride_b, idx_c, out_batch_dims);
+
+            const float* pai = lin_a * step_a + pa;
+            float* pci = static_cast<size_t>(i) * step_c + pc;
+
+            if (b.type() == DT_32F)
+            {
+                const float* pb = reinterpret_cast<const float*>(b.data);
+                const float* pbi = lin_b * step_b + pb;
+                cpu::gemm_kernel_xsimd_nn(pai, pbi, pci, M, N, K);
+            }
+            else
+            {
+                const hfloat* pb = reinterpret_cast<const hfloat*>(b.data);
+                const hfloat* pbi = lin_b * step_b + pb;
+                cpu::gemm_kernel_xsimd_nn_fp16(pai, pbi, pci, M, N, K);
+            }
+        }
+    };
+
+    if (parallel)
     {
-        size_t tmp = static_cast<size_t>(i);
-        std::vector<int> idx_c(out_batch_dims);
-        for (int d = 0; d < out_batch_dims; d++)
-        {
-            idx_c[d] = tmp / stride_c[d];
-            tmp %= stride_c[d];
-        }
-
-        size_t lin_a = broadcast_linear_index(shape_a, stride_a, idx_c, out_batch_dims);
-        size_t lin_b = broadcast_linear_index(shape_b, stride_b, idx_c, out_batch_dims);
-
-        const float* pai = lin_a * step_a + pa;
-        float* pci = static_cast<size_t>(i) * step_c + pc;
-
-        if (b.type() == DT_32F)
-        {
-            const float* pb = reinterpret_cast<const float*>(b.data);
-            const float* pbi = lin_b * step_b + pb;
-            cpu::gemm_kernel_xsimd_nn(pai, pbi, pci, M, N, K);
-        }
-        else
-        {
-            const hfloat* pb = reinterpret_cast<const hfloat*>(b.data);
-            const hfloat* pbi = lin_b * step_b + pb;
-            cpu::gemm_kernel_xsimd_nn_fp16(pai, pbi, pci, M, N, K);
-        }
+        parallel_for_1d(0, out_loop_ll, 1, process_batches);
+    }
+    else
+    {
+        process_batches(0, out_loop_ll);
     }
 }
 
@@ -267,44 +280,60 @@ void gemm_impl_row(const Mat& a, const Mat& b, const Mat* b_scales, Mat& c)
     float* pc = (float*)c.data;
 
     const long long out_loop_ll = static_cast<long long>(out_loop);
-#ifdef _OPENMP
-#pragma omp parallel for if(static_cast<long long>(M) * N * K <= (1LL << 15) && cpu::should_parallelize_1d_loop(out_loop, static_cast<size_t>(M) * static_cast<size_t>(N) * static_cast<size_t>(K), 1LL << 15, 2))
-#endif
-    for (long long i = 0; i < out_loop_ll; i++)
+    const bool parallel =
+        static_cast<long long>(M) * N * K <= (1LL << 15) &&
+        cpu::should_parallelize_1d_loop(
+            out_loop,
+            static_cast<size_t>(M) * static_cast<size_t>(N) * static_cast<size_t>(K),
+            1LL << 15,
+            2);
+
+    auto process_batches = [&](long long begin, long long end) {
+        for (long long i = begin; i < end; ++i)
+        {
+            size_t tmp = static_cast<size_t>(i);
+            std::vector<int> idx_c(out_batch_dims);
+            for (int d = 0; d < out_batch_dims; d++)
+            {
+                idx_c[d] = tmp / stride_c[d];
+                tmp %= stride_c[d];
+            }
+
+            size_t lin_a = broadcast_linear_index(shape_a, stride_a, idx_c, out_batch_dims);
+            size_t lin_b = broadcast_linear_index(shape_b, stride_b, idx_c, out_batch_dims);
+
+            const float* pai = lin_a * step_a + pa;
+            float* pci = static_cast<size_t>(i) * step_c + pc;
+
+            if (b.type() == DT_32F)
+            {
+                const float* pb = reinterpret_cast<const float*>(b.data);
+                const float* pbi = lin_b * step_b + pb;
+                cpu::gemm_kernel_xsimd_nt(pai, pbi, pci, M, N, K);
+            }
+            else if (b.type() == DT_16F)
+            {
+                const hfloat* pb = reinterpret_cast<const hfloat*>(b.data);
+                const hfloat* pbi = lin_b * step_b + pb;
+                cpu::gemm_kernel_xsimd_nt_fp16(pai, pbi, pci, M, N, K);
+            }
+            else
+            {
+                const int8_t* pb = reinterpret_cast<const int8_t*>(b.data);
+                const int8_t* pbi = lin_b * step_b + pb;
+                const float* scale_ptr = reinterpret_cast<const float*>(b_scales->data);
+                cpu::gemm_kernel_xsimd_nt_i8_rowwise(pai, pbi, scale_ptr, pci, M, N, K);
+            }
+        }
+    };
+
+    if (parallel)
     {
-        size_t tmp = static_cast<size_t>(i);
-        std::vector<int> idx_c(out_batch_dims);
-        for (int d = 0; d < out_batch_dims; d++)
-        {
-            idx_c[d] = tmp / stride_c[d];
-            tmp %= stride_c[d];
-        }
-
-        size_t lin_a = broadcast_linear_index(shape_a, stride_a, idx_c, out_batch_dims);
-        size_t lin_b = broadcast_linear_index(shape_b, stride_b, idx_c, out_batch_dims);
-
-        const float* pai = lin_a * step_a + pa;
-        float* pci = static_cast<size_t>(i) * step_c + pc;
-
-        if (b.type() == DT_32F)
-        {
-            const float* pb = reinterpret_cast<const float*>(b.data);
-            const float* pbi = lin_b * step_b + pb;
-            cpu::gemm_kernel_xsimd_nt(pai, pbi, pci, M, N, K);
-        }
-        else if (b.type() == DT_16F)
-        {
-            const hfloat* pb = reinterpret_cast<const hfloat*>(b.data);
-            const hfloat* pbi = lin_b * step_b + pb;
-            cpu::gemm_kernel_xsimd_nt_fp16(pai, pbi, pci, M, N, K);
-        }
-        else
-        {
-            const int8_t* pb = reinterpret_cast<const int8_t*>(b.data);
-            const int8_t* pbi = lin_b * step_b + pb;
-            const float* scale_ptr = reinterpret_cast<const float*>(b_scales->data);
-            cpu::gemm_kernel_xsimd_nt_i8_rowwise(pai, pbi, scale_ptr, pci, M, N, K);
-        }
+        parallel_for_1d(0, out_loop_ll, 1, process_batches);
+    }
+    else
+    {
+        process_batches(0, out_loop_ll);
     }
 }
 

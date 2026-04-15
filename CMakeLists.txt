@@ -24,16 +24,35 @@ set(CMAKE_MODULE_PATH
     ${CMAKE_MODULE_PATH}
     "${CMAKE_CURRENT_LIST_DIR}/cmake"
 )
+find_package(Threads REQUIRED)
 
-find_package(OpenMP)
-if(OpenMP_CXX_FOUND)
-    message(STATUS "OpenMP found: enabling parallel kernels")
-    add_compile_definitions(M_HAS_OPENMP=1)
+set(MINFER_THREAD_BACKEND "auto" CACHE STRING "Thread backend: auto|portable|openmp")
+set_property(CACHE MINFER_THREAD_BACKEND PROPERTY STRINGS auto portable openmp)
+
+set(MINFER_USE_OPENMP_BACKEND OFF)
+if(MINFER_THREAD_BACKEND STREQUAL "openmp")
+    find_package(OpenMP REQUIRED)
+    set(MINFER_USE_OPENMP_BACKEND ON)
+elseif(MINFER_THREAD_BACKEND STREQUAL "portable")
+    set(MINFER_USE_OPENMP_BACKEND OFF)
+elseif(MINFER_THREAD_BACKEND STREQUAL "auto")
+    find_package(OpenMP)
+    if(OpenMP_CXX_FOUND AND NOT APPLE)
+        set(MINFER_USE_OPENMP_BACKEND ON)
+    endif()
+else()
+    message(FATAL_ERROR "Invalid MINFER_THREAD_BACKEND=${MINFER_THREAD_BACKEND}. Expected auto|portable|openmp")
+endif()
+
+if(MINFER_USE_OPENMP_BACKEND)
+    message(STATUS "Thread backend: OpenMP")
+    add_compile_definitions(MINFER_USE_OPENMP_BACKEND=1 M_HAS_OPENMP=1)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 else()
-    message(STATUS "OpenMP not found: kernels remain single-threaded")
+    message(STATUS "Thread backend: portable worker pool")
+    add_compile_definitions(MINFER_USE_OPENMP_BACKEND=0)
 endif()
 
 # Add debug macro to project
@@ -63,6 +82,7 @@ list(APPEND M_Core_SRC
     )
 
 add_library(M_Core OBJECT ${M_Core_SRC})
+target_link_libraries(M_Core PUBLIC Threads::Threads)
 list(APPEND M_OBJECTS_TO_LINK $<TARGET_OBJECTS:M_Core>)
 list(APPEND M_TARGETS M_Core)
 

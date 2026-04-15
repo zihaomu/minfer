@@ -1,14 +1,12 @@
 #include "rope_kernel.h"
 #include "openmp_utils.h"
+#include "minfer/parallel.h"
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <vector>
 #include <xsimd/xsimd.hpp>
-
-#ifdef _OPENMP
-#include <omp.h>
-#endif
 
 namespace minfer {
 namespace cpu {
@@ -254,31 +252,16 @@ void rope_kernel_inplace(float* q,
         return;
     }
 
-#ifdef _OPENMP
-#pragma omp parallel
-#endif
-    {
+    const int thread_budget = std::max(1, parallel_get_num_threads());
+    const long long grain = std::max<long long>(
+        1,
+        (static_cast<long long>(seq_len) + thread_budget - 1) / thread_budget);
+
+    parallel_for_1d(0, static_cast<long long>(seq_len), grain, [&](long long begin, long long end) {
         std::vector<float> sin_cache(complex_dim);
         std::vector<float> cos_cache(complex_dim);
-        int prev_seq = -2;
-
-#ifdef _OPENMP
-#pragma omp for schedule(static)
-#endif
-        for (int seq_idx = 0; seq_idx < seq_len; ++seq_idx)
-        {
-            if (need_rebuild(seq_idx, prev_seq))
-            {
-                build_sincos_cache(static_cast<float>(start_pos + seq_idx), inv_freq, sin_cache, cos_cache);
-            }
-            else
-            {
-                advance_sincos_cache(sin_cache, cos_cache, sin_step, cos_step);
-            }
-            process_seq(seq_idx, sin_cache, cos_cache);
-            prev_seq = seq_idx;
-        }
-    }
+        process_range(static_cast<int>(begin), static_cast<int>(end), sin_cache, cos_cache);
+    });
 }
 
 }  // namespace cpu

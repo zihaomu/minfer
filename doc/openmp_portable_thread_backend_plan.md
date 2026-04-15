@@ -127,6 +127,10 @@ PR1 不做的事：
 - 不强求性能已经和 OpenMP 完全一致
 - 不清理所有旧的 OpenMP 代码
 
+PR1 的文件级与函数级实施清单见：
+
+- `doc/openmp_pr1_implementation_checklist.md`
+
 ### PR2：重路径迁移 + 旧 OpenMP 依赖收口
 
 PR2 的目标是把真正吃性能的路径收干净：

@@ -3,6 +3,7 @@
 #include "backend/cpu/kernel/gemm_kernel_xsimd.h"
 #include "backend/cpu/kernel/openmp_utils.h"
 #include "minfer/basic_op.h"
+#include "minfer/parallel.h"
 #include "minfer/system.h"
 
 #include <vector>
@@ -300,40 +301,54 @@ void RuntimeWeight::gemmNT(const Mat& input, Mat& output) const
 
     // ── M>1 path: existing per-row OMP loop ──
     const long long outer_ll = static_cast<long long>(outer);
-#ifdef _OPENMP
-#pragma omp parallel for if(cpu::should_parallelize_1d_loop(outer, static_cast<size_t>(N) * static_cast<size_t>(K), 1LL << 16, 2))
-#endif
-    for (long long idx_ll = 0; idx_ll < outer_ll; ++idx_ll)
-    {
-        const size_t idx = static_cast<size_t>(idx_ll);
-        const float* row_in = input_ptr + idx * static_cast<size_t>(K);
-        float* row_out = output_ptr + idx * static_cast<size_t>(N);
-        switch (precision_)
+    const bool parallel = cpu::should_parallelize_1d_loop(
+        outer,
+        static_cast<size_t>(N) * static_cast<size_t>(K),
+        1LL << 16,
+        2);
+
+    auto process_outer = [&](long long begin, long long end) {
+        for (long long idx_ll = begin; idx_ll < end; ++idx_ll)
         {
-            case RuntimePrecision::FP16:
-                cpu::gemm_kernel_xsimd_row_packed_fp16(row_in,
-                                                       reinterpret_cast<const hfloat*>(decode_kernel_packed_.data),
-                                                       row_out,
-                                                       N,
-                                                       K);
-                break;
-            case RuntimePrecision::INT8:
-                cpu::gemm_kernel_xsimd_row_packed_i8_rowwise(row_in,
-                                                             reinterpret_cast<const int8_t*>(decode_kernel_packed_.data),
-                                                             reinterpret_cast<const float*>(decode_packed_scales_.data),
-                                                             row_out,
-                                                             N,
-                                                             K);
-                break;
-            case RuntimePrecision::FP32:
-            default:
-                cpu::gemm_kernel_xsimd_row_packed_fp32(row_in,
-                                                       reinterpret_cast<const float*>(decode_kernel_packed_.data),
-                                                       row_out,
-                                                       N,
-                                                       K);
-                break;
+            const size_t idx = static_cast<size_t>(idx_ll);
+            const float* row_in = input_ptr + idx * static_cast<size_t>(K);
+            float* row_out = output_ptr + idx * static_cast<size_t>(N);
+            switch (precision_)
+            {
+                case RuntimePrecision::FP16:
+                    cpu::gemm_kernel_xsimd_row_packed_fp16(row_in,
+                                                           reinterpret_cast<const hfloat*>(decode_kernel_packed_.data),
+                                                           row_out,
+                                                           N,
+                                                           K);
+                    break;
+                case RuntimePrecision::INT8:
+                    cpu::gemm_kernel_xsimd_row_packed_i8_rowwise(row_in,
+                                                                 reinterpret_cast<const int8_t*>(decode_kernel_packed_.data),
+                                                                 reinterpret_cast<const float*>(decode_packed_scales_.data),
+                                                                 row_out,
+                                                                 N,
+                                                                 K);
+                    break;
+                case RuntimePrecision::FP32:
+                default:
+                    cpu::gemm_kernel_xsimd_row_packed_fp32(row_in,
+                                                           reinterpret_cast<const float*>(decode_kernel_packed_.data),
+                                                           row_out,
+                                                           N,
+                                                           K);
+                    break;
+            }
         }
+    };
+
+    if (parallel)
+    {
+        parallel_for_1d(0, outer_ll, 1, process_outer);
+    }
+    else
+    {
+        process_outer(0, outer_ll);
     }
 }
 

@@ -1,4 +1,5 @@
 #include "minfer.h"
+#include "benchmark_threads.h"
 #include "backend/cpu/kernel/gemm_kernel_xsimd.h"
 #include "backend/cpu/layer/runtime_weight.h"
 
@@ -12,10 +13,6 @@
 #include <random>
 #include <string>
 #include <vector>
-
-#ifdef _OPENMP
-#include <omp.h>
-#endif
 
 using namespace minfer;
 
@@ -133,17 +130,7 @@ BenchmarkOptions parse_args(int argc, char** argv)
 
 int configured_threads(const BenchmarkOptions& opts)
 {
-#ifdef _OPENMP
-    if (opts.threads > 0)
-    {
-        omp_set_dynamic(0);
-        omp_set_num_threads(opts.threads);
-    }
-    return omp_get_max_threads();
-#else
-    (void)opts;
-    return 1;
-#endif
+    return configure_benchmark_threads(opts.threads);
 }
 
 void fill_random(Mat& mat, std::mt19937& rng)

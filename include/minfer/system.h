@@ -158,13 +158,13 @@ void mprintf(const char* fmt, ...);
 std::string format(const char* fmt, ...) M_FORMAT_PRINTF(1, 2);
 
 /**
- * @brief Sets the global maximum number of threads used for openmp parallel regions.
+ * @brief Sets the global maximum number of threads used by the active parallel backend.
  * @param threads The maximum number of threads to use.
  */
 void set_num_threads(int threads);
 
 /**
- * @brief Gets the maximum number of threads that will be used for openmp parallel regions.
+ * @brief Gets the maximum number of threads used by the active parallel backend.
  * @return The maximum number of threads.
  */
 int get_num_threads();

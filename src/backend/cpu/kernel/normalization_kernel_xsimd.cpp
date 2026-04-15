@@ -1,5 +1,6 @@
 #include "normalization_kernel_xsimd.h"
 #include "openmp_utils.h"
+#include "minfer/parallel.h"
 #include "xsimd_kernel_utils.h"
 
 #include "xsimd/xsimd.hpp"
@@ -7,10 +8,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-
-#ifdef _OPENMP
-#include <omp.h>
-#endif
 
 namespace minfer {
 namespace cpu {
@@ -78,58 +75,68 @@ inline void scale_row_xsimd(float* row, size_t len, float inv_scale)
 void softmax_lastdim_xsimd(const float* input, float* output, size_t outer, size_t inner)
 {
     const long long outer_ll = static_cast<long long>(outer);
-#ifdef _OPENMP
-#pragma omp parallel for if(should_parallelize_1d_loop(outer, inner, 1LL << 14, 2))
-#endif
-    for (long long outer_idx = 0; outer_idx < outer_ll; ++outer_idx)
+    const bool parallel = should_parallelize_1d_loop(outer, inner, 1LL << 14, 2);
+
+    auto process_outer = [&](long long begin, long long end) {
+        for (long long outer_idx = begin; outer_idx < end; ++outer_idx)
+        {
+            const size_t outer_i = static_cast<size_t>(outer_idx);
+            const float* input_row = input + outer_i * inner;
+            float* output_row = output + outer_i * inner;
+
+            XSimdBatch max_vec(std::numeric_limits<float>::lowest());
+            size_t idx = 0;
+            for (; idx + kXSimdBatchSize <= inner; idx += kXSimdBatchSize)
+            {
+                max_vec = xsimd::max(max_vec, XSimdBatch::load_unaligned(input_row + idx));
+            }
+
+            float max_val = xsimd::reduce_max(max_vec);
+            for (; idx < inner; ++idx)
+            {
+                max_val = std::max(max_val, input_row[idx]);
+            }
+
+            XSimdBatch sum_vec(0.0f);
+            const XSimdBatch max_batch(max_val);
+            idx = 0;
+            for (; idx + kXSimdBatchSize <= inner; idx += kXSimdBatchSize)
+            {
+                const XSimdBatch exp_vec = xsimd::exp(XSimdBatch::load_unaligned(input_row + idx) - max_batch);
+                exp_vec.store_unaligned(output_row + idx);
+                sum_vec += exp_vec;
+            }
+
+            float sum_val = xsimd::reduce_add(sum_vec);
+            for (; idx < inner; ++idx)
+            {
+                const float exp_v = std::exp(input_row[idx] - max_val);
+                output_row[idx] = exp_v;
+                sum_val += exp_v;
+            }
+
+            const float inv_sum = 1.0f / sum_val;
+            const XSimdBatch inv_sum_vec(inv_sum);
+            idx = 0;
+            for (; idx + kXSimdBatchSize <= inner; idx += kXSimdBatchSize)
+            {
+                const XSimdBatch out_vec = XSimdBatch::load_unaligned(output_row + idx) * inv_sum_vec;
+                out_vec.store_unaligned(output_row + idx);
+            }
+            for (; idx < inner; ++idx)
+            {
+                output_row[idx] *= inv_sum;
+            }
+        }
+    };
+
+    if (parallel)
     {
-        const size_t outer_i = static_cast<size_t>(outer_idx);
-        const float* input_row = input + outer_i * inner;
-        float* output_row = output + outer_i * inner;
-
-        XSimdBatch max_vec(std::numeric_limits<float>::lowest());
-        size_t idx = 0;
-        for (; idx + kXSimdBatchSize <= inner; idx += kXSimdBatchSize)
-        {
-            max_vec = xsimd::max(max_vec, XSimdBatch::load_unaligned(input_row + idx));
-        }
-
-        float max_val = xsimd::reduce_max(max_vec);
-        for (; idx < inner; ++idx)
-        {
-            max_val = std::max(max_val, input_row[idx]);
-        }
-
-        XSimdBatch sum_vec(0.0f);
-        const XSimdBatch max_batch(max_val);
-        idx = 0;
-        for (; idx + kXSimdBatchSize <= inner; idx += kXSimdBatchSize)
-        {
-            const XSimdBatch exp_vec = xsimd::exp(XSimdBatch::load_unaligned(input_row + idx) - max_batch);
-            exp_vec.store_unaligned(output_row + idx);
-            sum_vec += exp_vec;
-        }
-
-        float sum_val = xsimd::reduce_add(sum_vec);
-        for (; idx < inner; ++idx)
-        {
-            const float exp_v = std::exp(input_row[idx] - max_val);
-            output_row[idx] = exp_v;
-            sum_val += exp_v;
-        }
-
-        const float inv_sum = 1.0f / sum_val;
-        const XSimdBatch inv_sum_vec(inv_sum);
-        idx = 0;
-        for (; idx + kXSimdBatchSize <= inner; idx += kXSimdBatchSize)
-        {
-            const XSimdBatch out_vec = XSimdBatch::load_unaligned(output_row + idx) * inv_sum_vec;
-            out_vec.store_unaligned(output_row + idx);
-        }
-        for (; idx < inner; ++idx)
-        {
-            output_row[idx] *= inv_sum;
-        }
+        parallel_for_1d(0, outer_ll, 1, process_outer);
+    }
+    else
+    {
+        process_outer(0, outer_ll);
     }
 }
 
@@ -140,70 +147,81 @@ void causal_masked_softmax_square_xsimd(const float* input,
                                         float scale)
 {
     const long long outer_ll = static_cast<long long>(outer);
-#ifdef _OPENMP
-#pragma omp parallel for if(should_parallelize_1d_loop(outer, seq_len * seq_len, 1LL << 14, 2))
-#endif
-    for (long long outer_idx = 0; outer_idx < outer_ll; ++outer_idx)
-    {
-        const size_t outer_i = static_cast<size_t>(outer_idx);
-        const float* input_mat = input + outer_i * seq_len * seq_len;
-        float* output_mat = output + outer_i * seq_len * seq_len;
-        const XSimdBatch scale_vec(scale);
+    const bool parallel =
+        should_parallelize_1d_loop(outer, seq_len * seq_len, 1LL << 14, 2);
 
-        for (size_t row = 0; row < seq_len; ++row)
+    auto process_outer = [&](long long begin, long long end) {
+        for (long long outer_idx = begin; outer_idx < end; ++outer_idx)
         {
-            const size_t valid_cols = row + 1;
-            const float* input_row = input_mat + row * seq_len;
-            float* output_row = output_mat + row * seq_len;
+            const size_t outer_i = static_cast<size_t>(outer_idx);
+            const float* input_mat = input + outer_i * seq_len * seq_len;
+            float* output_mat = output + outer_i * seq_len * seq_len;
+            const XSimdBatch scale_vec(scale);
 
-            XSimdBatch max_vec(std::numeric_limits<float>::lowest());
-            size_t idx = 0;
-            for (; idx + kXSimdBatchSize <= valid_cols; idx += kXSimdBatchSize)
+            for (size_t row = 0; row < seq_len; ++row)
             {
-                const XSimdBatch scaled = XSimdBatch::load_unaligned(input_row + idx) * scale_vec;
-                max_vec = xsimd::max(max_vec, scaled);
-            }
+                const size_t valid_cols = row + 1;
+                const float* input_row = input_mat + row * seq_len;
+                float* output_row = output_mat + row * seq_len;
 
-            float max_val = xsimd::reduce_max(max_vec);
-            for (; idx < valid_cols; ++idx)
-            {
-                max_val = std::max(max_val, input_row[idx] * scale);
-            }
+                XSimdBatch max_vec(std::numeric_limits<float>::lowest());
+                size_t idx = 0;
+                for (; idx + kXSimdBatchSize <= valid_cols; idx += kXSimdBatchSize)
+                {
+                    const XSimdBatch scaled = XSimdBatch::load_unaligned(input_row + idx) * scale_vec;
+                    max_vec = xsimd::max(max_vec, scaled);
+                }
 
-            XSimdBatch sum_vec(0.0f);
-            const XSimdBatch max_batch(max_val);
-            idx = 0;
-            for (; idx + kXSimdBatchSize <= valid_cols; idx += kXSimdBatchSize)
-            {
-                const XSimdBatch scaled = XSimdBatch::load_unaligned(input_row + idx) * scale_vec;
-                const XSimdBatch exp_vec = xsimd::exp(scaled - max_batch);
-                exp_vec.store_unaligned(output_row + idx);
-                sum_vec += exp_vec;
-            }
+                float max_val = xsimd::reduce_max(max_vec);
+                for (; idx < valid_cols; ++idx)
+                {
+                    max_val = std::max(max_val, input_row[idx] * scale);
+                }
 
-            float sum_val = xsimd::reduce_add(sum_vec);
-            for (; idx < valid_cols; ++idx)
-            {
-                const float exp_v = std::exp(input_row[idx] * scale - max_val);
-                output_row[idx] = exp_v;
-                sum_val += exp_v;
-            }
+                XSimdBatch sum_vec(0.0f);
+                const XSimdBatch max_batch(max_val);
+                idx = 0;
+                for (; idx + kXSimdBatchSize <= valid_cols; idx += kXSimdBatchSize)
+                {
+                    const XSimdBatch scaled = XSimdBatch::load_unaligned(input_row + idx) * scale_vec;
+                    const XSimdBatch exp_vec = xsimd::exp(scaled - max_batch);
+                    exp_vec.store_unaligned(output_row + idx);
+                    sum_vec += exp_vec;
+                }
 
-            const float inv_sum = 1.0f / sum_val;
-            const XSimdBatch inv_sum_vec(inv_sum);
-            idx = 0;
-            for (; idx + kXSimdBatchSize <= valid_cols; idx += kXSimdBatchSize)
-            {
-                const XSimdBatch out_vec = XSimdBatch::load_unaligned(output_row + idx) * inv_sum_vec;
-                out_vec.store_unaligned(output_row + idx);
-            }
-            for (; idx < valid_cols; ++idx)
-            {
-                output_row[idx] *= inv_sum;
-            }
+                float sum_val = xsimd::reduce_add(sum_vec);
+                for (; idx < valid_cols; ++idx)
+                {
+                    const float exp_v = std::exp(input_row[idx] * scale - max_val);
+                    output_row[idx] = exp_v;
+                    sum_val += exp_v;
+                }
 
-            std::fill(output_row + valid_cols, output_row + seq_len, 0.0f);
+                const float inv_sum = 1.0f / sum_val;
+                const XSimdBatch inv_sum_vec(inv_sum);
+                idx = 0;
+                for (; idx + kXSimdBatchSize <= valid_cols; idx += kXSimdBatchSize)
+                {
+                    const XSimdBatch out_vec = XSimdBatch::load_unaligned(output_row + idx) * inv_sum_vec;
+                    out_vec.store_unaligned(output_row + idx);
+                }
+                for (; idx < valid_cols; ++idx)
+                {
+                    output_row[idx] *= inv_sum;
+                }
+
+                std::fill(output_row + valid_cols, output_row + seq_len, 0.0f);
+            }
         }
+    };
+
+    if (parallel)
+    {
+        parallel_for_1d(0, outer_ll, 1, process_outer);
+    }
+    else
+    {
+        process_outer(0, outer_ll);
     }
 }
 
@@ -218,46 +236,56 @@ void causal_softmax_weighted_sum_square_xsimd(const float* qk,
     const size_t rows_total = outer * seq_len;
     const long long rows_total_ll = static_cast<long long>(rows_total);
     const XSimdBatch scale_vec(scale);
+    const bool parallel =
+        should_parallelize_1d_loop(rows_total, seq_len * head_dim, 1LL << 15, 2);
 
-#ifdef _OPENMP
-#pragma omp parallel for if(should_parallelize_1d_loop(rows_total, seq_len * head_dim, 1LL << 15, 2))
-#endif
-    for (long long row_idx_ll = 0; row_idx_ll < rows_total_ll; ++row_idx_ll)
+    auto process_rows = [&](long long begin, long long end) {
+        for (long long row_idx_ll = begin; row_idx_ll < end; ++row_idx_ll)
+        {
+            const size_t row_idx = static_cast<size_t>(row_idx_ll);
+            const size_t outer_i = row_idx / seq_len;
+            const size_t row = row_idx - outer_i * seq_len;
+
+            const float* qk_mat = qk + outer_i * seq_len * seq_len;
+            const float* qk_row = qk_mat + row * seq_len;
+            const float* v_mat = v + outer_i * seq_len * head_dim;
+            float* out_row = out + row_idx * head_dim;
+            const size_t valid_cols = row + 1;
+
+            XSimdBatch max_vec(std::numeric_limits<float>::lowest());
+            size_t col = 0;
+            for (; col + kXSimdBatchSize <= valid_cols; col += kXSimdBatchSize)
+            {
+                const XSimdBatch scaled = XSimdBatch::load_unaligned(qk_row + col) * scale_vec;
+                max_vec = xsimd::max(max_vec, scaled);
+            }
+            float max_val = xsimd::reduce_max(max_vec);
+            for (; col < valid_cols; ++col)
+            {
+                max_val = std::max(max_val, qk_row[col] * scale);
+            }
+
+            std::fill(out_row, out_row + head_dim, 0.0f);
+            float sum_val = 0.0f;
+            for (size_t c = 0; c < valid_cols; ++c)
+            {
+                const float weight = std::exp(qk_row[c] * scale - max_val);
+                sum_val += weight;
+                weighted_accumulate_row_xsimd(out_row, v_mat + c * head_dim, head_dim, weight);
+            }
+
+            const float inv_sum = 1.0f / sum_val;
+            scale_row_xsimd(out_row, head_dim, inv_sum);
+        }
+    };
+
+    if (parallel)
     {
-        const size_t row_idx = static_cast<size_t>(row_idx_ll);
-        const size_t outer_i = row_idx / seq_len;
-        const size_t row = row_idx - outer_i * seq_len;
-
-        const float* qk_mat = qk + outer_i * seq_len * seq_len;
-        const float* qk_row = qk_mat + row * seq_len;
-        const float* v_mat = v + outer_i * seq_len * head_dim;
-        float* out_row = out + row_idx * head_dim;
-        const size_t valid_cols = row + 1;
-
-        XSimdBatch max_vec(std::numeric_limits<float>::lowest());
-        size_t col = 0;
-        for (; col + kXSimdBatchSize <= valid_cols; col += kXSimdBatchSize)
-        {
-            const XSimdBatch scaled = XSimdBatch::load_unaligned(qk_row + col) * scale_vec;
-            max_vec = xsimd::max(max_vec, scaled);
-        }
-        float max_val = xsimd::reduce_max(max_vec);
-        for (; col < valid_cols; ++col)
-        {
-            max_val = std::max(max_val, qk_row[col] * scale);
-        }
-
-        std::fill(out_row, out_row + head_dim, 0.0f);
-        float sum_val = 0.0f;
-        for (size_t c = 0; c < valid_cols; ++c)
-        {
-            const float weight = std::exp(qk_row[c] * scale - max_val);
-            sum_val += weight;
-            weighted_accumulate_row_xsimd(out_row, v_mat + c * head_dim, head_dim, weight);
-        }
-
-        const float inv_sum = 1.0f / sum_val;
-        scale_row_xsimd(out_row, head_dim, inv_sum);
+        parallel_for_1d(0, rows_total_ll, 1, process_rows);
+    }
+    else
+    {
+        process_rows(0, rows_total_ll);
     }
 }
 
@@ -269,30 +297,40 @@ void rmsnorm_lastdim_xsimd_fp16_weight(const float* input,
                                        float eps)
 {
     const long long outer_ll = static_cast<long long>(outer);
-#ifdef _OPENMP
-#pragma omp parallel for if(should_parallelize_1d_loop(outer, channels, 1LL << 14, 2))
-#endif
-    for (long long outer_idx = 0; outer_idx < outer_ll; ++outer_idx)
+    const bool parallel = should_parallelize_1d_loop(outer, channels, 1LL << 14, 2);
+
+    auto process_outer = [&](long long begin, long long end) {
+        for (long long outer_idx = begin; outer_idx < end; ++outer_idx)
+        {
+            const size_t outer_i = static_cast<size_t>(outer_idx);
+            const float* input_row = input + outer_i * channels;
+            float* output_row = output + outer_i * channels;
+
+            const float scale = rms_scale_xsimd(input_row, channels, eps);
+            const XSimdBatch scale_vec(scale);
+
+            size_t idx = 0;
+            for (; idx + kXSimdBatchSize <= channels; idx += kXSimdBatchSize)
+            {
+                const XSimdBatch x = XSimdBatch::load_unaligned(input_row + idx);
+                const XSimdBatch w = load_hfloat_batch(weight + idx);
+                const XSimdBatch out_vec = x * scale_vec * w;
+                out_vec.store_unaligned(output_row + idx);
+            }
+            for (; idx < channels; ++idx)
+            {
+                output_row[idx] = input_row[idx] * scale * static_cast<float>(weight[idx]);
+            }
+        }
+    };
+
+    if (parallel)
     {
-        const size_t outer_i = static_cast<size_t>(outer_idx);
-        const float* input_row = input + outer_i * channels;
-        float* output_row = output + outer_i * channels;
-
-        const float scale = rms_scale_xsimd(input_row, channels, eps);
-        const XSimdBatch scale_vec(scale);
-
-        size_t idx = 0;
-        for (; idx + kXSimdBatchSize <= channels; idx += kXSimdBatchSize)
-        {
-            const XSimdBatch x = XSimdBatch::load_unaligned(input_row + idx);
-            const XSimdBatch w = load_hfloat_batch(weight + idx);
-            const XSimdBatch out_vec = x * scale_vec * w;
-            out_vec.store_unaligned(output_row + idx);
-        }
-        for (; idx < channels; ++idx)
-        {
-            output_row[idx] = input_row[idx] * scale * static_cast<float>(weight[idx]);
-        }
+        parallel_for_1d(0, outer_ll, 1, process_outer);
+    }
+    else
+    {
+        process_outer(0, outer_ll);
     }
 }
 
@@ -306,30 +344,40 @@ void rmsnorm_lastdim_xsimd_i8_weight(const float* input,
 {
     const float weight_scale = scales[0];
     const long long outer_ll = static_cast<long long>(outer);
-#ifdef _OPENMP
-#pragma omp parallel for if(should_parallelize_1d_loop(outer, channels, 1LL << 14, 2))
-#endif
-    for (long long outer_idx = 0; outer_idx < outer_ll; ++outer_idx)
+    const bool parallel = should_parallelize_1d_loop(outer, channels, 1LL << 14, 2);
+
+    auto process_outer = [&](long long begin, long long end) {
+        for (long long outer_idx = begin; outer_idx < end; ++outer_idx)
+        {
+            const size_t outer_i = static_cast<size_t>(outer_idx);
+            const float* input_row = input + outer_i * channels;
+            float* output_row = output + outer_i * channels;
+
+            const float scale = rms_scale_xsimd(input_row, channels, eps) * weight_scale;
+            const XSimdBatch scale_vec(scale);
+
+            size_t idx = 0;
+            for (; idx + kXSimdBatchSize <= channels; idx += kXSimdBatchSize)
+            {
+                const XSimdBatch x = XSimdBatch::load_unaligned(input_row + idx);
+                const XSimdBatch w = load_int8_batch(weight + idx);
+                const XSimdBatch out_vec = x * scale_vec * w;
+                out_vec.store_unaligned(output_row + idx);
+            }
+            for (; idx < channels; ++idx)
+            {
+                output_row[idx] = input_row[idx] * scale * static_cast<float>(weight[idx]);
+            }
+        }
+    };
+
+    if (parallel)
     {
-        const size_t outer_i = static_cast<size_t>(outer_idx);
-        const float* input_row = input + outer_i * channels;
-        float* output_row = output + outer_i * channels;
-
-        const float scale = rms_scale_xsimd(input_row, channels, eps) * weight_scale;
-        const XSimdBatch scale_vec(scale);
-
-        size_t idx = 0;
-        for (; idx + kXSimdBatchSize <= channels; idx += kXSimdBatchSize)
-        {
-            const XSimdBatch x = XSimdBatch::load_unaligned(input_row + idx);
-            const XSimdBatch w = load_int8_batch(weight + idx);
-            const XSimdBatch out_vec = x * scale_vec * w;
-            out_vec.store_unaligned(output_row + idx);
-        }
-        for (; idx < channels; ++idx)
-        {
-            output_row[idx] = input_row[idx] * scale * static_cast<float>(weight[idx]);
-        }
+        parallel_for_1d(0, outer_ll, 1, process_outer);
+    }
+    else
+    {
+        process_outer(0, outer_ll);
     }
 }
 
@@ -341,30 +389,40 @@ void rmsnorm_lastdim_xsimd(const float* input,
                            float eps)
 {
     const long long outer_ll = static_cast<long long>(outer);
-#ifdef _OPENMP
-#pragma omp parallel for if(should_parallelize_1d_loop(outer, channels, 1LL << 14, 2))
-#endif
-    for (long long outer_idx = 0; outer_idx < outer_ll; ++outer_idx)
+    const bool parallel = should_parallelize_1d_loop(outer, channels, 1LL << 14, 2);
+
+    auto process_outer = [&](long long begin, long long end) {
+        for (long long outer_idx = begin; outer_idx < end; ++outer_idx)
+        {
+            const size_t outer_i = static_cast<size_t>(outer_idx);
+            const float* input_row = input + outer_i * channels;
+            float* output_row = output + outer_i * channels;
+
+            const float scale = rms_scale_xsimd(input_row, channels, eps);
+            const XSimdBatch scale_vec(scale);
+
+            size_t idx = 0;
+            for (; idx + kXSimdBatchSize <= channels; idx += kXSimdBatchSize)
+            {
+                const XSimdBatch x = XSimdBatch::load_unaligned(input_row + idx);
+                const XSimdBatch w = XSimdBatch::load_unaligned(weight + idx);
+                const XSimdBatch out_vec = x * scale_vec * w;
+                out_vec.store_unaligned(output_row + idx);
+            }
+            for (; idx < channels; ++idx)
+            {
+                output_row[idx] = input_row[idx] * scale * weight[idx];
+            }
+        }
+    };
+
+    if (parallel)
     {
-        const size_t outer_i = static_cast<size_t>(outer_idx);
-        const float* input_row = input + outer_i * channels;
-        float* output_row = output + outer_i * channels;
-
-        const float scale = rms_scale_xsimd(input_row, channels, eps);
-        const XSimdBatch scale_vec(scale);
-
-        size_t idx = 0;
-        for (; idx + kXSimdBatchSize <= channels; idx += kXSimdBatchSize)
-        {
-            const XSimdBatch x = XSimdBatch::load_unaligned(input_row + idx);
-            const XSimdBatch w = XSimdBatch::load_unaligned(weight + idx);
-            const XSimdBatch out_vec = x * scale_vec * w;
-            out_vec.store_unaligned(output_row + idx);
-        }
-        for (; idx < channels; ++idx)
-        {
-            output_row[idx] = input_row[idx] * scale * weight[idx];
-        }
+        parallel_for_1d(0, outer_ll, 1, process_outer);
+    }
+    else
+    {
+        process_outer(0, outer_ll);
     }
 }
 
